@@ -1,9 +1,9 @@
 import { TypeOrmModuleOptions } from '@nestjs/typeorm';
-import { User } from './entities/user.entity';
-import { Task } from './entities/task.entity';
-import { Result } from './entities/result.entity';
+import { User } from '../modules/users/entities/user.entity';
+import { CalcTask } from '../modules/calc/entities/task.entity';
+import { Result } from '../modules/calc/entities/result.entity';
 import { ResultVersion } from './entities/result-version.entity';
-import { TaskLog } from './entities/task_log.entity';
+import { TaskLog } from '../modules/calc/entities/task_log.entity';
 
 export const databaseConfig: TypeOrmModuleOptions = {
   type: 'mysql',
@@ -12,6 +12,6 @@ export const databaseConfig: TypeOrmModuleOptions = {
   username: process.env.DB_USER || 'root',
   password: process.env.DB_PASS || '123456',
   database: process.env.DB_NAME || 'iron_cost_system',
-  entities: [User, Task, Result, ResultVersion,TaskLog],
+  entities: [User, CalcTask, Result, ResultVersion,TaskLog],
   synchronize: true, // 开发环境可用，生产环境建议 false 并使用 migration
 };

@@ -1,11 +1,9 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { databaseConfig } from './database/database.module';
-import { UsersModule } from './users/users.module';
-import { AuthModule } from './auth/auth.module';
-import { TasksModule } from './tasks/tasks.module';
+import { UsersModule } from './modules/users/users.module';
 import { ConfigModule } from '@nestjs/config';
-import { CalcModule } from './calc/calc.module';
+import { CalcModule } from './modules/calc/calc.module';
 
 @Module({
   imports: [
@@ -14,8 +12,6 @@ import { CalcModule } from './calc/calc.module';
     }),
     TypeOrmModule.forRoot(databaseConfig),
     UsersModule,
-    AuthModule,
-    TasksModule,
     CalcModule,
   ],
 })

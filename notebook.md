@@ -21,3 +21,14 @@ npm i @nestjs/graphql @nestjs/apollo @apollo/server graphql
 
 # 快速生成CRUD
 nest g res
+
+# 创建模块文件夹
+mkdir src/modules/calc
+
+# 移动文件夹
+mv src/calc/calc.module.ts src/modules/calc/
+mv src/calc/calc.service.ts src/modules/calc/
+mv src/calc/calc.controller.ts src/modules/calc/
+mv src/calc/entities src/modules/calc/
+mv src/calc/dto src/modules/calc/
+
