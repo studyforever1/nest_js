@@ -1,17 +1,18 @@
+// src/users/dto/create-user.dto.ts
 import { IsEmail, IsNotEmpty, IsOptional, MinLength } from 'class-validator';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateUserDto {
-  @ApiProperty({ description: '用户名', example: 'john_doe' })
+  @ApiProperty({ example: 'admin', description: '用户名' })
   @IsNotEmpty()
   username: string;
 
-  @ApiPropertyOptional({ description: '密码', example: '123456' })
+  @ApiProperty({ example: '123456', description: '密码', required: false })
   @IsOptional()
   @MinLength(6)
   password?: string;
 
-  @ApiPropertyOptional({ description: '邮箱', example: 'john@example.com' })
+  @ApiProperty({ example: 'test@test.com', description: '邮箱', required: false })
   @IsOptional()
   @IsEmail()
   email?: string;
