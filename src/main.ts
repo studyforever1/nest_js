@@ -18,8 +18,8 @@ async function bootstrap() {
   // 全局验证管道
   app.useGlobalPipes(
     new (require('@nestjs/common').ValidationPipe)({
-      whitelist: true,
-      forbidNonWhitelisted: true,
+      whitelist: true,    // 移除 DTO 中没有的字段
+      forbidNonWhitelisted: false,    // 不报错，允许额外字段
       transform: true,
     }),
   );
@@ -28,9 +28,13 @@ app.useGlobalFilters(new AllExceptionsFilter());
 
   // Swagger 配置
   const config = new DocumentBuilder()
-    .setTitle('User Management API')
+    .setTitle('API Docs')
     .setDescription('用户管理模块接口文档')
     .setVersion('1.0')
+    .addBearerAuth(
+    { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
+    'JWT', // 这里的名字可以自定义
+  )
     .build();
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api-docs', app, document);

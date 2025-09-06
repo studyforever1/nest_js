@@ -5,7 +5,7 @@ import { Repository } from 'typeorm';
 import axios from 'axios';
 import { CalcTask, TaskStatus } from './entities/task.entity';
 import { Result } from './entities/result.entity';
-import { User } from '../users/entities/user.entity';
+import { User } from '../user/entities/user.entity';
 import { ApiResponse } from '../../common/response/response.dto';
 
 @Injectable()

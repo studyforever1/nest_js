@@ -17,11 +17,14 @@ export class User {
   @Column({ unique: true })
   username: string;
 
-  @Column({ nullable: true, select: false }) // 默认不返回密码
+  @Column({ nullable: true, select: false}) // 默认不返回密码
   password: string;
 
-  @Column({ nullable: true, unique: true })
+  @Column({ nullable: true})
   email: string;
+
+  @Column({ default: 'user' })
+  role: string; 
 
   @Column({ default: true })
   is_active: boolean;

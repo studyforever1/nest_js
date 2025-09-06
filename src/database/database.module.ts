@@ -1,5 +1,5 @@
 import { TypeOrmModuleOptions } from '@nestjs/typeorm';
-import { User } from '../modules/users/entities/user.entity';
+import { User } from '../modules/user/entities/user.entity';
 import { CalcTask } from '../modules/calc/entities/task.entity';
 import { Result } from '../modules/calc/entities/result.entity';
 import { ResultVersion } from './entities/result-version.entity';

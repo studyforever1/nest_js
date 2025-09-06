@@ -1,9 +1,10 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { databaseConfig } from './database/database.module';
-import { UsersModule } from './modules/users/users.module';
 import { ConfigModule } from '@nestjs/config';
 import { CalcModule } from './modules/calc/calc.module';
+import { AuthModule } from './modules/auth/auth.module';
+import { UserModule } from './modules/user/user.module';
 
 @Module({
   imports: [
@@ -11,8 +12,9 @@ import { CalcModule } from './modules/calc/calc.module';
       isGlobal: true, // 全局可用 process.env
     }),
     TypeOrmModule.forRoot(databaseConfig),
-    UsersModule,
     CalcModule,
+    AuthModule,
+    UserModule,
   ],
 })
 export class AppModule {}

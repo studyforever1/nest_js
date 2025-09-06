@@ -9,7 +9,7 @@ import {
   DeleteDateColumn,
   Index
 } from 'typeorm';
-import { User } from '../../users/entities/user.entity';
+import { User } from '../../user/entities/user.entity';
 import { Result } from './result.entity';
 import { TaskLog } from './task_log.entity';
 

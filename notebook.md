@@ -20,7 +20,7 @@ nest g resource
 npm i @nestjs/graphql @nestjs/apollo @apollo/server graphql
 
 # 快速生成CRUD
-nest g res
+nest g res modules/user
 
 # 创建模块文件夹
 mkdir src/modules/calc
@@ -32,4 +32,10 @@ mv src/calc/calc.controller.ts src/modules/calc/
 mv src/calc/entities src/modules/calc/
 mv src/calc/dto src/modules/calc/
 
-http://localhost:3000/api-docs 接口文档
+# 接口文档
+http://localhost:3000/api-docs 
+
+
+nest g module modules/user
+nest g service modules/user
+nest g controller modules/user
