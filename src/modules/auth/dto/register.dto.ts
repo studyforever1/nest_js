@@ -15,9 +15,11 @@ export class RegisterDto {
   @IsOptional()
   email?: string;
 
-  @ApiProperty({ example: 'user', required: false, description: 'user 或 admin' })
-  @IsString()
+  @ApiProperty({ example: ['user'], required: false, description: '角色数组，例如 [user] 或 [admin]' })
+  @IsString({ each: true })
   @IsOptional()
-  @IsIn(['user', 'admin'])
-  role?: 'user' | 'admin';
+  @IsIn(['user', 'admin','sj_user','lt_user'], { each: true })
+  roles?: ('user' | 'admin' | 'sj_user' | 'lt_user')[];
+
+
 }

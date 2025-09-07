@@ -5,6 +5,10 @@ import { ConfigModule } from '@nestjs/config';
 import { CalcModule } from './modules/calc/calc.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UserModule } from './modules/user/user.module';
+import { RoleModule } from './modules/role/role.module';
+import { PermissionModule } from './modules/permission/permission.module';
+import { SjconfigModule } from './modules/sjconfig/sjconfig.module';
+import { SjRawMaterialModule } from './modules/sj-raw-material/sj-raw-material.module';
 
 @Module({
   imports: [
@@ -15,6 +19,10 @@ import { UserModule } from './modules/user/user.module';
     CalcModule,
     AuthModule,
     UserModule,
+    RoleModule,
+    PermissionModule,
+    SjconfigModule,
+    SjRawMaterialModule
   ],
 })
 export class AppModule {}

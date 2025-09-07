@@ -3,7 +3,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import axios from 'axios';
-import { CalcTask, TaskStatus } from './entities/task.entity';
+import { Task, TaskStatus } from '../../database/entities/task.entity';
 import { Result } from './entities/result.entity';
 import { User } from '../user/entities/user.entity';
 import { ApiResponse } from '../../common/response/response.dto';
@@ -14,8 +14,8 @@ export class CalcService {
   private readonly fastApiUrl = 'http://localhost:8000'; // FastAPI 地址
 
   constructor(
-    @InjectRepository(CalcTask)
-    private readonly taskRepo: Repository<CalcTask>,
+    @InjectRepository(Task)
+    private readonly taskRepo: Repository<Task>,
     @InjectRepository(Result)
     private readonly resultRepo: Repository<Result>,
     @InjectRepository(User)

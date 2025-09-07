@@ -36,6 +36,6 @@ mv src/calc/dto src/modules/calc/
 http://localhost:3000/api-docs 
 
 
-nest g module modules/user
-nest g service modules/user
-nest g controller modules/user
+nest g module modules/sj-raw-material
+nest g service modules/sj-raw-material
+nest g controller modules/sj-raw-material

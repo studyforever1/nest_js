@@ -1,5 +1,5 @@
 import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, CreateDateColumn, UpdateDateColumn } from 'typeorm';
-import { CalcTask } from './task.entity';
+import { CalcTask } from '../../../database/entities/task.entity';
 
 @Entity('result')
 export class Result {

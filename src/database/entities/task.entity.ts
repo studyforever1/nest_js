@@ -9,9 +9,9 @@ import {
   DeleteDateColumn,
   Index
 } from 'typeorm';
-import { User } from '../../user/entities/user.entity';
-import { Result } from './result.entity';
-import { TaskLog } from './task_log.entity';
+import { User } from '../../modules/user/entities/user.entity';
+import { Result } from '../../modules/calc/entities/result.entity';
+import { TaskLog } from '../../modules/calc/entities/task_log.entity';
 
 export enum TaskStatus {
   PENDING = 'pending',
@@ -22,16 +22,14 @@ export enum TaskStatus {
 }
 
 @Entity('task')
-export class CalcTask {
+export class Task {
   @PrimaryGeneratedColumn()
   task_id: number;
 
   @Column({ unique: true })
-  @Index()
   task_uuid: string;
 
   @Column()
-  @Index()
   module_type: string; // 模块类型，比如 "烧结_区间品位配料"
 
   @Column({
