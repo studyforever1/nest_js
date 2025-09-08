@@ -1,8 +1,16 @@
-// common/database/entities/config-group.entity.ts
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToMany, CreateDateColumn, UpdateDateColumn } from 'typeorm';
-import { Module } from './module.entity';
+import { 
+  Entity, 
+  PrimaryGeneratedColumn, 
+  Column, 
+  ManyToOne, 
+  OneToMany, 
+  CreateDateColumn, 
+  UpdateDateColumn 
+} from 'typeorm';
+import { BizModule } from './biz-module.entity';
 import { User } from './../../modules/user/entities/user.entity';
 import { ParameterHistory } from './parameter-history.entity';
+import { Task } from './task.entity';
 
 @Entity('config_group')
 export class ConfigGroup {
@@ -12,8 +20,8 @@ export class ConfigGroup {
   @ManyToOne(() => User, (user) => user.configGroups)
   user: User;
 
-  @ManyToOne(() => Module, (module) => module.configGroups)
-  module: Module;
+  @ManyToOne(() => BizModule, (module) => module.configGroups)
+  module: BizModule;
 
   @Column({ comment: '参数组名称' })
   group_name: string;
@@ -33,6 +41,11 @@ export class ConfigGroup {
   @UpdateDateColumn()
   updated_at: Date;
 
+  /** 历史快照 */
   @OneToMany(() => ParameterHistory, (history) => history.group)
   history: ParameterHistory[];
+
+  /** 使用该参数组的任务 */
+  @OneToMany(() => Task, (task) => task.configGroup)
+  tasks: Task[];
 }

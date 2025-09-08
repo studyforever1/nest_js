@@ -1,13 +1,13 @@
 import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, CreateDateColumn, UpdateDateColumn } from 'typeorm';
-import { CalcTask } from '../../../database/entities/task.entity';
+import { Task } from '../../../database/entities/task.entity';
 
 @Entity('result')
 export class Result {
   @PrimaryGeneratedColumn()
   result_id: number;
 
-  @ManyToOne(() => CalcTask, (task) => task.results, { onDelete: 'CASCADE' })
-  task: CalcTask;
+  @ManyToOne(() => Task, (task) => task.results, { onDelete: 'CASCADE' })
+  task: Task;
 
   @Column({ type: 'json', nullable: true })
   output_data: any; // 存储计算结果 JSON

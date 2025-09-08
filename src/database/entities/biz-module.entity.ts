@@ -1,10 +1,9 @@
-// common/database/entities/module.entity.ts
-import { Entity, PrimaryGeneratedColumn, Column, OneToMany } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, OneToMany, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 import { ConfigGroup } from './config-group.entity';
 import { Task } from './task.entity';
 
-@Entity('module')
-export class Module {
+@Entity('biz_module')
+export class BizModule {
   @PrimaryGeneratedColumn()
   module_id: number;
 
@@ -19,4 +18,10 @@ export class Module {
 
   @OneToMany(() => Task, (task) => task.module)
   tasks: Task[];
+
+  @CreateDateColumn()
+  created_at: Date;
+
+  @UpdateDateColumn()
+  updated_at: Date;
 }

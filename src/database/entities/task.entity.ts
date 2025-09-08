@@ -12,6 +12,8 @@ import {
 import { User } from '../../modules/user/entities/user.entity';
 import { Result } from '../../modules/calc/entities/result.entity';
 import { TaskLog } from '../../modules/calc/entities/task_log.entity';
+import { BizModule } from '../entities/biz-module.entity';
+import { ConfigGroup } from '../entities/config-group.entity';
 
 export enum TaskStatus {
   PENDING = 'pending',
@@ -39,8 +41,17 @@ export class Task {
   })
   status: TaskStatus;
 
+  /** 任务所属用户 */
   @ManyToOne(() => User, (user) => user.tasks, { eager: false })
   user: User;
+
+  /** 任务所属模块（关联 biz_module 表） */
+  @ManyToOne(() => BizModule, (module) => module.tasks, { eager: false })
+  module: BizModule;
+
+  /** 使用的参数组 */
+  @ManyToOne(() => ConfigGroup, (group) => group.tasks, { eager: false, nullable: true })
+  configGroup: ConfigGroup;
 
   @OneToMany(() => Result, (result) => result.task, { cascade: true })
   results: Result[];

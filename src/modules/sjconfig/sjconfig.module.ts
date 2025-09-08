@@ -1,14 +1,16 @@
 // modules/sjconfig/sjconfig.module.ts
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { SjconfigService } from './sjconfig.service';
 import { SjconfigController } from './sjconfig.controller';
+import { SjconfigService } from './sjconfig.service';
 import { ConfigGroup } from '../../database/entities/config-group.entity';
+import { BizModule } from '../../database/entities/biz-module.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([ConfigGroup])],
-  providers: [SjconfigService],
+  imports: [
+    TypeOrmModule.forFeature([ConfigGroup, BizModule]), // 必须同时注册 BizModule
+  ],
   controllers: [SjconfigController],
-  exports: [SjconfigService],
+  providers: [SjconfigService],
 })
 export class SjconfigModule {}

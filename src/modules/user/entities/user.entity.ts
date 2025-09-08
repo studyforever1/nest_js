@@ -11,6 +11,7 @@ import {
 } from 'typeorm';
 import { Task } from '../../../database/entities/task.entity';
 import { Role } from '../../role/entities/role.entity';
+import { ConfigGroup } from '../../../database/entities/config-group.entity';
 
 @Entity('user')
 export class User {
@@ -19,7 +20,6 @@ export class User {
 
   @Column({ unique: true })
   username: string;
-
 
   @Column({ nullable: true, select: false }) // 登录时手动 addSelect('user.password')
   password: string;
@@ -39,10 +39,15 @@ export class User {
   @DeleteDateColumn({ type: 'timestamp', nullable: true })
   deleted_at: Date;
 
+  /** 用户发起的任务 */
   @OneToMany(() => Task, (task) => task.user)
   tasks: Task[];
 
-  // 用户 <-> 角色（多对多）
+  /** 用户保存的参数分组 */
+  @OneToMany(() => ConfigGroup, (group) => group.user)
+  configGroups: ConfigGroup[];
+
+  /** 用户 <-> 角色（多对多） */
   @ManyToMany(() => Role, (role) => role.users)
   @JoinTable({
     name: 'user_roles', 

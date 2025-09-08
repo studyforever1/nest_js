@@ -5,7 +5,12 @@ import { Result } from '../modules/calc/entities/result.entity';
 import { TaskLog } from '../modules/calc/entities/task_log.entity';
 import { Role } from '../modules/role/entities/role.entity';
 import { Permission } from '../modules/permission/entities/permission.entity';
-import {SjRawMaterial} from "../modules/sj-raw-material/entities/sj-raw-material.entity";
+import { SjRawMaterial } from '../modules/sj-raw-material/entities/sj-raw-material.entity';
+
+// 新增的实体
+import { BizModule } from './entities/biz-module.entity';
+import { ConfigGroup } from './entities/config-group.entity';
+import { ParameterHistory } from './entities/parameter-history.entity';
 
 export const databaseConfig: TypeOrmModuleOptions = {
   type: 'mysql',
@@ -14,6 +19,17 @@ export const databaseConfig: TypeOrmModuleOptions = {
   username: process.env.DB_USER || 'root',
   password: process.env.DB_PASS || '123456',
   database: process.env.DB_NAME || 'iron_cost_system',
-  entities: [User, Task, Result,TaskLog, Role, Permission,SjRawMaterial],
+  entities: [
+    User,
+    Task,
+    Result,
+    TaskLog,
+    Role,
+    Permission,
+    SjRawMaterial,
+    BizModule,
+    ConfigGroup,
+    ParameterHistory,
+  ],
   synchronize: true, // 开发环境可用，生产环境建议 false 并使用 migration
 };
