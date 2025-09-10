@@ -9,6 +9,7 @@ import { RoleModule } from './modules/role/role.module';
 import { PermissionModule } from './modules/permission/permission.module';
 import { SjconfigModule } from './modules/sjconfig/sjconfig.module';
 import { SjRawMaterialModule } from './modules/sj-raw-material/sj-raw-material.module';
+import { ChatModule } from './modules/chat/chat.module';
 
 @Module({
   imports: [
@@ -22,7 +23,8 @@ import { SjRawMaterialModule } from './modules/sj-raw-material/sj-raw-material.m
     RoleModule,
     PermissionModule,
     SjconfigModule,
-    SjRawMaterialModule
+    SjRawMaterialModule,
+    ChatModule
   ],
 })
 export class AppModule {}

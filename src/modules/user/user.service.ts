@@ -12,10 +12,9 @@ export class UserService implements OnApplicationBootstrap {
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
     private readonly roleService: RoleService,
-  ) { }
+  ) {}
 
-  /** 自动创建默认 admin */
-  /** 自动创建默认 admin */
+  /** 应用启动时，自动创建默认 admin */
   async onApplicationBootstrap() {
     // 1️⃣ 查找 admin 用户
     const admin = await this.userRepo.findOne({
@@ -33,7 +32,6 @@ export class UserService implements OnApplicationBootstrap {
       console.log('默认角色已创建: admin');
     }
 
-
     // 3️⃣ 如果 admin 用户不存在，就创建
     if (!admin) {
       const hashed = await bcrypt.hash('admin123', 10);
@@ -48,8 +46,6 @@ export class UserService implements OnApplicationBootstrap {
     }
   }
 
-
-
   /** 创建用户 */
   async create(data: Partial<User>): Promise<User> {
     const user = this.userRepo.create(data);
@@ -59,17 +55,19 @@ export class UserService implements OnApplicationBootstrap {
   /** 根据用户名查找 */
   async findByUsername(
     username: string,
-    options?: { select?: (keyof User)[], relations?: string[] }
+    options?: { select?: (keyof User)[]; relations?: string[] },
   ): Promise<User | null> {
     const query = this.userRepo.createQueryBuilder('user')
       .where('user.username = :username', { username });
 
     if (options?.select && options.select.length > 0) {
-      query.select(options.select.map(f => `user.${f}`));
+      query.select(options.select.map((f) => `user.${f}`));
     }
 
     if (options?.relations && options.relations.length > 0) {
-      options.relations.forEach(rel => query.leftJoinAndSelect(`user.${rel}`, rel));
+      options.relations.forEach((rel) =>
+        query.leftJoinAndSelect(`user.${rel}`, rel),
+      );
     }
 
     return query.getOne();
@@ -80,6 +78,14 @@ export class UserService implements OnApplicationBootstrap {
     return this.userRepo.findOne({
       where: { user_id: userId },
       relations: ['roles'],
+    });
+  }
+
+  /** 通用查找（兼容 chat 模块调用） */
+  async findOne(userId: number, withRelations = false): Promise<User | null> {
+    return this.userRepo.findOne({
+      where: { user_id: userId },
+      relations: withRelations ? ['roles'] : [],
     });
   }
 

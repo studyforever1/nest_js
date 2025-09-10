@@ -12,6 +12,7 @@ import {
 import { Task } from '../../../database/entities/task.entity';
 import { Role } from '../../role/entities/role.entity';
 import { ConfigGroup } from '../../../database/entities/config-group.entity';
+import { ChatMessage } from '../../chat/entities/chat-message.entity';
 
 @Entity('user')
 export class User {
@@ -55,4 +56,12 @@ export class User {
     inverseJoinColumn: { name: 'role_id', referencedColumnName: 'role_id' },
   })
   roles: Role[];
+  @OneToMany(() => ChatMessage, (msg) => msg.sender)
+  sentMessages: ChatMessage[];
+
+  @OneToMany(() => ChatMessage, (msg) => msg.receiver)
+  receivedMessages: ChatMessage[];
+
+
+
 }

@@ -11,6 +11,7 @@ import { SjRawMaterial } from '../modules/sj-raw-material/entities/sj-raw-materi
 import { BizModule } from './entities/biz-module.entity';
 import { ConfigGroup } from './entities/config-group.entity';
 import { ParameterHistory } from './entities/parameter-history.entity';
+import { ChatMessage } from '../modules/chat/entities/chat-message.entity';
 
 export const databaseConfig: TypeOrmModuleOptions = {
   type: 'mysql',
@@ -30,6 +31,7 @@ export const databaseConfig: TypeOrmModuleOptions = {
     BizModule,
     ConfigGroup,
     ParameterHistory,
+    ChatMessage
   ],
   synchronize: true, // 开发环境可用，生产环境建议 false 并使用 migration
 };

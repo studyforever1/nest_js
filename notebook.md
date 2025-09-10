@@ -1,5 +1,5 @@
 git add .
-git commit -m "修改信息"
+git commit -m "9.11,新增聊天模块"
 git push
 
 npm run start
@@ -36,6 +36,6 @@ mv src/calc/dto src/modules/calc/
 http://localhost:3000/api-docs 
 
 
-nest g module modules/sj-raw-material
-nest g service modules/sj-raw-material
-nest g controller modules/sj-raw-material
+nest g module modules/chat
+nest g service modules/chat
+nest g controller modules/chat
