@@ -2,12 +2,12 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { databaseConfig } from './database/database.module';
 import { ConfigModule } from '@nestjs/config';
-import { CalcModule } from './modules/calc/calc.module';
+import { CalcModule } from './modules/sj-calc/sj-calc.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UserModule } from './modules/user/user.module';
 import { RoleModule } from './modules/role/role.module';
 import { PermissionModule } from './modules/permission/permission.module';
-import { SjconfigModule } from './modules/sjconfig/sjconfig.module';
+import { SjconfigModule } from './modules/sj-config/sj-config.module';
 import { SjRawMaterialModule } from './modules/sj-raw-material/sj-raw-material.module';
 import { ChatModule } from './modules/chat/chat.module';
 
@@ -24,7 +24,7 @@ import { ChatModule } from './modules/chat/chat.module';
     PermissionModule,
     SjconfigModule,
     SjRawMaterialModule,
-    ChatModule
+    ChatModule,
   ],
 })
 export class AppModule {}

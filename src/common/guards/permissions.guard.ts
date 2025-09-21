@@ -1,4 +1,9 @@
-import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -13,7 +18,8 @@ export class PermissionsGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const requiredPermissions: string[] = this.reflector.get<string[]>('permissions', context.getHandler()) || [];
+    const requiredPermissions: string[] =
+      this.reflector.get<string[]>('permissions', context.getHandler()) || [];
     if (!requiredPermissions.length) return true;
 
     const request = context.switchToHttp().getRequest();
@@ -27,8 +33,12 @@ export class PermissionsGuard implements CanActivate {
 
     if (!user) throw new ForbiddenException('用户不存在');
 
-    const userPermissions = user.roles.flatMap(role => role.permissions.map(p => p.code));
-    const hasPermission = requiredPermissions.every(p => userPermissions.includes(p));
+    const userPermissions = user.roles.flatMap((role) =>
+      role.permissions.map((p) => p.code),
+    );
+    const hasPermission = requiredPermissions.every((p) =>
+      userPermissions.includes(p),
+    );
 
     if (!hasPermission) throw new ForbiddenException('权限不足');
 

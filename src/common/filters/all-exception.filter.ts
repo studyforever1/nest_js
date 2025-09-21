@@ -24,8 +24,6 @@ export class AllExceptionsFilter implements ExceptionFilter {
       message = (res as any).message || exception.message;
     }
 
-    response.status(status).json(
-      ApiResponse.error(message, status),
-    );
+    response.status(status).json(ApiResponse.error(message, status));
   }
 }

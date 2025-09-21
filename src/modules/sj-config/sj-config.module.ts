@@ -1,8 +1,8 @@
 // modules/sjconfig/sjconfig.module.ts
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { SjconfigController } from './sjconfig.controller';
-import { SjconfigService } from './sjconfig.service';
+import { SjconfigController } from './sj-config.controller';
+import { SjconfigService } from './sj-config.service';
 import { ConfigGroup } from '../../database/entities/config-group.entity';
 import { BizModule } from '../../database/entities/biz-module.entity';
 

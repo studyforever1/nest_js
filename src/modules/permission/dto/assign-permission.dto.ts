@@ -7,7 +7,10 @@ export class AssignPermissionsDto {
   @IsNotEmpty()
   roleCode: string;
 
-  @ApiProperty({ description: '权限编码数组，例如 ["calc:start","calc:stop"]', type: [String] })
+  @ApiProperty({
+    description: '权限编码数组，例如 ["calc:start","calc:stop"]',
+    type: [String],
+  })
   @IsArray()
   @ArrayNotEmpty()
   @IsString({ each: true })

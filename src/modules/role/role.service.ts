@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { Role } from './entities/role.entity';
@@ -33,39 +37,40 @@ export class RoleService {
 
   /** 给角色分配权限 */
   async assignPermissionsToRole(roleCode: string, permissionCodes: string[]) {
-  console.log('assignPermissionsToRole', roleCode, permissionCodes);
+    console.log('assignPermissionsToRole', roleCode, permissionCodes);
 
-  const role = await this.roleRepo.findOne({
-    where: { name: roleCode },
-    relations: ['permissions'],
-  });
-  if (!role) {
-    console.error('角色不存在:', roleCode);
-    throw new NotFoundException(`角色不存在: ${roleCode}`);
+    const role = await this.roleRepo.findOne({
+      where: { name: roleCode },
+      relations: ['permissions'],
+    });
+    if (!role) {
+      console.error('角色不存在:', roleCode);
+      throw new NotFoundException(`角色不存在: ${roleCode}`);
+    }
+
+    const permissions = await this.permissionRepo.findBy({
+      code: In(permissionCodes),
+    });
+    console.log('找到的权限:', permissions);
+
+    if (!permissions.length) {
+      console.error('权限不存在:', permissionCodes);
+      throw new BadRequestException(
+        `未找到对应权限: ${permissionCodes.join(', ')}`,
+      );
+    }
+
+    role.permissions = permissions;
+
+    try {
+      const savedRole = await this.roleRepo.save(role);
+      console.log('分配权限成功', savedRole);
+      return savedRole;
+    } catch (error) {
+      console.error('保存角色权限失败', error);
+      throw error;
+    }
   }
-
-  const permissions = await this.permissionRepo.findBy({
-    code: In(permissionCodes),
-  });
-  console.log('找到的权限:', permissions);
-
-  if (!permissions.length) {
-    console.error('权限不存在:', permissionCodes);
-    throw new BadRequestException(`未找到对应权限: ${permissionCodes.join(', ')}`);
-  }
-
-  role.permissions = permissions;
-
-  try {
-    const savedRole = await this.roleRepo.save(role);
-    console.log('分配权限成功', savedRole);
-    return savedRole;
-  } catch (error) {
-    console.error('保存角色权限失败', error);
-    throw error;
-  }
-}
-
 
   /** 查询角色权限 */
   async getRolePermissions(roleCode: string) {

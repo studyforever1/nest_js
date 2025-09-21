@@ -1,4 +1,8 @@
-import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  ConflictException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { UserService } from '../user/user.service';
 import { RegisterDto } from './dto/register.dto';
@@ -6,33 +10,35 @@ import { ApiResponse } from '../../common/response/response.dto';
 import * as bcrypt from 'bcrypt';
 import { RoleService } from '../role/role.service';
 
-
 @Injectable()
 export class AuthService {
   constructor(
     private readonly userService: UserService,
     private readonly jwtService: JwtService,
-    private readonly roleService: RoleService
+    private readonly roleService: RoleService,
   ) {}
 
   async validateUser(username: string, pass: string): Promise<any> {
-  const user = await this.userService.findByUsername(username, {
-    select: ['user_id', 'username', 'password'],
-    relations: ['roles'], // ✅ 这里拿到多角色
-  });
+    const user = await this.userService.findByUsername(username, {
+      select: ['user_id', 'username', 'password'],
+      relations: ['roles'], // ✅ 这里拿到多角色
+    });
 
-  if (!user) throw new UnauthorizedException('用户名或密码错误');
+    if (!user) throw new UnauthorizedException('用户名或密码错误');
 
-  const isMatch = await bcrypt.compare(pass, user.password);
-  if (!isMatch) throw new UnauthorizedException('用户名或密码错误');
+    const isMatch = await bcrypt.compare(pass, user.password);
+    if (!isMatch) throw new UnauthorizedException('用户名或密码错误');
 
-  const { password, ...result } = user;
-  return result;
-}
-
+    const { password, ...result } = user;
+    return result;
+  }
 
   async login(user: any) {
-    const payload = { username: user.username, sub: user.user_id, role: user.role };
+    const payload = {
+      username: user.username,
+      sub: user.user_id,
+      role: user.role,
+    };
     return {
       access_token: this.jwtService.sign(payload),
       sub: user.user_id,
@@ -41,33 +47,35 @@ export class AuthService {
   }
 
   async register(registerDto: RegisterDto) {
-  const exist = await this.userService.findByUsername(registerDto.username);
-  if (exist) throw new ConflictException('用户名已存在');
+    const exist = await this.userService.findByUsername(registerDto.username);
+    if (exist) throw new ConflictException('用户名已存在');
 
-  const hashedPassword = await bcrypt.hash(registerDto.password, 10);
+    const hashedPassword = await bcrypt.hash(registerDto.password, 10);
 
-  // 普通注册用户固定分配 'user' 角色
-  const roles = await this.roleService.findByNames(['user']); // Role[]
+    // 普通注册用户固定分配 'user' 角色
+    const roles = await this.roleService.findByNames(['user']); // Role[]
 
-  const newUser = await this.userService.create({
-    username: registerDto.username,
-    email: registerDto.email,
-    password: hashedPassword,
-    roles,
-  });
+    const newUser = await this.userService.create({
+      username: registerDto.username,
+      email: registerDto.email,
+      password: hashedPassword,
+      roles,
+    });
 
-  const payload = {
-    username: newUser.username,
-    sub: newUser.user_id,
-    roles: newUser.roles.map(r => r.name),
-  };
-  const token = this.jwtService.sign(payload);
+    const payload = {
+      username: newUser.username,
+      sub: newUser.user_id,
+      roles: newUser.roles.map((r) => r.name),
+    };
+    const token = this.jwtService.sign(payload);
 
-  return ApiResponse.success(
-    { access_token: token, sub: newUser.user_id, roles: newUser.roles.map(r => r.name) },
-    '注册成功'
-  );
-}
-
-
+    return ApiResponse.success(
+      {
+        access_token: token,
+        sub: newUser.user_id,
+        roles: newUser.roles.map((r) => r.name),
+      },
+      '注册成功',
+    );
+  }
 }

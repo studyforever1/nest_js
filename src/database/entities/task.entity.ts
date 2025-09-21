@@ -1,17 +1,17 @@
-import { 
-  Entity, 
-  PrimaryGeneratedColumn, 
-  Column, 
-  ManyToOne, 
-  OneToMany, 
-  CreateDateColumn, 
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  ManyToOne,
+  OneToMany,
+  CreateDateColumn,
   UpdateDateColumn,
   DeleteDateColumn,
-  Index
+  Index,
 } from 'typeorm';
 import { User } from '../../modules/user/entities/user.entity';
-import { Result } from '../../modules/calc/entities/result.entity';
-import { TaskLog } from '../../modules/calc/entities/task_log.entity';
+import { Result } from '../../modules/sj-calc/entities/result.entity';
+import { TaskLog } from '../../modules/sj-calc/entities/task_log.entity';
 import { BizModule } from '../entities/biz-module.entity';
 import { ConfigGroup } from '../entities/config-group.entity';
 
@@ -50,7 +50,10 @@ export class Task {
   module: BizModule;
 
   /** 使用的参数组 */
-  @ManyToOne(() => ConfigGroup, (group) => group.tasks, { eager: false, nullable: true })
+  @ManyToOne(() => ConfigGroup, (group) => group.tasks, {
+    eager: false,
+    nullable: true,
+  })
   configGroup: ConfigGroup;
 
   @OneToMany(() => Result, (result) => result.task, { cascade: true })

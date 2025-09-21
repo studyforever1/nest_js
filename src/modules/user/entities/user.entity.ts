@@ -1,13 +1,13 @@
-import { 
-  Entity, 
-  PrimaryGeneratedColumn, 
-  Column, 
-  CreateDateColumn, 
-  UpdateDateColumn, 
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
   OneToMany,
   DeleteDateColumn,
   ManyToMany,
-  JoinTable
+  JoinTable,
 } from 'typeorm';
 import { Task } from '../../../database/entities/task.entity';
 import { Role } from '../../role/entities/role.entity';
@@ -51,7 +51,7 @@ export class User {
   /** 用户 <-> 角色（多对多） */
   @ManyToMany(() => Role, (role) => role.users)
   @JoinTable({
-    name: 'user_roles', 
+    name: 'user_roles',
     joinColumn: { name: 'user_id', referencedColumnName: 'user_id' },
     inverseJoinColumn: { name: 'role_id', referencedColumnName: 'role_id' },
   })
@@ -61,7 +61,4 @@ export class User {
 
   @OneToMany(() => ChatMessage, (msg) => msg.receiver)
   receivedMessages: ChatMessage[];
-
-
-
 }

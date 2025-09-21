@@ -1,4 +1,13 @@
-import { Controller, Get, Post, Body, Param, Delete, UseGuards, ConflictException } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Delete,
+  UseGuards,
+  ConflictException,
+} from '@nestjs/common';
 import { UserService } from './user.service';
 import { AuthGuard } from '@nestjs/passport';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -30,9 +39,10 @@ export class UserController {
     const hashedPassword = await bcrypt.hash(registerDto.password, 10);
 
     // 3️⃣ 如果没传 roles，默认分配 ['user']
-    const roleNames = registerDto.roles && registerDto.roles.length > 0
-      ? registerDto.roles
-      : ['user'];
+    const roleNames =
+      registerDto.roles && registerDto.roles.length > 0
+        ? registerDto.roles
+        : ['user'];
 
     // 4️⃣ 查询 Role 实体数组
     const roles = await this.roleService.findByNames(roleNames);

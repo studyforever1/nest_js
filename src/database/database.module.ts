@@ -1,8 +1,8 @@
 import { TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { User } from '../modules/user/entities/user.entity';
 import { Task } from './entities/task.entity';
-import { Result } from '../modules/calc/entities/result.entity';
-import { TaskLog } from '../modules/calc/entities/task_log.entity';
+import { Result } from '../modules/sj-calc/entities/result.entity';
+import { TaskLog } from '../modules/sj-calc/entities/task_log.entity';
 import { Role } from '../modules/role/entities/role.entity';
 import { Permission } from '../modules/permission/entities/permission.entity';
 import { SjRawMaterial } from '../modules/sj-raw-material/entities/sj-raw-material.entity';
@@ -31,7 +31,7 @@ export const databaseConfig: TypeOrmModuleOptions = {
     BizModule,
     ConfigGroup,
     ParameterHistory,
-    ChatMessage
+    ChatMessage,
   ],
   synchronize: true, // 开发环境可用，生产环境建议 false 并使用 migration
 };

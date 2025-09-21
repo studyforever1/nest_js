@@ -16,7 +16,9 @@ export class ChatService {
   /** 发送消息 */
   async sendMessage(sender: User, receiver: User, content: string) {
     try {
-      this.logger.log(`发送消息: senderId=${sender.user_id}, receiverId=${receiver.user_id}, content="${content}"`);
+      this.logger.log(
+        `发送消息: senderId=${sender.user_id}, receiverId=${receiver.user_id}, content="${content}"`,
+      );
 
       const msg = this.chatRepo.create({ sender, receiver, content });
 

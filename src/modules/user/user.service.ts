@@ -57,7 +57,8 @@ export class UserService implements OnApplicationBootstrap {
     username: string,
     options?: { select?: (keyof User)[]; relations?: string[] },
   ): Promise<User | null> {
-    const query = this.userRepo.createQueryBuilder('user')
+    const query = this.userRepo
+      .createQueryBuilder('user')
       .where('user.username = :username', { username });
 
     if (options?.select && options.select.length > 0) {

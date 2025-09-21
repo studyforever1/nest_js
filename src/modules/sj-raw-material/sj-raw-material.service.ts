@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { SjRawMaterial } from './entities/sj-raw-material.entity';
@@ -38,7 +42,6 @@ export class SjRawMaterialService {
     const raw = await this.findOne(id);
     return await this.rawRepo.remove(raw);
   }
-
 
   /** ========== 导出 Excel ========== */
   async exportExcel(): Promise<Buffer> {

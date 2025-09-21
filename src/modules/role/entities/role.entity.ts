@@ -1,11 +1,11 @@
-import { 
-  Entity, 
-  PrimaryGeneratedColumn, 
-  Column, 
-  ManyToMany, 
-  CreateDateColumn, 
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  ManyToMany,
+  CreateDateColumn,
   UpdateDateColumn,
-  JoinTable
+  JoinTable,
 } from 'typeorm';
 import { User } from '../../user/entities/user.entity';
 import { Permission } from '../../permission/entities/permission.entity';
@@ -17,7 +17,6 @@ export class Role {
 
   @Column({ unique: true })
   name: string;
-
 
   @Column({ nullable: true })
   description: string;
@@ -33,11 +32,16 @@ export class Role {
   users: User[];
 
   // 角色 <-> 权限（多对多）
-  @ManyToMany(() => Permission, (permission) => permission.roles, { cascade: true })
+  @ManyToMany(() => Permission, (permission) => permission.roles, {
+    cascade: true,
+  })
   @JoinTable({
     name: 'role_permission',
     joinColumn: { name: 'role_id', referencedColumnName: 'role_id' },
-    inverseJoinColumn: { name: 'permission_id', referencedColumnName: 'permission_id' },
+    inverseJoinColumn: {
+      name: 'permission_id',
+      referencedColumnName: 'permission_id',
+    },
   })
   permissions: Permission[];
 }

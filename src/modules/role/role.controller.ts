@@ -18,7 +18,10 @@ export class RoleController {
   @Roles('admin')
   @ApiOperation({ summary: '给角色分配权限' })
   async assignPermissions(@Body() dto: AssignPermissionsDto) {
-    return this.roleService.assignPermissionsToRole(dto.roleCode, dto.permissionCodes);
+    return this.roleService.assignPermissionsToRole(
+      dto.roleCode,
+      dto.permissionCodes,
+    );
   }
 
   /** 查询某个角色的权限 */

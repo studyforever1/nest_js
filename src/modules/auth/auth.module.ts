@@ -7,10 +7,9 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { UserModule } from '../user/user.module';
 import { RoleModule } from '../role/role.module';
 
-
 @Module({
   imports: [
-    PassportModule.register({ defaultStrategy: 'jwt' }), 
+    PassportModule.register({ defaultStrategy: 'jwt' }),
     UserModule,
     RoleModule,
     JwtModule.register({

@@ -1,5 +1,11 @@
 // common/database/entities/parameter-history.entity.ts
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, CreateDateColumn } from 'typeorm';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  ManyToOne,
+  CreateDateColumn,
+} from 'typeorm';
 import { ConfigGroup } from './config-group.entity';
 import { User } from '../../modules/user/entities/user.entity';
 

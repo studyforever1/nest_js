@@ -1,7 +1,10 @@
 import { ApiProperty } from '@nestjs/swagger';
 
 export class ApiResponse<T> {
-  @ApiProperty({ example: 0, description: '业务状态码,0 表示成功，非 0 表示失败' })
+  @ApiProperty({
+    example: 0,
+    description: '业务状态码,0 表示成功，非 0 表示失败',
+  })
   code: number;
 
   @ApiProperty({ example: '操作成功', description: '提示信息' })

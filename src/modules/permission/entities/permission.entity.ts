@@ -1,11 +1,11 @@
-import { 
-  Entity, 
-  PrimaryGeneratedColumn, 
-  Column, 
-  ManyToMany, 
-  CreateDateColumn, 
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  ManyToMany,
+  CreateDateColumn,
   UpdateDateColumn,
-  Index
+  Index,
 } from 'typeorm';
 import { Role } from '../../role/entities/role.entity';
 
@@ -16,7 +16,6 @@ export class Permission {
 
   @Column({ unique: true })
   code: string;
-
 
   @Column({ nullable: true })
   description: string;

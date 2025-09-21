@@ -1,4 +1,10 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, CreateDateColumn } from 'typeorm';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  ManyToOne,
+  CreateDateColumn,
+} from 'typeorm';
 import { User } from '../../user/entities/user.entity';
 
 @Entity('chat_messages')
@@ -12,9 +18,9 @@ export class ChatMessage {
   @CreateDateColumn({ type: 'timestamp' })
   created_at: Date;
 
-  @ManyToOne(() => User, user => user.sentMessages, { eager: true })
+  @ManyToOne(() => User, (user) => user.sentMessages, { eager: true })
   sender: User;
 
-  @ManyToOne(() => User, user => user.receivedMessages, { eager: true })
+  @ManyToOne(() => User, (user) => user.receivedMessages, { eager: true })
   receiver: User;
 }
