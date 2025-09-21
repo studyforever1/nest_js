@@ -81,7 +81,6 @@ export class SjconfigService {
         group = this.configRepo.create({
           user,
           module,
-          group_name: '默认参数组',
           config_data: {},
           is_latest: true,
           is_shared: false,
@@ -135,7 +134,6 @@ export class SjconfigService {
         group = this.configRepo.create({
           user,
           module,
-          group_name: '默认参数组',
           config_data: { ingredientParams: [], ingredientLimits: {} },
           is_latest: true,
           is_shared: false,

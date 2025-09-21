@@ -23,9 +23,6 @@ export class ConfigGroup {
   @ManyToOne(() => BizModule, (module) => module.configGroups)
   module: BizModule;
 
-  @Column({ comment: '参数组名称' })
-  group_name: string;
-
   @Column({ type: 'json', comment: '保存模块参数, 可分原料/化学/其他' })
   config_data: any;
 
