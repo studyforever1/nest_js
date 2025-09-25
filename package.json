@@ -41,6 +41,7 @@
     "class-validator": "^0.14.2",
     "exceljs": "^4.4.0",
     "graphql": "^16.11.0",
+    "lodash": "^4.17.21",
     "multer": "^2.0.2",
     "mysql": "^2.18.1",
     "mysql2": "^3.14.3",

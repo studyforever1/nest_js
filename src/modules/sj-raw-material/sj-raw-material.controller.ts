@@ -13,7 +13,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes, ApiBody } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes, ApiBody,ApiQuery } from '@nestjs/swagger';
 import { SjRawMaterialService } from './sj-raw-material.service';
 import { CreateSjRawMaterialDto } from './dto/create-sj-raw-material.dto';
 import { UpdateSjRawMaterialDto } from './dto/update-sj-raw-material.dto';
@@ -23,6 +23,7 @@ import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { Response } from 'express';
 import * as multer from 'multer';
+import { PaginationDto } from './dto/pagination.dto';
 
 @ApiTags('烧结原料库')
 @ApiBearerAuth('JWT')
@@ -38,20 +39,29 @@ export class SjRawMaterialController {
     return this.rawService.create(dto, user.username);
   }
 
-  /** 查询所有原料 */
-  @Get()
-  @ApiOperation({ summary: '查询所有原料' })
-  findAll() {
-    return this.rawService.findAll();
-  }
+ @Get()
+@ApiOperation({ summary: '查询所有原料（分页）' })
+findAll(@Query() pagination: PaginationDto) {
+  return this.rawService.findAll(pagination.page, pagination.pageSize);
+}
 
-  /** 按名字模糊查询 */
-  @Get('search')
-  @ApiOperation({ summary: '按名字模糊查询原料' })
-  findByName(@Query('name') name: string) {
-    return this.rawService.findByName(name);
-  }
+@Get('search')
+@ApiOperation({ summary: '按名字模糊查询原料（分页）' })
+findByName(
+  @Query('name') name: string,
+  @Query() pagination: PaginationDto,
+) {
+  return this.rawService.findByName(name, pagination.page, pagination.pageSize);
+}
 
+@Get('search-by-type')
+@ApiOperation({ summary: '按原料类型查询（分页）' })
+findByType(
+  @Query('type') type: 'T' | 'X' | 'R' | 'F',
+  @Query() pagination: PaginationDto,
+) {
+  return this.rawService.findByType(type, pagination.page, pagination.pageSize);
+}
   /** 更新原料 */
   @Put(':id')
   @ApiOperation({ summary: '更新原料' })
@@ -135,10 +145,4 @@ async removeAll(@CurrentUser() user: { username: string }) {
   }
 }
 
-/** 按原料类型查询（根据分类编号首字母） */
-@Get('search-by-type')
-@ApiOperation({ summary: '按原料类型查询' })
-async findByType(@Query('type') type: 'T' | 'X' | 'R' | 'F') {
-  return this.rawService.findByType(type);
-}
 }

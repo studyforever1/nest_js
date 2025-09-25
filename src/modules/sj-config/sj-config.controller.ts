@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, UseGuards } from '@nestjs/common';
+import { Controller, Post, Body, Get, UseGuards,Query } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { SjconfigService } from './sj-config.service';
 import { AuthGuard } from '@nestjs/passport';
@@ -7,6 +7,8 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { User } from '../user/entities/user.entity';
 import { SaveConfigDto } from './dto/save-config.dto';
 import { SaveIngredientDto } from './dto/save-ingredient.dto';
+import { DeleteIngredientDto } from './dto/delete-ingredient.dto';
+import { PaginationDto } from '../sj-raw-material/dto/pagination.dto';
 
 @ApiTags('烧结参数配置')
 @ApiBearerAuth('JWT')
@@ -47,4 +49,32 @@ export class SjconfigController {
       body.ingredientParams,
     );
   }
+
+   /** 删除选中的原料（同步 ingredientParams 和 ingredientLimits） */
+  @Post('delete-ingredient')
+  @ApiOperation({ summary: '删除选中的原料' })
+  async deleteIngredient(
+    @CurrentUser() user: User,
+    @Body() body: DeleteIngredientDto,
+  ) {
+    return this.sjconfigService.deleteIngredientParams(
+      user,
+      this.MODULE_NAME,
+      body.removeParams,
+    );
+  }
+
+  @Get('selected-ingredients')
+@ApiOperation({ summary: '获取已选中原料详情（分页）' })
+async getSelectedIngredients(
+  @CurrentUser() user: User,
+  @Query() pagination: PaginationDto,
+) {
+  return this.sjconfigService.getSelectedIngredients(
+    user,
+    this.MODULE_NAME,
+    pagination.page,
+    pagination.pageSize,
+  );
+}
 }

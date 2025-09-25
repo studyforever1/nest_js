@@ -7,6 +7,7 @@ import { UpdateSjRawMaterialDto } from './dto/update-sj-raw-material.dto';
 import * as ExcelJS from 'exceljs';
 import { Express } from 'express';
 
+
 @Injectable()
 export class SjRawMaterialService {
   constructor(
@@ -47,10 +48,21 @@ export class SjRawMaterialService {
     };
   }
 
-  async findAll() {
-    const raws = await this.rawRepo.find();
-    return raws.map(this.formatRaw);
-  }
+  async findAll(page: number = 1, pageSize: number = 10) {
+  const [records, total] = await this.rawRepo.findAndCount({
+    skip: (page - 1) * pageSize,
+    take: pageSize,
+    order: { id: 'ASC' },
+  });
+
+  return {
+    data: records.map(this.formatRaw),
+    total,
+    page,
+    pageSize,
+    totalPages: Math.ceil(total / pageSize),
+  };
+}
 
   async findOne(id: number) {
     const raw = await this.rawRepo.findOne({ where: { id } });
@@ -58,17 +70,41 @@ export class SjRawMaterialService {
     return this.formatRaw(raw);
   }
 
-  async findByName(name?: string) {
-    if (!name) return this.findAll();
-    const raws = await this.rawRepo.find({ where: { name: Like(`%${name}%`) } });
-    return raws.map(this.formatRaw);
-  }
+  async findByName(name?: string, page: number = 1, pageSize: number = 10) {
+  const where = name ? { name: Like(`%${name}%`) } : {};
+  const [records, total] = await this.rawRepo.findAndCount({
+    where,
+    skip: (page - 1) * pageSize,
+    take: pageSize,
+    order: { id: 'ASC' },
+  });
 
-  async findByType(type?: 'T' | 'X' | 'R' | 'F') {
-    if (!type) return this.findAll();
-    const raws = await this.rawRepo.find({ where: { category: Like(`${type}%`) } });
-    return raws.map(this.formatRaw);
-  }
+  return {
+    data: records.map(this.formatRaw),
+    total,
+    page,
+    pageSize,
+    totalPages: Math.ceil(total / pageSize),
+  };
+}
+
+  async findByType(type?: 'T' | 'X' | 'R' | 'F', page: number = 1, pageSize: number = 10) {
+  const where = type ? { category: Like(`${type}%`) } : {};
+  const [records, total] = await this.rawRepo.findAndCount({
+    where,
+    skip: (page - 1) * pageSize,
+    take: pageSize,
+    order: { id: 'ASC' },
+  });
+
+  return {
+    data: records.map(this.formatRaw),
+    total,
+    page,
+    pageSize,
+    totalPages: Math.ceil(total / pageSize),
+  };
+}
 
   async remove(ids: number[]) {
     if (!ids?.length) throw new Error('未提供要删除的ID');
