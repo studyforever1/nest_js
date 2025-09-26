@@ -15,5 +15,6 @@ import { SjRawMaterial } from '../sj-raw-material/entities/sj-raw-material.entit
   ],
   controllers: [SjconfigController],
   providers: [SjconfigService],
+  exports: [SjconfigService], // 导出服务以供其他模块使用
 })
 export class SjconfigModule {}

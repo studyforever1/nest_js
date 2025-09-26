@@ -22,48 +22,20 @@ export class CalcService {
     @InjectRepository(User) private readonly userRepo: Repository<User>,
     @InjectRepository(SjRawMaterial) private readonly sjRawMaterialRepo: Repository<SjRawMaterial>,
     private readonly sjconfigService: SjconfigService,
-  ) {}
-    /** 获取任务详情 */
-async getTaskDetails(taskUuid: string): Promise<ApiResponse<any>> {
-  try {
-    // 查询任务及关联结果、日志和用户信息
-    const task = await this.findTask(taskUuid, ['results', 'logs', 'user']);
-    if (!task) return ApiResponse.error('任务不存在');
+  ) { }
+  /** 获取任务详情 */
+  async getTaskDetails(taskUuid: string): Promise<ApiResponse<any>> {
+    try {
+      // 查询任务及关联结果、日志和用户信息
+      const task = await this.findTask(taskUuid, ['results', 'logs', 'user']);
+      if (!task) return ApiResponse.error('任务不存在');
 
-    return ApiResponse.success(task, '获取任务详情成功');
-  } catch (err: unknown) {
-    return this.handleError(err, '获取任务详情失败');
+      return ApiResponse.success(task, '获取任务详情成功');
+    } catch (err: unknown) {
+      return this.handleError(err, '获取任务详情失败');
+    }
   }
-}
-  /** 构建 ingredientParams：将原料 id 转为 name → composition */
-  private async buildIngredientParams(ingredientIds: number[]): Promise<Record<string, any>> {
-    if (!ingredientIds || ingredientIds.length === 0) return {};
-
-    const raws = await this.sjRawMaterialRepo.find({
-  where: {
-    id: In(ingredientIds),
-    enabled: true,
-  },
-});
-
-    const ingredientParams: Record<string, any> = {};
-
-    raws.forEach(raw => {
-      if (!raw.composition) return;
-
-      ingredientParams[raw.name] = {
-        ...raw.composition,
-        TFe: raw.composition.TFe ?? 0,
-        烧损: raw.composition['烧损'] ?? 0,
-        价格: raw.composition['价格'] ?? 0,
-      };
-    });
-
-    return ingredientParams;
-  }
-
-  /** 启动任务（从数据库组装参数） */
-  async startTask(moduleName: string, user: User): Promise<ApiResponse<{ taskUuid: string }>> {
+  async startTask(moduleName: string, user: User): Promise<ApiResponse<{ taskUuid: string; resultMap: Record<string, any> }>> {
     try {
       this.logger.debug(`准备启动任务，userId=${user.user_id}, module=${moduleName}`);
 
@@ -71,21 +43,42 @@ async getTaskDetails(taskUuid: string): Promise<ApiResponse<any>> {
       const config = await this.sjconfigService.getLatestConfigByName(user, moduleName);
       if (!config) throw new Error(`未找到模块 ${moduleName} 的配置`);
 
-      // 将 ingredientParams 从 id 转为原料信息
-      const ingredientParams = await this.buildIngredientParams(config.ingredientParams || []);
+      // 使用 ID 直接构建 ingredientParams（composition 信息也可传，但 key 用 ID）
+      const ingredientIds = config.ingredientParams || [];
+      const raws = await this.sjRawMaterialRepo.find({
+        where: { id: In(ingredientIds), enabled: true }
+      });
 
+      const ingredientParams: Record<number, any> = {};
+      raws.forEach(raw => {
+        ingredientParams[raw.id] = {
+          ...raw.composition,
+          TFe: raw.composition?.TFe ?? 0,
+          烧损: raw.composition?.['烧损'] ?? 0,
+          价格: raw.composition?.['价格'] ?? 0,
+        };
+      });
+      // ingredientLimits: 去掉 name 字段
+      const ingredientLimitsClean: Record<string, any> = {};
+      Object.keys(config.ingredientLimits || {}).forEach(id => {
+        const { name, ...limits } = config.ingredientLimits[id];
+        ingredientLimitsClean[id] = limits;
+      });
       const fullParams = {
         calculateType: moduleName,
-        ingredientParams,
-        ingredientLimits: config.ingredientLimits || {},
+        ingredientParams,       // key = ID
+        ingredientLimits: ingredientLimitsClean,
         chemicalLimits: config.chemicalLimits || {},
         otherSettings: config.otherSettings || {},
       };
 
-      this.logger.debug(`调用 FastAPI 启动任务，参数: ${JSON.stringify(fullParams)}`);
+      console.log('=== fullParams JSON (ID 计算) ===');
+      console.log(JSON.stringify(fullParams, null, 2));
 
       const res = await this.apiPost('/sj/start/', fullParams);
       const taskUuid = res.data?.data?.taskUuid;
+      const resultsById = res.data?.data?.results; // 假设 FastAPI 返回 {id: value}
+
       if (!taskUuid) throw new Error(res.data?.message || 'FastAPI 未返回 taskUuid');
 
       // 存 Task
@@ -97,13 +90,27 @@ async getTaskDetails(taskUuid: string): Promise<ApiResponse<any>> {
         user,
       });
       await this.taskRepo.save(task);
-
       this.pendingTasks.set(taskUuid, Date.now());
-      return ApiResponse.success({ taskUuid }, '任务启动成功');
+
+      // 把结果 ID → name
+      const idNameMap: Record<number, string> = {};
+      raws.forEach(raw => idNameMap[raw.id] = raw.name);
+
+      const resultMap: Record<string, any> = {};
+      if (resultsById) {
+        Object.keys(resultsById).forEach(idStr => {
+          const id = Number(idStr);
+          const name = idNameMap[id];
+          if (name) resultMap[name] = resultsById[id];
+        });
+      }
+
+      return ApiResponse.success({ taskUuid, resultMap }, '任务启动成功 (ID → Name 映射)');
     } catch (err: any) {
       return this.handleError(err, '启动任务失败');
     }
   }
+
 
   /** 停止任务 */
   async stopTask(taskUuid: string): Promise<ApiResponse<{ taskUuid: string; status: string }>> {
@@ -125,36 +132,60 @@ async getTaskDetails(taskUuid: string): Promise<ApiResponse<any>> {
   }
 
   /** 查询任务进度 */
+  /** 查询任务进度 */
   async fetchAndSaveProgress(taskUuid: string): Promise<ApiResponse<any>> {
-    try {
-      const task = await this.findTask(taskUuid, ['results']);
-      if (!task) return ApiResponse.error('任务不存在');
+  try {
+    const task = await this.findTask(taskUuid, ['results']);
+    if (!task) return ApiResponse.error('任务不存在');
 
-      const res = await this.apiGet('/sj/progress/', { taskUuid });
-      const { code, message, data } = res.data;
-      if (code !== 0 || !data) throw new Error(message || 'FastAPI 返回异常');
+    const res = await this.apiGet('/sj/progress/', { taskUuid });
+    const { code, message, data } = res.data;
+    if (code !== 0 || !data) throw new Error(message || 'FastAPI 返回异常');
 
-      task.status = this.mapStatus(data.status);
-      task.progress = data.progress;
-      task.total = data.total;
-      await this.taskRepo.save(task);
+    // 1. 获取原料 ID → 名称映射
+    const ingredientIds = Object.keys(data.results?.[0] || {}).filter(k => /^\d+$/.test(k));
+    const raws = await this.sjRawMaterialRepo.find({
+      where: { id: In(ingredientIds.map(id => Number(id))) }
+    });
+    const idNameMap: Record<string, string> = {};
+    raws.forEach(raw => idNameMap[String(raw.id)] = raw.name);
 
-      if (task.status === TaskStatus.FINISHED && Array.isArray(data.results) && data.results.length) {
-        await this.saveResults(task, data.results);
-        this.pendingTasks.delete(taskUuid);
-      }
+    // 2. 遍历 results，把 ID 替换成名称
+    const resultsMapped = (data.results || []).map(item => {
+      const newItem: Record<string, any> = {};
+      Object.keys(item).forEach(key => {
+        if (idNameMap[key]) {
+          newItem[idNameMap[key]] = item[key];  // ID → Name
+        } else {
+          newItem[key] = item[key];             // 其他字段原样保留
+        }
+      });
+      return newItem;
+    });
 
-      return ApiResponse.success({
-        taskUuid: task.task_uuid,
-        status: task.status,
-        progress: task.progress,
-        total: task.total,
-        results: Array.isArray(data.results) ? data.results : [],
-      }, '获取任务进度成功');
-    } catch (err: any) {
-      return this.handleError(err, '获取任务进度失败');
+    // 更新任务状态
+    task.status = this.mapStatus(data.status);
+    task.progress = data.progress;
+    task.total = data.total;
+    await this.taskRepo.save(task);
+
+    if (task.status === TaskStatus.FINISHED && resultsMapped.length) {
+      await this.saveResults(task, resultsMapped);
+      this.pendingTasks.delete(taskUuid);
     }
+
+    return ApiResponse.success({
+      taskUuid: task.task_uuid,
+      status: task.status,
+      progress: task.progress,
+      total: task.total,
+      results: resultsMapped,
+    }, '获取任务进度成功');
+  } catch (err: any) {
+    return this.handleError(err, '获取任务进度失败');
   }
+}
+
 
   /** ----- 私有方法 ----- */
 
