@@ -1,3 +1,4 @@
+// src/calc/sj-calc.controller.ts
 import { Controller, Post, Body, Get, Param, UseGuards } from '@nestjs/common';
 import { CalcService } from './sj-calc.service';
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
@@ -8,10 +9,12 @@ import { AuthGuard } from '@nestjs/passport';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { StopTaskDto } from './dto/stop-task.dto';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { User } from '../user/entities/user.entity';
 
 @ApiBearerAuth('JWT')
 @ApiTags('烧结计算任务')
-@UseGuards(AuthGuard('jwt'), PermissionsGuard) // 类级别统一
+@UseGuards(AuthGuard('jwt'), PermissionsGuard)
 @Controller('sj')
 export class CalcController {
   constructor(private readonly calcService: CalcService) {}
@@ -22,8 +25,8 @@ export class CalcController {
   @ApiOperation({ summary: '启动计算任务' })
   @ApiOkResponseData(StartTaskResponseDto)
   @ApiErrorResponse()
-  startTask(@Body() dto: StartTaskDto) {
-    return this.calcService.startTask(dto, dto.userId);
+  startTask(@CurrentUser() user: User, @Body() dto: StartTaskDto) {
+    return this.calcService.startTask(dto.calculateType, user);
   }
 
   /** 停止计算任务 */
