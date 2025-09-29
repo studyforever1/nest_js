@@ -10,6 +10,7 @@ import { PermissionModule } from './modules/permission/permission.module';
 import { SjconfigModule } from './modules/sj-config/sj-config.module';
 import { SjRawMaterialModule } from './modules/sj-raw-material/sj-raw-material.module';
 import { ChatModule } from './modules/chat/chat.module';
+import { HistoryModule } from './modules/history/history.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { ChatModule } from './modules/chat/chat.module';
     SjconfigModule,
     SjRawMaterialModule,
     ChatModule,
+    HistoryModule,
   ],
 })
 export class AppModule {}

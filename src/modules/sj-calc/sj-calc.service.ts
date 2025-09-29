@@ -9,6 +9,7 @@ import { ApiResponse } from '../../common/response/response.dto';
 import { SjconfigService } from '../sj-config/sj-config.service';
 import { SjRawMaterial } from '../sj-raw-material/entities/sj-raw-material.entity';
 import { In } from 'typeorm';
+import { History } from '../history/entities/history.entity';
 
 @Injectable()
 export class CalcService {
@@ -20,9 +21,66 @@ export class CalcService {
     @InjectRepository(Task) private readonly taskRepo: Repository<Task>,
     @InjectRepository(Result) private readonly resultRepo: Repository<Result>,
     @InjectRepository(User) private readonly userRepo: Repository<User>,
+    @InjectRepository(History) private readonly historyRepo: Repository<History>,
     @InjectRepository(SjRawMaterial) private readonly sjRawMaterialRepo: Repository<SjRawMaterial>,
     private readonly sjconfigService: SjconfigService,
   ) { }
+
+  async saveHistory(
+  taskUuid: string,
+  userId: number,
+  schemeIds: string[],
+): Promise<ApiResponse<{ count: number }>> {
+  try {
+    const task = await this.findTask(taskUuid, ['results', 'user']);
+    if (!task) return ApiResponse.error('任务不存在');
+
+    const user = await this.userRepo.findOneBy({ user_id: userId });
+    if (!user) return ApiResponse.error('用户不存在');
+
+    const resultEntity = task.results?.[0];
+    if (!resultEntity?.output_data) return ApiResponse.error('任务结果为空');
+
+    const results = resultEntity.output_data;
+
+    const histories: History[] = [];
+
+    for (const item of results) {
+      const seq = String(item['序号']);
+      if (!schemeIds.includes(seq)) continue;
+
+      // 去重检查
+      const exists = await this.historyRepo.findOne({
+        where: {
+          task: { task_uuid: task.task_uuid },
+          scheme_id: seq,
+        },
+        relations: ['task'],
+      });
+      if (!exists) {
+        histories.push(
+          this.historyRepo.create({
+            task,
+            user,
+            scheme_id: seq,
+            result: item,
+            module_type: task.module_type,
+          }),
+        );
+      }
+    }
+
+    if (histories.length) {
+      await this.historyRepo.save(histories);
+    }
+
+    return ApiResponse.success({ count: histories.length }, '历史数据保存成功');
+  } catch (err: any) {
+    return this.handleError(err, '保存历史数据失败');
+  }
+}
+
+
   /** 获取任务详情 */
   async getTaskDetails(taskUuid: string): Promise<ApiResponse<any>> {
     try {
@@ -134,57 +192,57 @@ export class CalcService {
   /** 查询任务进度 */
   /** 查询任务进度 */
   async fetchAndSaveProgress(taskUuid: string): Promise<ApiResponse<any>> {
-  try {
-    const task = await this.findTask(taskUuid, ['results']);
-    if (!task) return ApiResponse.error('任务不存在');
+    try {
+      const task = await this.findTask(taskUuid, ['results']);
+      if (!task) return ApiResponse.error('任务不存在');
 
-    const res = await this.apiGet('/sj/progress/', { taskUuid });
-    const { code, message, data } = res.data;
-    if (code !== 0 || !data) throw new Error(message || 'FastAPI 返回异常');
+      const res = await this.apiGet('/sj/progress/', { taskUuid });
+      const { code, message, data } = res.data;
+      if (code !== 0 || !data) throw new Error(message || 'FastAPI 返回异常');
 
-    // 1. 获取原料 ID → 名称映射
-    const ingredientIds = Object.keys(data.results?.[0] || {}).filter(k => /^\d+$/.test(k));
-    const raws = await this.sjRawMaterialRepo.find({
-      where: { id: In(ingredientIds.map(id => Number(id))) }
-    });
-    const idNameMap: Record<string, string> = {};
-    raws.forEach(raw => idNameMap[String(raw.id)] = raw.name);
-
-    // 2. 遍历 results，把 ID 替换成名称
-    const resultsMapped = (data.results || []).map(item => {
-      const newItem: Record<string, any> = {};
-      Object.keys(item).forEach(key => {
-        if (idNameMap[key]) {
-          newItem[idNameMap[key]] = item[key];  // ID → Name
-        } else {
-          newItem[key] = item[key];             // 其他字段原样保留
-        }
+      // 1. 获取原料 ID → 名称映射
+      const ingredientIds = Object.keys(data.results?.[0] || {}).filter(k => /^\d+$/.test(k));
+      const raws = await this.sjRawMaterialRepo.find({
+        where: { id: In(ingredientIds.map(id => Number(id))) }
       });
-      return newItem;
-    });
+      const idNameMap: Record<string, string> = {};
+      raws.forEach(raw => idNameMap[String(raw.id)] = raw.name);
 
-    // 更新任务状态
-    task.status = this.mapStatus(data.status);
-    task.progress = data.progress;
-    task.total = data.total;
-    await this.taskRepo.save(task);
+      // 2. 遍历 results，把 ID 替换成名称
+      const resultsMapped = (data.results || []).map(item => {
+        const newItem: Record<string, any> = {};
+        Object.keys(item).forEach(key => {
+          if (idNameMap[key]) {
+            newItem[idNameMap[key]] = item[key];  // ID → Name
+          } else {
+            newItem[key] = item[key];             // 其他字段原样保留
+          }
+        });
+        return newItem;
+      });
 
-    if (task.status === TaskStatus.FINISHED && resultsMapped.length) {
-      await this.saveResults(task, resultsMapped);
-      this.pendingTasks.delete(taskUuid);
+      // 更新任务状态
+      task.status = this.mapStatus(data.status);
+      task.progress = data.progress;
+      task.total = data.total;
+      await this.taskRepo.save(task);
+
+      if (task.status === TaskStatus.FINISHED && resultsMapped.length) {
+        await this.saveResults(task, resultsMapped);
+        this.pendingTasks.delete(taskUuid);
+      }
+
+      return ApiResponse.success({
+        taskUuid: task.task_uuid,
+        status: task.status,
+        progress: task.progress,
+        total: task.total,
+        results: resultsMapped,
+      }, '获取任务进度成功');
+    } catch (err: any) {
+      return this.handleError(err, '获取任务进度失败');
     }
-
-    return ApiResponse.success({
-      taskUuid: task.task_uuid,
-      status: task.status,
-      progress: task.progress,
-      total: task.total,
-      results: resultsMapped,
-    }, '获取任务进度成功');
-  } catch (err: any) {
-    return this.handleError(err, '获取任务进度失败');
   }
-}
 
 
   /** ----- 私有方法 ----- */

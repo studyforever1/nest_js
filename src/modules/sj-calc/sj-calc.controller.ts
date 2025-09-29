@@ -1,4 +1,3 @@
-// src/calc/sj-calc.controller.ts
 import { Controller, Post, Body, Get, Param, UseGuards } from '@nestjs/common';
 import { CalcService } from './sj-calc.service';
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
@@ -11,6 +10,8 @@ import { Permissions } from '../../common/decorators/permissions.decorator';
 import { StopTaskDto } from './dto/stop-task.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { User } from '../user/entities/user.entity';
+import { SaveHistoryDto } from './dto/save-history.dto';
+import { SaveHistoryResponseDto } from './dto/response.dto';
 
 @ApiBearerAuth('JWT')
 @ApiTags('烧结计算任务')
@@ -58,4 +59,16 @@ export class CalcController {
   getTaskDetails(@Param('task_id') task_id: string) {
     return this.calcService.getTaskDetails(task_id);
   }
+
+ @Post('save-history')
+@Permissions('calc:history')
+@ApiOperation({ summary: '保存选中方案到历史数据' })
+@ApiOkResponseData(SaveHistoryResponseDto)
+@ApiErrorResponse()
+saveHistory(@CurrentUser() user: User, @Body() dto: SaveHistoryDto) {
+  const { taskUuid, schemeIds } = dto;
+  return this.calcService.saveHistory(taskUuid, user.user_id, schemeIds);
+}
+
+
 }

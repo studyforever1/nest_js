@@ -27,3 +27,10 @@ export class ProgressResponseDto {
   @ApiProperty({ description: '计算结果数组', type: [Object] })
   results: any[];
 }
+
+
+
+export class SaveHistoryResponseDto {
+  @ApiProperty({ description: '保存的历史记录数量' })
+  count: number;
+}

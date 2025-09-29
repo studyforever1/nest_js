@@ -1,5 +1,5 @@
 git add .
-git commit -m "9.25"
+git commit -m "9.29"
 git push
 
 npm run start
@@ -20,10 +20,10 @@ nest g resource
 npm i @nestjs/graphql @nestjs/apollo @apollo/server graphql
 
 # 快速生成CRUD
-nest g res modules/user
+nest g res modules/history
 
 # 创建模块文件夹
-mkdir src/modules/calc
+mkdir src/modules/history
 
 # 移动文件夹
 mv src/calc/calc.module.ts src/modules/calc/
