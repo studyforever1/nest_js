@@ -1,0 +1,39 @@
+import { Controller, Post, Body, Get, Query, Delete, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { AuthGuard } from '@nestjs/passport';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { SharedDataService } from './shared-data.service';
+import { User } from '../user/entities/user.entity';
+import { SaveSharedDto } from './dto/save-shared.dto';
+import { DeleteSharedDto } from './dto/delete-shared.dto';
+import { ListSharedDto } from './dto/list-shared.dto';
+
+@ApiTags('共享方案管理')
+@ApiBearerAuth('JWT')
+@UseGuards(AuthGuard('jwt'), PermissionsGuard)
+@Controller('shared-data')
+export class SharedDataController {
+  constructor(private readonly sharedService: SharedDataService) {}
+
+  /** 保存共享方案 */
+  @Post('save')
+  @ApiOperation({ summary: '保存用户计算方案为共享方案' })
+  async save(@CurrentUser() user: User, @Body() body: SaveSharedDto) {
+    return this.sharedService.saveShared(body.taskUuid, user.user_id, body.schemeIds);
+  }
+
+  /** 查询共享方案 */
+  @Get('list')
+  @ApiOperation({ summary: '获取共享方案，可按模块类型筛选' })
+  async list(@Query() query: ListSharedDto) {
+    return this.sharedService.list(query.module_type);
+  }
+
+  /** 删除共享方案 */
+  @Delete('delete')
+  @ApiOperation({ summary: '删除共享方案（按ID）' })
+  async delete(@Body() body: DeleteSharedDto) {
+    return this.sharedService.delete(body.ids);
+  }
+}

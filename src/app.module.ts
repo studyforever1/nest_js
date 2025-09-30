@@ -11,6 +11,8 @@ import { SjconfigModule } from './modules/sj-config/sj-config.module';
 import { SjRawMaterialModule } from './modules/sj-raw-material/sj-raw-material.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { HistoryModule } from './modules/history/history.module';
+import { SjCandidateModule } from './modules/sj-candidate/sj-candidate.module';
+import { SharedDataModule } from './modules/shared-data/shared-data.module';
 
 @Module({
   imports: [
@@ -27,6 +29,8 @@ import { HistoryModule } from './modules/history/history.module';
     SjRawMaterialModule,
     ChatModule,
     HistoryModule,
+    SjCandidateModule,
+    SharedDataModule,
   ],
 })
 export class AppModule {}

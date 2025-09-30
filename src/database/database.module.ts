@@ -6,6 +6,8 @@ import { TaskLog } from '../modules/sj-calc/entities/task_log.entity';
 import { Role } from '../modules/role/entities/role.entity';
 import { Permission } from '../modules/permission/entities/permission.entity';
 import { SjRawMaterial } from '../modules/sj-raw-material/entities/sj-raw-material.entity';
+import { SjCandidate } from 'src/modules/sj-candidate/entities/sj-candidate.entity';
+import { SharedData } from 'src/modules/shared-data/entities/shared-data.entity';
 
 // 新增的实体
 import { BizModule } from './entities/biz-module.entity';
@@ -35,7 +37,9 @@ export const databaseConfig: TypeOrmModuleOptions = {
     ConfigGroup,
     ParameterHistory,
     ChatMessage,
-    History
+    History,
+    SjCandidate,
+    SharedData
   ],
   synchronize: true, // 开发环境可用，生产环境建议 false 并使用 migration
 };

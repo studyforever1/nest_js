@@ -11,6 +11,7 @@ import { SjRawMaterial } from '../sj-raw-material/entities/sj-raw-material.entit
 import { In } from 'typeorm';
 import { History } from '../history/entities/history.entity';
 
+
 @Injectable()
 export class CalcService {
   private readonly logger = new Logger(CalcService.name);
@@ -21,64 +22,10 @@ export class CalcService {
     @InjectRepository(Task) private readonly taskRepo: Repository<Task>,
     @InjectRepository(Result) private readonly resultRepo: Repository<Result>,
     @InjectRepository(User) private readonly userRepo: Repository<User>,
-    @InjectRepository(History) private readonly historyRepo: Repository<History>,
     @InjectRepository(SjRawMaterial) private readonly sjRawMaterialRepo: Repository<SjRawMaterial>,
+    
     private readonly sjconfigService: SjconfigService,
   ) { }
-
-  async saveHistory(
-  taskUuid: string,
-  userId: number,
-  schemeIds: string[],
-): Promise<ApiResponse<{ count: number }>> {
-  try {
-    const task = await this.findTask(taskUuid, ['results', 'user']);
-    if (!task) return ApiResponse.error('任务不存在');
-
-    const user = await this.userRepo.findOneBy({ user_id: userId });
-    if (!user) return ApiResponse.error('用户不存在');
-
-    const resultEntity = task.results?.[0];
-    if (!resultEntity?.output_data) return ApiResponse.error('任务结果为空');
-
-    const results = resultEntity.output_data;
-
-    const histories: History[] = [];
-
-    for (const item of results) {
-      const seq = String(item['序号']);
-      if (!schemeIds.includes(seq)) continue;
-
-      // 去重检查
-      const exists = await this.historyRepo.findOne({
-        where: {
-          task: { task_uuid: task.task_uuid },
-          scheme_id: seq,
-        },
-        relations: ['task'],
-      });
-      if (!exists) {
-        histories.push(
-          this.historyRepo.create({
-            task,
-            user,
-            scheme_id: seq,
-            result: item,
-            module_type: task.module_type,
-          }),
-        );
-      }
-    }
-
-    if (histories.length) {
-      await this.historyRepo.save(histories);
-    }
-
-    return ApiResponse.success({ count: histories.length }, '历史数据保存成功');
-  } catch (err: any) {
-    return this.handleError(err, '保存历史数据失败');
-  }
-}
 
 
   /** 获取任务详情 */

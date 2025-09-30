@@ -17,7 +17,7 @@ import { PaginationDto } from '../sj-raw-material/dto/pagination.dto';
 export class SjconfigController {
   constructor(private readonly sjconfigService: SjconfigService) {}
 
-  private readonly MODULE_NAME = '烧结计算模块'; // 固定模块名
+  private readonly MODULE_NAME = '烧结配料计算'; // 固定模块名
 
   /** 获取最新参数组 */
   @Get('latest')

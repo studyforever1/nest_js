@@ -1,17 +1,17 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { History } from './entities/history.entity';
 import { HistoryService } from './history.service';
 import { HistoryController } from './history.controller';
-import { User } from '../user/entities/user.entity'; // 导入 User 实体
+import { History } from './entities/history.entity';
+import { Task } from '../../database/entities/task.entity'; // Task 实体
+import { User } from '../user/entities/user.entity';
 
 @Module({
   imports: [
-    // 同时导入 History 和 User 实体，保证 Repository 可用
-    TypeOrmModule.forFeature([History, User]),
+    TypeOrmModule.forFeature([History, Task, User]), // ✅ 加上 Task
   ],
-  providers: [HistoryService],
   controllers: [HistoryController],
-  exports: [HistoryService], // 如果其他模块也需要使用 HistoryService
+  providers: [HistoryService],
+  exports: [HistoryService],
 })
 export class HistoryModule {}
