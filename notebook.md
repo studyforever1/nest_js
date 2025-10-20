@@ -20,7 +20,7 @@ nest g resource
 npm i @nestjs/graphql @nestjs/apollo @apollo/server graphql
 
 # 快速生成CRUD
-nest g res modules/shared-Data
+nest g res modules/gl-material-info
 
 # 创建模块文件夹
 mkdir src/modules/history
@@ -39,3 +39,17 @@ http://localhost:3000/api-docs
 nest g module modules/chat
 nest g service modules/chat
 nest g controller modules/chat
+
+# 打包
+npm run build
+npm install -g pkg
+pkg dist/main.js --targets node18-win-x64 --output sintering-api.exe
+
+--targets node18-win-x64 指定运行环境（可改为 linux-x64 或 macos-x64）
+--output 指定输出文件名
+dist/main.js 是 Nest 编译产物的入口
+
+# 生成许可证
+npm install ts-node -D
+npx ts-node src/common/generate-license.ts 2026-01-01
+

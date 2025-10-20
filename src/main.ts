@@ -3,6 +3,9 @@ import { AppModule } from './app.module';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { AllExceptionsFilter } from './common/filters/all-exception.filter';
+import { verifyLicense } from './common/license/license-check';
+
+verifyLicense(); // 启动前验证授权
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);

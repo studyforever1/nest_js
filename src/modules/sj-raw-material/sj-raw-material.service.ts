@@ -63,7 +63,6 @@ export class SjRawMaterialService {
     totalPages: Math.ceil(total / pageSize),
   };
 }
-
   async findOne(id: number) {
     const raw = await this.rawRepo.findOne({ where: { id } });
     if (!raw) throw new NotFoundException(`原料ID ${id} 不存在`);
