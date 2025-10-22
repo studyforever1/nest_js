@@ -137,59 +137,75 @@ export class CalcService {
   }
 
   /** 查询任务进度 */
-  /** 查询任务进度 */
-  async fetchAndSaveProgress(taskUuid: string): Promise<ApiResponse<any>> {
-    try {
-      const task = await this.findTask(taskUuid, ['results']);
-      if (!task) return ApiResponse.error('任务不存在');
+  /** 查询任务进度（带ID转名称） */
+async fetchAndSaveProgress(taskUuid: string): Promise<ApiResponse<any>> {
+  try {
+    const task = await this.findTask(taskUuid, ['results']);
+    if (!task) return ApiResponse.error('任务不存在');
 
-      const res = await this.apiGet('/sj/progress/', { taskUuid });
-      const { code, message, data } = res.data;
-      if (code !== 0 || !data) throw new Error(message || 'FastAPI 返回异常');
+    const res = await this.apiGet('/sj/progress/', { taskUuid });
+    const { code, message, data } = res.data;
+    if (code !== 0 || !data) throw new Error(message || 'FastAPI 返回异常');
 
-      // 1. 获取原料 ID → 名称映射
-      const ingredientIds = Object.keys(data.results?.[0] || {}).filter(k => /^\d+$/.test(k));
-      const raws = await this.sjRawMaterialRepo.find({
-        where: { id: In(ingredientIds.map(id => Number(id))) }
+    // --- 获取原料 ID → 名称映射 ---
+    // 收集所有 result 中的原料ID
+    const idSet = new Set<number>();
+    for (const result of data.results || []) {
+      const rawMix = result["原料配比"] || {};
+      Object.keys(rawMix).forEach(idStr => {
+        if (/^\d+$/.test(idStr)) idSet.add(Number(idStr));
       });
-      const idNameMap: Record<string, string> = {};
-      raws.forEach(raw => idNameMap[String(raw.id)] = raw.name);
+    }
 
-      // 2. 遍历 results，把 ID 替换成名称
-      const resultsMapped = (data.results || []).map(item => {
-        const newItem: Record<string, any> = {};
-        Object.keys(item).forEach(key => {
-          if (idNameMap[key]) {
-            newItem[idNameMap[key]] = item[key];  // ID → Name
-          } else {
-            newItem[key] = item[key];             // 其他字段原样保留
-          }
+    const raws = await this.sjRawMaterialRepo.find({
+      where: { id: In([...idSet]) }
+    });
+    const idNameMap: Record<string, string> = {};
+    raws.forEach(raw => idNameMap[String(raw.id)] = raw.name);
+
+    // --- 递归替换 原料配比 中的 ID ---
+    const resultsMapped = (data.results || []).map(item => {
+      const mapped = { ...item };
+
+      // 替换 "原料配比" 的键名
+      if (item["原料配比"]) {
+        const newMix: Record<string, any> = {};
+        Object.entries(item["原料配比"]).forEach(([id, val]) => {
+          const name = idNameMap[id] || id; // 如果找不到就保留ID
+          newMix[name] = val;
         });
-        return newItem;
-      });
-
-      // 更新任务状态
-      task.status = this.mapStatus(data.status);
-      task.progress = data.progress;
-      task.total = data.total;
-      await this.taskRepo.save(task);
-
-      if (task.status === TaskStatus.FINISHED && resultsMapped.length) {
-        await this.saveResults(task, resultsMapped);
-        this.pendingTasks.delete(taskUuid);
+        mapped["原料配比"] = newMix;
       }
 
-      return ApiResponse.success({
-        taskUuid: task.task_uuid,
-        status: task.status,
-        progress: task.progress,
-        total: task.total,
-        results: resultsMapped,
-      }, '获取任务进度成功');
-    } catch (err: any) {
-      return this.handleError(err, '获取任务进度失败');
+      return mapped;
+    });
+
+    // --- 更新任务状态 ---
+    task.status = this.mapStatus(data.status);
+    task.progress = data.progress;
+    task.total = data.total;
+    await this.taskRepo.save(task);
+
+    // --- 如果任务完成则保存结果 ---
+    if (task.status === TaskStatus.FINISHED && resultsMapped.length) {
+      await this.saveResults(task, resultsMapped);
+      this.pendingTasks.delete(taskUuid);
     }
+
+    // --- 返回前端 ---
+    return ApiResponse.success({
+      taskUuid: task.task_uuid,
+      status: task.status,
+      progress: task.progress,
+      total: task.total,
+      results: resultsMapped,
+    }, '获取任务进度成功 (原料ID已转换为名称)');
+
+  } catch (err: any) {
+    return this.handleError(err, '获取任务进度失败');
   }
+}
+
 
 
   /** ----- 私有方法 ----- */
