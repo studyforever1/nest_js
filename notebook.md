@@ -1,5 +1,5 @@
 git add .
-git commit -m "9.30"
+git commit -m "11.12"
 git push
 
 npm run start
@@ -52,4 +52,8 @@ dist/main.js 是 Nest 编译产物的入口
 # 生成许可证
 npm install ts-node -D
 npx ts-node src/common/generate-license.ts 2026-01-01
+
+
+# 运行node脚本
+npx ts-node -r tsconfig-paths/register src/init-permissions.ts
 

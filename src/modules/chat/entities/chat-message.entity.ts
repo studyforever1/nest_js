@@ -6,21 +6,33 @@ import {
   CreateDateColumn,
 } from 'typeorm';
 import { User } from '../../user/entities/user.entity';
+import { ChatRoom } from './chat-room.entity';
 
-@Entity('chat_messages')
+export enum MessageType {
+  TEXT = 'text',
+  IMAGE = 'image',
+}
+
+@Entity('chat_message')
 export class ChatMessage {
   @PrimaryGeneratedColumn()
   message_id: number;
 
-  @Column({ type: 'text', nullable: false }) // 确保content列存在且非空
-  content: string;
-
-  @CreateDateColumn({ type: 'timestamp' })
-  created_at: Date;
-
-  @ManyToOne(() => User, (user) => user.sentMessages, { eager: true })
+  @ManyToOne(() => User, { nullable: false })
   sender: User;
 
-  @ManyToOne(() => User, (user) => user.receivedMessages, { eager: true })
-  receiver: User;
+  @ManyToOne(() => ChatRoom, { nullable: false })
+  room: ChatRoom;
+
+  @Column()
+  content: string;
+
+  @Column({ type: 'enum', enum: MessageType, default: MessageType.TEXT })
+  message_type: MessageType;
+
+  @Column('simple-array')
+  read_by: number[] = [];
+
+  @CreateDateColumn()
+  created_at: Date;
 }

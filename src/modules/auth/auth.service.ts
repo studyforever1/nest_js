@@ -7,7 +7,7 @@ import { JwtService } from '@nestjs/jwt';
 import { UserService } from '../user/user.service';
 import { RegisterDto } from './dto/register.dto';
 import { ApiResponse } from '../../common/response/response.dto';
-import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcryptjs';
 import { RoleService } from '../role/role.service';
 
 @Injectable()

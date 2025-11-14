@@ -4,8 +4,8 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
-  OneToMany,
   DeleteDateColumn,
+  OneToMany,
   ManyToMany,
   JoinTable,
 } from 'typeorm';
@@ -22,7 +22,7 @@ export class User {
   @Column({ unique: true })
   username: string;
 
-  @Column({ nullable: true, select: false }) // 登录时手动 addSelect('user.password')
+  @Column({ nullable: true, select: false })
   password: string;
 
   @Column({ nullable: true })
@@ -56,9 +56,8 @@ export class User {
     inverseJoinColumn: { name: 'role_id', referencedColumnName: 'role_id' },
   })
   roles: Role[];
+
+  /** 用户发出的聊天消息 */
   @OneToMany(() => ChatMessage, (msg) => msg.sender)
   sentMessages: ChatMessage[];
-
-  @OneToMany(() => ChatMessage, (msg) => msg.receiver)
-  receivedMessages: ChatMessage[];
 }

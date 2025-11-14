@@ -19,6 +19,6 @@ import { RoleModule } from '../role/role.module';
   ],
   providers: [AuthService, JwtStrategy],
   controllers: [AuthController],
-  exports: [AuthService], // 给其他模块用
+  exports: [AuthService,JwtModule], // 给其他模块用
 })
 export class AuthModule {}

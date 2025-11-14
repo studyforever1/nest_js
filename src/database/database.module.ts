@@ -15,6 +15,7 @@ import { ConfigGroup } from './entities/config-group.entity';
 import { ParameterHistory } from './entities/parameter-history.entity';
 import { ChatMessage } from '../modules/chat/entities/chat-message.entity';
 import { History } from '../modules/history/entities/history.entity';
+import { ChatRoom } from 'src/modules/chat/entities/chat-room.entity';
 
 // 数据库配置
 
@@ -24,7 +25,7 @@ export const databaseConfig: TypeOrmModuleOptions = {
   port: parseInt(process.env.DB_PORT || '3306', 10),
   username: process.env.DB_USER || 'root',
   password: process.env.DB_PASS || '123456',
-  database: process.env.DB_NAME || 'iron_cost_system',
+  database: process.env.DB_NAME || 'iron_cost_system1101',
   entities: [
     User,
     Task,
@@ -39,7 +40,8 @@ export const databaseConfig: TypeOrmModuleOptions = {
     ChatMessage,
     History,
     SjCandidate,
-    SharedData
+    SharedData,
+    ChatRoom
   ],
   synchronize: true, // 开发环境可用，生产环境建议 false 并使用 migration
 };

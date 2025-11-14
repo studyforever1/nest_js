@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from './entities/user.entity';
 import { RoleService } from '../role/role.service';
-import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcryptjs';
 import { Role } from '../role/entities/role.entity';
 
 @Injectable()
@@ -99,4 +99,24 @@ export class UserService implements OnApplicationBootstrap {
   async remove(userId: number): Promise<void> {
     await this.userRepo.softDelete(userId);
   }
+
+ /** 🔍 模糊搜索用户（排除自己） */
+/** 🔍 模糊搜索用户（排除自己） */
+async search(keyword: string, excludeId?: number) {
+  const kw = `%${keyword.toLowerCase()}%`;
+
+  const query = this.userRepo
+    .createQueryBuilder('user')
+    .where('LOWER(user.username) LIKE :kw', { kw })
+    .select(['user.user_id', 'user.username', 'user.email'])
+    .limit(20);
+
+  if (excludeId !== undefined) {
+    query.andWhere('user.user_id != :excludeId', { excludeId });
+  }
+
+  return query.getMany();
+}
+
+
 }
