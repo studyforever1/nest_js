@@ -16,6 +16,7 @@ import { ParameterHistory } from './entities/parameter-history.entity';
 import { ChatMessage } from '../modules/chat/entities/chat-message.entity';
 import { History } from '../modules/history/entities/history.entity';
 import { ChatRoom } from 'src/modules/chat/entities/chat-room.entity';
+import { Menu } from 'src/modules/menu/entity/menu.entity';
 
 // 数据库配置
 
@@ -26,6 +27,7 @@ export const databaseConfig: TypeOrmModuleOptions = {
   username: process.env.DB_USER || 'root',
   password: process.env.DB_PASS || '123456',
   database: process.env.DB_NAME || 'iron_cost_system1101',
+  driver:require('mysql2'),
   entities: [
     User,
     Task,
@@ -41,7 +43,8 @@ export const databaseConfig: TypeOrmModuleOptions = {
     History,
     SjCandidate,
     SharedData,
-    ChatRoom
+    ChatRoom,
+    Menu
   ],
   synchronize: true, // 开发环境可用，生产环境建议 false 并使用 migration
 };

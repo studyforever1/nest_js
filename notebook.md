@@ -23,7 +23,7 @@ npm i @nestjs/graphql @nestjs/apollo @apollo/server graphql
 nest g res modules/gl-material-info
 
 # 创建模块文件夹
-mkdir src/modules/history
+mkdir src/modules/SysMenu
 
 # 移动文件夹
 mv src/calc/calc.module.ts src/modules/calc/
@@ -36,9 +36,9 @@ mv src/calc/dto src/modules/calc/
 http://localhost:3000/api-docs 
 
 
-nest g module modules/chat
-nest g service modules/chat
-nest g controller modules/chat
+nest g module modules/menu
+nest g service modules/menu
+nest g controller modules/menu
 
 # 打包
 npm run build

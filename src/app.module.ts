@@ -14,6 +14,7 @@ import { HistoryModule } from './modules/history/history.module';
 import { SjCandidateModule } from './modules/sj-candidate/sj-candidate.module';
 import { SharedDataModule } from './modules/shared-data/shared-data.module';
 import { IronOreDataModule } from './modules/iron-ore-data/iron-ore-data.module';
+import { MenuModule } from './modules/menu/menu.module';
 
 
 @Module({
@@ -22,6 +23,7 @@ import { IronOreDataModule } from './modules/iron-ore-data/iron-ore-data.module'
       isGlobal: true, // 全局可用 process.env
     }),
     TypeOrmModule.forRoot(databaseConfig),
+    MenuModule,
     CalcModule,
     AuthModule,
     UserModule,
@@ -32,8 +34,7 @@ import { IronOreDataModule } from './modules/iron-ore-data/iron-ore-data.module'
     ChatModule,
     HistoryModule,
     SjCandidateModule,
-    SharedDataModule,
-    IronOreDataModule
+    SharedDataModule
   ],
 })
 export class AppModule {}
