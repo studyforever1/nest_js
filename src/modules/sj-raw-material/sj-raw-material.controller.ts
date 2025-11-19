@@ -13,7 +13,14 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes, ApiBody,ApiQuery } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiBearerAuth,
+  ApiConsumes,
+  ApiBody,
+  ApiQuery,
+} from '@nestjs/swagger';
 import { SjRawMaterialService } from './sj-raw-material.service';
 import { CreateSjRawMaterialDto } from './dto/create-sj-raw-material.dto';
 import { UpdateSjRawMaterialDto } from './dto/update-sj-raw-material.dto';
@@ -39,29 +46,27 @@ export class SjRawMaterialController {
     return this.rawService.create(dto, user.username);
   }
 
- @Get()
-@ApiOperation({ summary: '查询所有原料（分页）' })
-findAll(@Query() pagination: PaginationDto) {
-  return this.rawService.findAll(pagination.page, pagination.pageSize);
-}
+  /**
+   * 查询（统一接口）
+   * 保留原来 /sj-raw-material (分页)
+   * 原来的 /search 和 /search-by-type 仍可使用（兼容前端），但建议统一请求到这里。
+   */
+  @Get()
+  @ApiOperation({ summary: '查询原料（支持分页、名称模糊、类型筛选）' })
+  @ApiQuery({ name: 'page', required: false })
+  @ApiQuery({ name: 'pageSize', required: false })
+  @ApiQuery({ name: 'name', required: false })
+  @ApiQuery({ name: 'type', required: false })
+  findAll(@Query() pagination: PaginationDto, @Query('name') name?: string, @Query('type') type?: string) {
+    // PaginationDto 仍然生效，向下兼容前端对 page/pageSize 的传参
+    return this.rawService.query({
+      page: pagination.page ?? 1,
+      pageSize: pagination.pageSize ?? 10,
+      name,
+      type,
+    });
+  }
 
-@Get('search')
-@ApiOperation({ summary: '按名字模糊查询原料（分页）' })
-findByName(
-  @Query('name') name: string,
-  @Query() pagination: PaginationDto,
-) {
-  return this.rawService.findByName(name, pagination.page, pagination.pageSize);
-}
-
-@Get('search-by-type')
-@ApiOperation({ summary: '按原料类型查询（分页）' })
-findByType(
-  @Query('type') type: 'T' | 'X' | 'R' | 'F',
-  @Query() pagination: PaginationDto,
-) {
-  return this.rawService.findByType(type, pagination.page, pagination.pageSize);
-}
   /** 更新原料 */
   @Put(':id')
   @ApiOperation({ summary: '更新原料' })
@@ -85,64 +90,52 @@ findByType(
   @ApiOperation({ summary: '导出原料数据为 Excel' })
   async export(@Res() res: Response) {
     const buffer = await this.rawService.exportExcel();
-    res.setHeader(
-      'Content-Disposition',
-      'attachment; filename=sj_raw_material.xlsx',
-    );
-    res.setHeader(
-      'Content-Type',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    );
+    res.setHeader('Content-Disposition', 'attachment; filename=sj_raw_material.xlsx');
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.end(buffer);
   }
 
   /** 导入 Excel */
-@Post('import')
-@ApiOperation({ summary: '导入原料 Excel 文件' })
-@ApiConsumes('multipart/form-data')
-@UseInterceptors(
-  FileInterceptor('file', {
-    storage: multer.memoryStorage(), // 内存存储
-  }),
-)
-@ApiBody({
-  description: '上传 Excel 文件',
-  required: true,
-  schema: {
-    type: 'object',
-    properties: {
-      file: { type: 'string', format: 'binary' }, // 告诉 Swagger 这是文件
+  @Post('import')
+  @ApiOperation({ summary: '导入原料 Excel 文件' })
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: multer.memoryStorage(),
+    }),
+  )
+  @ApiBody({
+    description: '上传 Excel 文件',
+    required: true,
+    schema: {
+      type: 'object',
+      properties: {
+        file: { type: 'string', format: 'binary' },
+      },
     },
-  },
-})
-async importExcel(
-  @UploadedFile() file: Express.Multer.File,
-  @CurrentUser() user: { username: string }, // ✅ 获取当前用户
-) {
-  if (!file || !file.buffer) {
-    return { status: 'error', message: '请上传文件或文件为空' };
+  })
+  async importExcel(@UploadedFile() file: Express.Multer.File, @CurrentUser() user: { username: string }) {
+    if (!file || !file.buffer) {
+      return { status: 'error', message: '请上传文件或文件为空' };
+    }
+
+    try {
+      return await this.rawService.importExcel(file, user.username);
+    } catch (error) {
+      console.error(error);
+      return { status: 'error', message: '导入失败，文件格式可能有误' };
+    }
   }
 
-  try {
-    // ✅ 传入用户名给 Service
-    return await this.rawService.importExcel(file, user.username);
-  } catch (error) {
-    console.error(error);
-    return { status: 'error', message: '导入失败，文件格式可能有误' };
+  /** 删除所有原料 */
+  @Delete('del_all')
+  @ApiOperation({ summary: '删除原料库所有原料' })
+  async removeAll(@CurrentUser() user: { username: string }) {
+    try {
+      return await this.rawService.removeAll(user.username);
+    } catch (error) {
+      console.error(error);
+      return { status: 'error', message: '删除失败' };
+    }
   }
-}
-
-
-/** 删除所有原料 */
-@Delete('del_all')
-@ApiOperation({ summary: '删除原料库所有原料' })
-async removeAll(@CurrentUser() user: { username: string }) {
-  try {
-    return await this.rawService.removeAll(user.username);
-  } catch (error) {
-    console.error(error);
-    return { status: 'error', message: '删除失败' };
-  }
-}
-
 }

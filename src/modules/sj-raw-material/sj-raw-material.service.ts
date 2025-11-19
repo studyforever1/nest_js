@@ -7,7 +7,6 @@ import { UpdateSjRawMaterialDto } from './dto/update-sj-raw-material.dto';
 import * as ExcelJS from 'exceljs';
 import { Express } from 'express';
 
-
 @Injectable()
 export class SjRawMaterialService {
   constructor(
@@ -24,87 +23,82 @@ export class SjRawMaterialService {
   }
 
   async update(id: number, dto: UpdateSjRawMaterialDto, username: string) {
-    const raw = await this.findOne(id);
+    const raw = await this.rawRepo.findOne({ where: { id } });
+    if (!raw) throw new NotFoundException(`原料ID ${id} 不存在`);
     Object.assign(raw, dto, { modifier: username });
     return await this.rawRepo.save(raw);
   }
 
-  /** 格式化原料数据 */
+  /** 格式化原料数据（输出到前端） */
   private formatRaw(raw: SjRawMaterial) {
     const { id, category, name, origin, composition } = raw;
     if (!composition) return { id, category, name, origin };
 
-    const { TFe, 价格, H2O, 烧损, ...otherComposition } = composition;
+    // 明确提取常用字段，剩余的放到 compositionFields
+    const {
+      TFe = null,
+      H2O = null,
+      烧损 = null,
+      价格 = null,
+      ...otherComposition
+    } = composition as Record<string, any>;
+
     return {
       id,
       category,
       name,
-      TFe: TFe ?? null,
+      TFe,
       ...otherComposition,
-      H2O: H2O ?? null,
-      烧损: 烧损 ?? null,
-      价格: 价格 ?? null,
+      H2O,
+      烧损,
+      价格,
       origin,
     };
   }
 
-  async findAll(page: number = 1, pageSize: number = 10) {
-  const [records, total] = await this.rawRepo.findAndCount({
-    skip: (page - 1) * pageSize,
-    take: pageSize,
-    order: { id: 'ASC' },
-  });
+  /**
+   * 合并查询接口（返回分页 + 总数 + data）
+   * 支持 name 模糊、type 前缀匹配（严格以 type 开头）
+   */
+  async query(options: {
+    page?: number;
+    pageSize?: number;
+    name?: string;
+    type?: string;
+  }) {
+    const { page = 1, pageSize = 10, name, type } = options;
 
-  return {
-    data: records.map(this.formatRaw),
-    total,
-    page,
-    pageSize,
-    totalPages: Math.ceil(total / pageSize),
-  };
-}
+    const qb = this.rawRepo.createQueryBuilder('raw').orderBy('raw.id', 'ASC');
+
+    if (name) {
+      qb.andWhere('raw.name LIKE :name', { name: `%${name}%` });
+    }
+
+    if (type) {
+      // 以 type 为前缀（保持原有意图），防止误匹配更复杂字符串
+      qb.andWhere('raw.category LIKE :cat', { cat: `${type}%` });
+    }
+
+    const [records, total] = await qb.skip((page - 1) * pageSize).take(pageSize).getManyAndCount();
+
+    return {
+      data: records.map(this.formatRaw),
+      total,
+      page,
+      pageSize,
+      totalPages: Math.ceil(total / pageSize),
+    };
+  }
+
   async findOne(id: number) {
     const raw = await this.rawRepo.findOne({ where: { id } });
     if (!raw) throw new NotFoundException(`原料ID ${id} 不存在`);
     return this.formatRaw(raw);
   }
 
-  async findByName(name?: string, page: number = 1, pageSize: number = 10) {
-  const where = name ? { name: Like(`%${name}%`) } : {};
-  const [records, total] = await this.rawRepo.findAndCount({
-    where,
-    skip: (page - 1) * pageSize,
-    take: pageSize,
-    order: { id: 'ASC' },
-  });
-
-  return {
-    data: records.map(this.formatRaw),
-    total,
-    page,
-    pageSize,
-    totalPages: Math.ceil(total / pageSize),
-  };
-}
-
-  async findByType(type?: 'T' | 'X' | 'R' | 'F', page: number = 1, pageSize: number = 10) {
-  const where = type ? { category: Like(`${type}%`) } : {};
-  const [records, total] = await this.rawRepo.findAndCount({
-    where,
-    skip: (page - 1) * pageSize,
-    take: pageSize,
-    order: { id: 'ASC' },
-  });
-
-  return {
-    data: records.map(this.formatRaw),
-    total,
-    page,
-    pageSize,
-    totalPages: Math.ceil(total / pageSize),
-  };
-}
-
+  /**
+   * 批量删除
+   */
   async remove(ids: number[]) {
     if (!ids?.length) throw new Error('未提供要删除的ID');
     const raws = await this.rawRepo.findBy({ id: In(ids) });
@@ -112,145 +106,178 @@ export class SjRawMaterialService {
     return await this.rawRepo.remove(raws);
   }
 
+  /**
+   * 删除全部（并记录 modifier）
+   */
   async removeAll(username: string) {
     const raws = await this.rawRepo.find();
     if (!raws.length) return { status: 'error', message: '原料库为空，无需删除' };
+    // 更新 modifier 字段以记录操作者（不过这里使用 remove，因此只是先着色）
     raws.forEach(raw => (raw.modifier = username));
     await this.rawRepo.remove(raws);
     return { status: 'success', message: `成功删除 ${raws.length} 条原料数据` };
   }
 
+  /**
+   * 导出 Excel（智能列头：固定 + 动态成分）
+   */
   async exportExcel(): Promise<Buffer> {
-  const raws = await this.rawRepo.find();
-  const workbook = new ExcelJS.Workbook();
-  const sheet = workbook.addWorksheet('原料数据');
+    const raws = await this.rawRepo.find();
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('原料数据');
 
-  // 固定表头（去掉 ID）
-  const fixedHeaders = ['分类编号', '原料', 'TFe'];
+    const fixedHeaders = ['分类编号', '原料', 'TFe'];
 
-  // 动态收集 composition 字段（排除 TFe、H2O、烧损、价格）
-  const dynamicKeys = new Set<string>();
-  raws.forEach(raw => {
-    if (raw.composition) {
-      Object.keys(raw.composition).forEach(key => {
-        if (!['TFe', 'H2O', '烧损', '价格'].includes(key)) {
-          dynamicKeys.add(key);
+    // 收集动态成分键（排除常用字段）
+    const dynamicKeys = new Set<string>();
+    raws.forEach(raw => {
+      if (raw.composition) {
+        Object.keys(raw.composition).forEach(key => {
+          if (!['TFe', 'H2O', '烧损', '价格'].includes(key) && key.trim()) {
+            dynamicKeys.add(key);
+          }
+        });
+      }
+    });
+
+    const headers = [...fixedHeaders, ...Array.from(dynamicKeys).sort(), 'H2O', '烧损', '价格', '产地'];
+    sheet.addRow(headers);
+
+    raws.forEach(raw => {
+      const row: any[] = [];
+      row.push(raw.category ?? '');
+      row.push(raw.name ?? '');
+      row.push(raw.composition?.['TFe'] ?? null);
+
+      Array.from(dynamicKeys).forEach(key => {
+        row.push(raw.composition?.[key] ?? null);
+      });
+
+      row.push(raw.composition?.['H2O'] ?? null);
+      row.push(raw.composition?.['烧损'] ?? null);
+      row.push(raw.composition?.['价格'] ?? null);
+      row.push(raw.origin ?? '');
+
+      sheet.addRow(row);
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    return Buffer.from(buffer);
+  }
+
+  /**
+   * 导入 Excel（健壮解析、自动跳过空列、按行创建）
+   * 返回导入结果（成功条数等）
+   */
+  async importExcel(file: Express.Multer.File, username: string) {
+    try {
+      if (!file?.buffer) return { status: 'error', message: '文件为空' };
+
+      const workbook = new ExcelJS.Workbook();
+      const buffer = Buffer.isBuffer(file.buffer) ? file.buffer : Buffer.from(file.buffer);
+      await workbook.xlsx.load(buffer as any);
+
+      const sheet = workbook.worksheets[0];
+      if (!sheet) throw new Error('Excel 中没有工作表');
+
+      // 读取表头（第一行）
+      const headers: string[] = [];
+      sheet.getRow(1).eachCell({ includeEmpty: true }, (cell) => {
+        const v = cell.value;
+        const s = v === null || v === undefined ? '' : String(v).trim();
+        headers.push(s);
+      });
+
+      // 关键列索引查找（返回的是 Excel 列号，从 1 开始）
+      const getIndex = (name: string) => {
+        const idx = headers.findIndex(h => h === name);
+        return idx >= 0 ? idx + 1 : -1;
+      };
+
+      const categoryIndex = getIndex('分类编号');
+      const nameIndex = getIndex('原料');
+      const originIndex = getIndex('产地');
+      const TFeIndex = getIndex('TFe');
+      const H2OIndex = getIndex('H2O');
+      const 烧损Index = getIndex('烧损');
+      const 价格Index = getIndex('价格');
+
+      // 动态字段：排除上面固定字段，且 header 非空
+      const dynamicFieldIndices: { idx: number; key: string }[] = [];
+      headers.forEach((h, i) => {
+        const col = i + 1;
+        if (
+          col === categoryIndex ||
+          col === nameIndex ||
+          col === originIndex ||
+          col === TFeIndex ||
+          col === H2OIndex ||
+          col === 烧损Index ||
+          col === 价格Index
+        ) {
+          return;
+        }
+        if (h && h.trim()) {
+          dynamicFieldIndices.push({ idx: col, key: h });
         }
       });
-    }
-  });
 
-  // 表头顺序：固定列 + 动态成分列 + H2O + 烧损 + 价格 + 产地
-  const headers = [
-    ...fixedHeaders,
-    ...Array.from(dynamicKeys).sort(),
-    'H2O',
-    '烧损',
-    '价格',
-    '产地',
-  ];
-  sheet.addRow(headers);
+      const rawsToSave: SjRawMaterial[] = [];
 
-  // 填充数据
-  raws.forEach(raw => {
-    const row: any[] = [
-      raw.category,
-      raw.name,
-      raw.composition?.['TFe'] ?? null,
-    ];
+      sheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+        if (rowNumber === 1) return; // 跳过表头
 
-    // 填充动态成分列
-    Array.from(dynamicKeys).forEach(key => {
-      row.push(raw.composition?.[key] ?? null);
-    });
+        // 从行中读取基础字段
+        const category = categoryIndex > 0 ? String(row.getCell(categoryIndex).value ?? '').trim() : '';
+        const name = nameIndex > 0 ? String(row.getCell(nameIndex).value ?? '').trim() : '';
+        const origin = originIndex > 0 ? String(row.getCell(originIndex).value ?? '').trim() : '其他粉矿';
 
-    // 填充固定列
-    row.push(raw.composition?.['H2O'] ?? null);
-    row.push(raw.composition?.['烧损'] ?? null);
-    row.push(raw.composition?.['价格'] ?? null);
-    row.push(raw.origin ?? '');
+        // 如果关键字段缺失（例如 name），则跳过该行
+        if (!name) return;
 
-    sheet.addRow(row);
-  });
+        // 构建 composition（先插入动态字段，再覆盖固定字段）
+        const composition: Record<string, any> = {};
+        dynamicFieldIndices.forEach(({ idx, key }) => {
+          const val = row.getCell(idx).value;
+          const num = val === null || val === undefined || val === '' ? null : parseFloat(String(val).trim());
+          if (num !== null && !Number.isNaN(num)) {
+            composition[key] = num;
+          } else {
+            // 如果非数值，仍然写入原值（有些成分可能为字符串）
+            if (val !== null && val !== undefined && String(val).trim() !== '') {
+              composition[key] = String(val).trim();
+            }
+          }
+        });
 
-  const buffer = await workbook.xlsx.writeBuffer();
-  return Buffer.from(buffer);
-}
+        // 固定字段：TFe/H2O/烧损/价格（优先覆盖）
+        if (TFeIndex > 0) {
+          const v = row.getCell(TFeIndex).value;
+          composition['TFe'] = v === null || v === undefined || v === '' ? 0 : parseFloat(String(v)) || 0;
+        } else {
+          composition['TFe'] = composition['TFe'] ?? 0;
+        }
+        composition['H2O'] = H2OIndex > 0 ? parseFloat(String(row.getCell(H2OIndex).value ?? 0)) || 0 : composition['H2O'] ?? 0;
+        composition['烧损'] = 烧损Index > 0 ? parseFloat(String(row.getCell(烧损Index).value ?? 0)) || 0 : composition['烧损'] ?? 0;
+        composition['价格'] = 价格Index > 0 ? parseFloat(String(row.getCell(价格Index).value ?? 0)) || 0 : composition['价格'] ?? 0;
 
-
-/** 导入 Excel */
-async importExcel(file: Express.Multer.File, username: string) {
-  try {
-    if (!file?.buffer) return { status: 'error', message: '文件为空' };
-
-    const workbook = new ExcelJS.Workbook();
-    const buffer = Buffer.isBuffer(file.buffer) ? file.buffer : Buffer.from(file.buffer);
-    await workbook.xlsx.load(buffer as any);
-
-    const sheet = workbook.worksheets[0];
-    if (!sheet) throw new Error('Excel 中没有工作表');
-
-    // 读取表头
-    const headers: string[] = [];
-    sheet.getRow(1).eachCell({ includeEmpty: true }, (cell) => {
-      headers.push(cell.value?.toString()?.trim() || '');
-    });
-
-    // 找到关键列索引
-    const getIndex = (name: string) => {
-      const idx = headers.indexOf(name);
-      return idx >= 0 ? idx + 1 : -1; // ExcelJS 列从 1 开始
-    };
-
-    const categoryIndex = getIndex('分类编号');
-    const nameIndex = getIndex('原料');
-    const originIndex = getIndex('产地');
-    const TFeIndex = getIndex('TFe');
-    const H2OIndex = getIndex('H2O');
-    const 烧损Index = getIndex('烧损');
-    const 价格Index = getIndex('价格');
-
-    const rawsToSave: SjRawMaterial[] = [];
-
-    sheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
-      if (rowNumber === 1) return; // 跳过表头
-
-
-      // 构建 composition 对象
-      const composition: Record<string, number> = {};
-      headers.forEach((key, i) => {
-        const col = i + 1; // ExcelJS 列从 1 开始
-        if ([categoryIndex, nameIndex, originIndex, TFeIndex, H2OIndex, 烧损Index, 价格Index].includes(col)) return;
-
-        const value = row.getCell(col).value;
-        composition[key] = parseFloat(value as any) || 0;
+        const rawEntity = this.rawRepo.create({
+          category,
+          name,
+          origin,
+          composition,
+          modifier: username,
+        });
+        rawsToSave.push(rawEntity);
       });
 
-      rawsToSave.push(
-        this.rawRepo.create({
-          category: categoryIndex > 0 ? row.getCell(categoryIndex).value?.toString() || '' : '',
-          name: nameIndex > 0 ? row.getCell(nameIndex).value?.toString() || '' : '',
-          origin: originIndex > 0 ? row.getCell(originIndex).value?.toString() || '其他粉矿' : '其他粉矿',
-          composition: {
-            TFe: TFeIndex > 0 ? parseFloat(row.getCell(TFeIndex).value as any) || 0 : 0,
-            ...composition,
-            H2O: H2OIndex > 0 ? parseFloat(row.getCell(H2OIndex).value as any) || 0 : 0,
-            烧损: 烧损Index > 0 ? parseFloat(row.getCell(烧损Index).value as any) || 0 : 0,
-            价格: 价格Index > 0 ? parseFloat(row.getCell(价格Index).value as any) || 0 : 0,
-          },
-          modifier: username,
-        }),
-      );
-    });
+      if (rawsToSave.length === 0) return { status: 'error', message: '没有有效数据可导入' };
 
-    if (rawsToSave.length === 0) return { status: 'error', message: '没有有效数据可导入' };
-
-    await this.rawRepo.save(rawsToSave);
-    return { status: 'success', message: `成功导入 ${rawsToSave.length} 条数据` };
-  } catch (error) {
-    console.error(error);
-    return { status: 'error', message: '导入失败，文件格式可能有误' };
+      await this.rawRepo.save(rawsToSave);
+      return { status: 'success', message: `成功导入 ${rawsToSave.length} 条数据` };
+    } catch (error) {
+      console.error('importExcel error:', error);
+      return { status: 'error', message: '导入失败，文件格式可能有误' };
+    }
   }
-}
-
 }

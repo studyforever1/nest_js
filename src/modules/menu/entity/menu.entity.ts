@@ -37,4 +37,7 @@ export class Menu {
 
   @Column({ nullable: true })
   perm: string;
+
+  /** 运行时使用，不落库 */
+  children?: Menu[];
 }

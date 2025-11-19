@@ -19,6 +19,12 @@ import { UpdateMenuDto } from './dto/update-menu.dto';
 export class MenuController {
   constructor(private readonly menuService: MenuService) {}
 
+  @Get('routes')
+@ApiOperation({ summary: '获取路由（前端侧边栏菜单）' })
+getRoutes() {
+  return this.menuService.getRoutes();
+}
+
   @Post()
   @ApiOperation({ summary: '新增菜单' })
   create(@Body() dto: CreateMenuDto) {
@@ -30,12 +36,12 @@ export class MenuController {
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'pageSize', required: false })
   @ApiQuery({ name: 'name', required: false })
-  @ApiQuery({ name: 'tree', required: false, description: '是否返回树结构(1/0)' })
+  @ApiQuery({ name: 'tree', required: false, description: '是否返回树结构(true/false)' })
   findAll(
     @Query('page') page?: number,
     @Query('pageSize') pageSize?: number,
     @Query('name') name?: string,
-    @Query('tree') tree: '1' | '0' = '0',
+    @Query('tree') tree: 'true' | '0' = '0',
   ) {
     return this.menuService.findAll({ page, pageSize, name, tree });
   }

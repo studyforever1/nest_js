@@ -16,37 +16,77 @@ export class MenuService {
     const menu = this.menuRepo.create(dto);
     return this.menuRepo.save(menu);
   }
+/** 返回前端路由结构 */
+async getRoutes() {
+  // 只返回：目录(type=2) + 菜单(type=1)
+  const menus = await this.menuRepo.find({
+    where: { type: In([1, 2]) },
+    order: { sort: 'ASC' },
+  });
 
-  async findAll(options: { page?: number; pageSize?: number; name?: string; tree?: '1' | '0' }) {
-    const { page = 1, pageSize = 20, name, tree } = options;
-    const qb = this.menuRepo.createQueryBuilder('menu').orderBy('menu.sort', 'ASC');
+  const tree = this.buildTree(menus, 0);
+  return tree.map(menu => this.formatRoute(menu));
 
-    if (name) {
-      qb.where('menu.name LIKE :name', { name: `%${name}%` });
-    }
+}
 
-    const list = await qb.getMany();
+  /** 格式化为前端路由格式 */
+  private formatRoute(menu: Menu) {
+  return {
+    path: menu.routePath?.startsWith('/') ? menu.routePath : `/${menu.routePath}`,
+    component: menu.component || 'Layout',
+    redirect: menu.redirect || undefined,
+    name: menu.routeName || menu.routePath || '/',
+    meta: {
+      title: menu.name,
+      icon: menu.icon || '',
+      hidden: menu.visible === 0,
+      keepAlive: true,
+      alwaysShow: false,
+      params: null,
+    },
+    children: (menu.children ?? []).map(c => this.formatRoute(c)),
+  };
+}
 
-    if (tree === '1') {
-      return this.buildTree(list, 0);
-    }
 
-    // 如果不是树结构，支持分页
-    const start = (page - 1) * pageSize;
-    return {
-      total: list.length,
-      data: list.slice(start, start + pageSize),
-    };
+  async findAll(options: { page?: number; pageSize?: number; name?: string; tree?: any }) {
+  const { page = 1, pageSize = 20, name, tree } = options;
+
+  const qb = this.menuRepo
+    .createQueryBuilder('menu')
+    .orderBy('menu.sort', 'ASC');
+
+  if (name) {
+    qb.where('menu.name LIKE :name', { name: `%${name}%` });
   }
+
+  const list = await qb.getMany();
+
+  // --- 修复前端 tree=1 / tree=true / tree=yes 均返回树结构 ---
+  const isTree = ['1', 1, true, 'true', 'yes', 'on'].includes(tree);
+
+  if (isTree) {
+    return this.buildTree(list, 0);
+  }
+
+  //分页返回
+  const start = (page - 1) * pageSize;
+  return {
+    total: list.length,
+    data: list.slice(start, start + pageSize),
+  };
+}
+
 
   private buildTree(list: Menu[], parentId: number) {
-    return list
-      .filter(item => item.parentId === parentId)
-      .map(item => ({
-        ...item,
-        children: this.buildTree(list, item.id),
-      }));
-  }
+  return list
+    .filter(item => Number(item.parentId) === Number(parentId))
+    .map(item => ({
+      ...item,
+      children: this.buildTree(list, Number(item.id)),
+    }));
+}
+
 
   async findOne(id: number) {
     const menu = await this.menuRepo.findOne({ where: { id } });

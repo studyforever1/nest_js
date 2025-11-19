@@ -57,3 +57,5 @@ npx ts-node src/common/generate-license.ts 2026-01-01
 # 运行node脚本
 npx ts-node -r tsconfig-paths/register src/init-permissions.ts
 
+npm run build
+npm run build:exe  
