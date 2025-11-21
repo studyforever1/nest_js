@@ -1,27 +1,32 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsOptional, IsIn } from 'class-validator';
+// register.dto.ts
+import { IsString, IsEmail, IsOptional, IsArray } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class RegisterDto {
-  @ApiProperty({ example: 'test_user' })
+  @ApiProperty({ example: 'admin' })
   @IsString()
   username: string;
 
-  @ApiProperty({ example: '123456' })
+  @ApiProperty({ example: 'admin123' })
   @IsString()
   password: string;
 
-  @ApiProperty({ example: 'test@example.com', required: false })
-  @IsString()
+  @ApiPropertyOptional({ example: 'admin@example.com' })
+  @IsEmail()
   @IsOptional()
   email?: string;
 
-  @ApiProperty({
-    example: ['user'],
-    required: false,
-    description: '角色数组，例如 [user] 或 [admin]',
-  })
-  @IsString({ each: true })
+  @ApiPropertyOptional({ example: '管理员' })
+  @IsString()
   @IsOptional()
-  @IsIn(['user', 'admin', 'sj_user', 'lt_user'], { each: true })
-  roles?: ('user' | 'admin' | 'sj_user' | 'lt_user')[];
+  fullName?: string;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  is_active?: boolean;
+
+  @ApiPropertyOptional({ example: ['admin'] })
+  @IsArray()
+  @IsOptional()
+  roles?: string[];
 }

@@ -22,14 +22,24 @@ export class User {
   @Column({ unique: true })
   username: string;
 
+  // 密码默认不查询，查询时需要 select: true
   @Column({ nullable: true, select: false })
   password: string;
 
   @Column({ nullable: true })
   email: string;
 
+  /** 管理员姓名 */
+  @Column({ nullable: true })
+  fullName: string;
+
+  /** 用户状态 */
   @Column({ default: true })
   is_active: boolean;
+
+  /** 软删除标记 */
+  @Column({ default: false })
+  isDeleted: boolean;
 
   @CreateDateColumn({ type: 'timestamp' })
   created_at: Date;
@@ -40,16 +50,16 @@ export class User {
   @DeleteDateColumn({ type: 'timestamp', nullable: true })
   deleted_at: Date;
 
-  /** 用户发起的任务 */
+  /** 任务列表 */
   @OneToMany(() => Task, (task) => task.user)
   tasks: Task[];
 
-  /** 用户保存的参数分组 */
+  /** 配置组列表 */
   @OneToMany(() => ConfigGroup, (group) => group.user)
   configGroups: ConfigGroup[];
 
-  /** 用户 <-> 角色（多对多） */
-  @ManyToMany(() => Role, (role) => role.users)
+  /** 用户角色 */
+  @ManyToMany(() => Role, (role) => role.users, { eager: true })
   @JoinTable({
     name: 'user_roles',
     joinColumn: { name: 'user_id', referencedColumnName: 'user_id' },
@@ -57,7 +67,7 @@ export class User {
   })
   roles: Role[];
 
-  /** 用户发出的聊天消息 */
+  /** 发送的聊天消息 */
   @OneToMany(() => ChatMessage, (msg) => msg.sender)
   sentMessages: ChatMessage[];
 }

@@ -1,11 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { SjCandidate } from './entities/sj-candidate.entity';
 import { Task } from '../../database/entities/task.entity';
 import { User } from '../user/entities/user.entity';
 import { ApiResponse } from '../../common/response/response.dto';
-
 
 @Injectable()
 export class SjCandidateService {
@@ -18,15 +17,16 @@ export class SjCandidateService {
     private readonly userRepo: Repository<User>,
   ) {}
 
-  /** 保存候选方案 */
+  /** 批量保存候选方案 */
   async saveCandidate(
     taskUuid: string,
     userId: number,
-    schemeIds: string[],
+    schemeIndexes: number[],
+    moduleType: string,
   ): Promise<ApiResponse<{ count: number }>> {
     const task = await this.taskRepo.findOne({
       where: { task_uuid: taskUuid },
-      relations: ['results', 'user'],
+      relations: ['results'],
     });
     if (!task) return ApiResponse.error('任务不存在');
 
@@ -36,16 +36,23 @@ export class SjCandidateService {
     const resultEntity = task.results?.[0];
     if (!resultEntity?.output_data) return ApiResponse.error('任务结果为空');
 
-    const results = resultEntity.output_data;
+    let results = resultEntity.output_data;
+    if (typeof results === 'string') {
+      try {
+        results = JSON.parse(results);
+      } catch (e) {
+        return ApiResponse.error('任务结果 JSON 解析失败');
+      }
+    }
+
     const candidates: SjCandidate[] = [];
 
-    for (const item of results) {
-      const seq = String(item['序号']);
-      if (!schemeIds.includes(seq)) continue;
+    for (const index of schemeIndexes) {
+      const scheme = results[index];
+      if (!scheme) continue;
 
       const exists = await this.candidateRepo.findOne({
-        where: { task: { task_uuid: task.task_uuid }, scheme_id: seq },
-        relations: ['task'],
+        where: { task: { task_uuid: task.task_uuid }, scheme_id: `${task.task_uuid}-${index}` },
       });
 
       if (!exists) {
@@ -53,9 +60,9 @@ export class SjCandidateService {
           this.candidateRepo.create({
             task,
             user,
-            scheme_id: seq,
-            result: item,
-            module_type: task.module_type,
+            scheme_id: `${task.task_uuid}-${index}`,
+            result: scheme,
+            module_type: moduleType,
           }),
         );
       }
@@ -69,22 +76,35 @@ export class SjCandidateService {
   }
 
   /** 查询候选方案 */
-  async list(user: User, module_type?: string) {
+  async list(user: User, module_type?: string): Promise<ApiResponse<any[]>> {
     const where: any = { user: { user_id: user.user_id } };
     if (module_type) where.module_type = module_type;
 
-    return this.candidateRepo.find({
+    const data = await this.candidateRepo.find({
       where,
       order: { created_at: 'DESC' },
     });
+
+    const formatted = data.map(item => ({
+      id: item.id,
+      scheme_id: item.scheme_id,
+      result: item.result,
+      module_type: item.module_type,
+      created_at: item.created_at,
+    }));
+
+    return ApiResponse.success(formatted, '获取候选方案成功');
   }
 
   /** 删除候选方案 */
-  async delete(user: User, ids: number[] | string[]) {
+  async delete(user: User, ids: number[] | string[]): Promise<ApiResponse<{ count: number }>> {
+    const idArray = Array.isArray(ids) ? ids : [ids];
+
     const result = await this.candidateRepo.delete({
-      id: ids as any,
+      id: In(idArray as any),
       user: { user_id: user.user_id },
     });
-    return { deletedCount: result.affected || 0 };
+
+    return ApiResponse.success({ count: result.affected || 0 }, '删除候选方案成功');
   }
 }

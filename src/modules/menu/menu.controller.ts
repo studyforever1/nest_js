@@ -8,13 +8,19 @@ import {
   Delete,
   Patch,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiQuery,ApiBearerAuth } from '@nestjs/swagger';
 import { ApiBody } from '@nestjs/swagger';
 import { MenuService } from './menu.service';
 import { CreateMenuDto } from './dto/create-menu.dto';
 import { UpdateMenuDto } from './dto/update-menu.dto';
+import { AuthGuard } from '@nestjs/passport';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { UseGuards } from '@nestjs/common';
+
 
 @ApiTags('系统菜单')
+@ApiBearerAuth('JWT')
+@UseGuards(AuthGuard('jwt'), RolesGuard)
 @Controller('menu')
 export class MenuController {
   constructor(private readonly menuService: MenuService) {}

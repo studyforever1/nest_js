@@ -16,11 +16,16 @@ import { ListSharedDto } from './dto/list-shared.dto';
 export class SharedDataController {
   constructor(private readonly sharedService: SharedDataService) {}
 
-  /** 保存共享方案 */
+  /** 批量保存共享方案 */
   @Post('save')
-  @ApiOperation({ summary: '保存用户计算方案为共享方案' })
+  @ApiOperation({ summary: '批量保存用户计算方案为共享方案' })
   async save(@CurrentUser() user: User, @Body() body: SaveSharedDto) {
-    return this.sharedService.saveShared(body.taskUuid, user.user_id, body.schemeIds);
+    return this.sharedService.saveShared(
+      body.taskUuid,
+      user.user_id,
+      body.schemeIndexes,
+      body.module_type,
+    );
   }
 
   /** 查询共享方案 */
@@ -32,7 +37,7 @@ export class SharedDataController {
 
   /** 删除共享方案 */
   @Delete('delete')
-  @ApiOperation({ summary: '删除共享方案（按ID）' })
+  @ApiOperation({ summary: '删除共享方案（按ID，可批量）' })
   async delete(@Body() body: DeleteSharedDto) {
     return this.sharedService.delete(body.ids);
   }

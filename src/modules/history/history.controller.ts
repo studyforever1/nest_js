@@ -1,3 +1,4 @@
+// src/modules/history/history.controller.ts
 import { Controller, Get, Post, Body, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
@@ -26,40 +27,53 @@ export class HistoryController {
   /** 查询历史记录 */
   @Get('list')
   @ApiOperation({ summary: '获取用户历史记录，可按模块类型筛选' })
-  async list(
-    @CurrentUser() user: User,
-    @Query() query: ListHistoryDto,
-  ) {
+  async list(@CurrentUser() user: User, @Query() query: ListHistoryDto) {
     return this.historyService.list(user, query.module_type);
   }
 
-  /** 删除历史记录（单个或批量） */
+  /** 删除历史记录 */
   @Post('delete')
   @ApiOperation({ summary: '删除用户历史记录，支持单个或批量' })
-  async delete(
-    @CurrentUser() user: User,
-    @Body() body: DeleteHistoryDto,
-  ) {
+  async delete(@CurrentUser() user: User, @Body() body: DeleteHistoryDto) {
     return this.historyService.delete(user, body.ids);
   }
 
   /** 保存用户选择的方案到历史记录 */
-  @Post('save')
-  @ApiOperation({ summary: '保存用户选择的方案到历史记录' })
-  async save(
-    @CurrentUser() user: User,
-    @Body() body: SaveHistoryDto,
-  ) {
-    // 查询任务
-    const task = await this.taskRepo.findOne({ where: { task_uuid: body.taskUuid } });
-    if (!task) return { code: 1, message: '任务不存在' };
+  // src/modules/history/history.controller.ts
+@Post('save')
+@ApiOperation({ summary: '批量保存用户选择的方案到历史记录' })
+async save(@CurrentUser() user: User, @Body() body: SaveHistoryDto) {
+  const task = await this.taskRepo.findOne({
+    where: { task_uuid: body.taskUuid },
+    relations: ['results'],
+  });
+  if (!task) return { code: 1, message: '任务不存在' };
 
-    const resultEntity = task['results']?.[0]?.output_data || [];
-    if (!resultEntity || resultEntity.length === 0) {
-      return { code: 1, message: '任务结果为空' };
+  // 合并 task.results 中所有 output_data
+  let results: any[] = [];
+  for (const r of task.results || []) {
+    if (r.output_data) {
+      if (typeof r.output_data === 'string') {
+        try {
+          results.push(...JSON.parse(r.output_data));
+        } catch {
+          return { code: 1, message: '任务结果 JSON 解析失败' };
+        }
+      } else if (Array.isArray(r.output_data)) {
+        results.push(...r.output_data);
+      }
     }
-
-    const res = await this.historyService.save(user, task, resultEntity, body.schemeIds);
-    return { code: 0, message: '保存成功', data: res };
   }
+
+  if (!results.length) return { code: 1, message: '任务结果为空' };
+
+  return this.historyService.saveBatch(
+    user,
+    task,
+    results,
+    body.schemeIndexes,
+    body.module_type,
+  );
+}
+
 }

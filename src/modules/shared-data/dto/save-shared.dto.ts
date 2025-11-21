@@ -1,13 +1,22 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsArray, ArrayNotEmpty } from 'class-validator';
+import { IsString, IsArray, ArrayMinSize, IsInt, Min } from 'class-validator';
 
 export class SaveSharedDto {
-  @ApiProperty({ description: '任务 UUID' })
+  @ApiProperty({ example: 'task-uuid-123', description: '任务 UUID' })
   @IsString()
   taskUuid: string;
 
-  @ApiProperty({ description: '要共享的方案序号数组', type: [String] })
+  @ApiProperty({
+    example: [0, 1],
+    description: '用户选择的方案序号数组（批量保存）',
+  })
   @IsArray()
-  @ArrayNotEmpty()
-  schemeIds: string[];
+  @ArrayMinSize(1)
+  @IsInt({ each: true })
+  @Min(0, { each: true })
+  schemeIndexes: number[];
+
+  @ApiProperty({ example: '烧结配料计算', description: '模块类型' })
+  @IsString()
+  module_type: string;
 }

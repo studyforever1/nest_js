@@ -1,16 +1,13 @@
+// assign-permissions.dto.ts
+import { IsString, IsArray, ArrayNotEmpty } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, IsArray, ArrayNotEmpty } from 'class-validator';
 
 export class AssignPermissionsDto {
-  @ApiProperty({ description: '角色编码，例如 sj_user' })
+  @ApiProperty({ description: '角色名称', example: 'admin' })
   @IsString()
-  @IsNotEmpty()
   roleCode: string;
 
-  @ApiProperty({
-    description: '权限编码数组，例如 ["calc:start","calc:stop"]',
-    type: [String],
-  })
+  @ApiProperty({ description: '权限编码数组', type: [String], example: ['烧结物料信息库', '烧结配料设置'] })
   @IsArray()
   @ArrayNotEmpty()
   @IsString({ each: true })

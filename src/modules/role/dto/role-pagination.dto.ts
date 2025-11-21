@@ -3,7 +3,7 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsInt, Min, Max, IsOptional, IsString } from 'class-validator';
 
-export class UserPaginationDto {
+export class RolePaginationDto {
   @ApiPropertyOptional({ description: '页码（默认1）', example: 1 })
   @Type(() => Number)
   @IsInt()
