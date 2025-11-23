@@ -21,7 +21,7 @@ export class CalcController {
 
   /** 启动计算任务 */
   @Post('start')
-  @Permissions('烧结配料计算')
+  @Permissions('sj-calc')
   @ApiOperation({ summary: '启动计算任务' })
   @ApiOkResponseData(StartTaskResponseDto)
   @ApiErrorResponse()
@@ -31,7 +31,7 @@ export class CalcController {
 
   /** 停止计算任务 */
   @Post('stop')
-  @Permissions('烧结配料计算')
+  @Permissions('sj-calc')
   @ApiOperation({ summary: '停止计算任务' })
   @ApiOkResponseData(StopTaskResponseDto)
   @ApiErrorResponse()
@@ -41,7 +41,7 @@ export class CalcController {
 
   /** 查询任务进度 */
   @Get('progress/:task_id')
-  @Permissions('烧结配料计算')
+  @Permissions('sj-calc')
   @ApiOperation({ summary: '查询任务进度' })
   @ApiOkResponseData(ProgressResponseDto)
   @ApiErrorResponse()
@@ -51,7 +51,7 @@ export class CalcController {
 
   /** 查询任务详情 */
   @Get('task/:task_id')
-  @Permissions('烧结配料计算')
+  @Permissions('sj-calc')
   @ApiOperation({ summary: '查询任务详情' })
   @ApiOkResponseData(ProgressResponseDto)
   @ApiErrorResponse()

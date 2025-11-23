@@ -37,53 +37,61 @@ export class AuthService {
 
   /** 登录 */
   async login(user: any) {
-    const payload = {
-      username: user.username,
-      sub: user.user_id,
-      roles: user.roles.map((r) => r.name), // ✅ 多角色
-    };
-    return {
+  const payload = {
+    username: user.username,
+    sub: user.user_id,
+    roles: user.roles.map((r) => r.roleCode),
+  };
+  return {
+    access_token: this.jwtService.sign(payload),
+    sub: user.user_id,
+    roles: user.roles.map((r) => r.roleCode),
+    fullName: user.fullName,
+  };
+}
+
+async register(registerDto: RegisterDto) {
+  // 禁止注册接口传角色字段（防止前端恶意构造）
+  if ('roles' in registerDto) {
+    throw new UnauthorizedException('注册时不能指定角色');
+  }
+
+  const exist = await this.userService.findByUsername(registerDto.username);
+  if (exist) throw new ConflictException('用户名已存在');
+
+  const hashedPassword = await bcrypt.hash(registerDto.password, 10);
+
+  // 强制为普通用户
+  const roles = await this.roleService.findByCodes(['user']);
+  if (!roles || roles.length === 0) {
+    throw new UnauthorizedException('系统未找到默认角色 user');
+  }
+
+  const newUser = await this.userService.create({
+    username: registerDto.username,
+    fullName: registerDto.fullName,
+    email: registerDto.email,
+    password: hashedPassword,
+    is_active: registerDto.is_active ?? true,
+    roles,
+  });
+
+  const payload = {
+    username: newUser.username,
+    sub: newUser.user_id,
+    roles: newUser.roles.map((r) => r.roleCode),
+  };
+
+  return ApiResponse.success(
+    {
       access_token: this.jwtService.sign(payload),
-      sub: user.user_id,
-      roles: user.roles.map((r) => r.name),
-      fullName: user.fullName,
-    };
-  }
-
-  /** 注册用户 */
-  async register(registerDto: RegisterDto) {
-    const exist = await this.userService.findByUsername(registerDto.username);
-    if (exist) throw new ConflictException('用户名已存在');
-
-    const hashedPassword = await bcrypt.hash(registerDto.password, 10);
-
-    // 默认普通注册用户分配 'user' 角色
-    const roles = await this.roleService.findByNames(['user']);
-
-    const newUser = await this.userService.create({
-      username: registerDto.username,
-      fullName: registerDto.fullName, // 新增字段
-      email: registerDto.email,
-      password: hashedPassword,
-      is_active: registerDto.is_active ?? true, // 默认启用
-      roles,
-    });
-
-    const payload = {
-      username: newUser.username,
       sub: newUser.user_id,
-      roles: newUser.roles.map((r) => r.name),
-    };
-    const token = this.jwtService.sign(payload);
+      roles: newUser.roles.map((r) => r.roleCode),
+      fullName: newUser.fullName,
+    },
+    '注册成功',
+  );
+}
 
-    return ApiResponse.success(
-      {
-        access_token: token,
-        sub: newUser.user_id,
-        roles: newUser.roles.map((r) => r.name),
-        fullName: newUser.fullName,
-      },
-      '注册成功',
-    );
-  }
+
 }

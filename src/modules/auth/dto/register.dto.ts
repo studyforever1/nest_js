@@ -24,9 +24,4 @@ export class RegisterDto {
   @ApiPropertyOptional({ example: true })
   @IsOptional()
   is_active?: boolean;
-
-  @ApiPropertyOptional({ example: ['admin'] })
-  @IsArray()
-  @IsOptional()
-  roles?: string[];
 }

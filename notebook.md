@@ -36,9 +36,9 @@ mv src/calc/dto src/modules/calc/
 http://localhost:3000/api-docs 
 
 
-nest g module modules/menu
-nest g service modules/menu
-nest g controller modules/menu
+nest g module modules/gl_module
+nest g service modules/gl_module
+nest g controller modules/gl_module
 
 # 打包
 npm run build

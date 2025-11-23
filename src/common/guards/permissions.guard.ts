@@ -34,7 +34,7 @@ export class PermissionsGuard implements CanActivate {
     if (!user) throw new ForbiddenException('用户不存在');
 
     const userPermissions = user.roles.flatMap((role) =>
-      role.permissions.map((p) => p.code),
+      role.permissions.map((p) => p.permissionCode),
     );
     const hasPermission = requiredPermissions.every((p) =>
       userPermissions.includes(p),

@@ -32,6 +32,10 @@ export class ConfigGroup {
   @Column({ default: false })
   is_shared: boolean;
 
+  /** ⭐ 新增字段：是否为默认参数组 */
+  @Column({ default: false, comment: '是否为默认参数组' })
+  is_default: boolean;
+
   @CreateDateColumn()
   created_at: Date;
 

@@ -1,14 +1,14 @@
 // update-role.dto.ts
 import { IsString, IsOptional } from 'class-validator';
-import { ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty,ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdateRoleDto {
-  @ApiPropertyOptional({ description: '角色名称', example: 'manager' })
+  @ApiProperty({ example: '管理员', required: false })
   @IsOptional()
   @IsString()
-  name?: string;
+  roleName?: string;
 
-  @ApiPropertyOptional({ description: '角色描述', example: '管理者角色' })
+  @ApiProperty({ example: '系统最高权限角色', required: false })
   @IsOptional()
   @IsString()
   description?: string;

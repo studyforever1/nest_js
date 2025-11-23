@@ -9,6 +9,7 @@ import { SaveConfigDto } from './dto/save-config.dto';
 import { SaveIngredientDto } from './dto/save-ingredient.dto';
 import { DeleteIngredientDto } from './dto/delete-ingredient.dto';
 import { PaginationDto } from '../sj-raw-material/dto/pagination.dto';
+import { Permissions } from '../../common/decorators/permissions.decorator';
 
 @ApiTags('烧结参数配置')
 @ApiBearerAuth('JWT')
@@ -28,6 +29,7 @@ export class SjconfigController {
 
   /** 保存或更新完整参数组 */
   @Post('save')
+  @Permissions('sj-config')
   @ApiOperation({ summary: '保存参数组（原料/化学/其他参数）' })
   async save(@CurrentUser() user: User, @Body() body: SaveConfigDto) {
     return this.sjconfigService.saveFullConfig(
@@ -41,6 +43,7 @@ export class SjconfigController {
 
   /** 保存选中原料列表 */
   @Post('save-ingredient')
+  @Permissions('sj-config')
   @ApiOperation({ summary: '保存选中原料序号到参数组' })
   async saveIngredient(@CurrentUser() user: User, @Body() body: SaveIngredientDto) {
     return this.sjconfigService.saveIngredientParams(
@@ -52,6 +55,7 @@ export class SjconfigController {
 
    /** 删除选中的原料（同步 ingredientParams 和 ingredientLimits） */
   @Post('delete-ingredient')
+  @Permissions('sj-config')
   @ApiOperation({ summary: '删除选中的原料' })
   async deleteIngredient(
     @CurrentUser() user: User,

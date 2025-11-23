@@ -1,3 +1,4 @@
+// src/modules/role/role.controller.ts
 import {
   Controller,
   Post,
@@ -34,26 +35,25 @@ import { AssignPermissionsDto } from '../permission/dto/assign-permission.dto';
 export class RoleController {
   constructor(private readonly roleService: RoleService) {}
 
- @Get()
-@ApiOperation({ summary: '角色列表（分页 + 搜索）' })
-@ApiQuery({ name: 'page', required: false, example: 1 })
-@ApiQuery({ name: 'pageSize', required: false, example: 10 })
-@ApiQuery({ name: 'keyword', required: false, example: 'admin' })
-findAll(@Query() query: RolePaginationDto) {
-  return this.roleService.findAll({
-    page: query.page ?? 1,
-    pageSize: query.pageSize ?? 10,
-    keyword: query.keyword,
-  });
-}
-
-
+  /** 角色列表 */
+  @Get()
+  @ApiOperation({ summary: '角色列表（分页 + 搜索）' })
+  @ApiQuery({ name: 'page', required: false, example: 1 })
+  @ApiQuery({ name: 'pageSize', required: false, example: 10 })
+  @ApiQuery({ name: 'keyword', required: false, example: 'admin' })
+  findAll(@Query() query: RolePaginationDto) {
+    return this.roleService.findAll({
+      page: query.page ?? 1,
+      pageSize: query.pageSize ?? 10,
+      keyword: query.keyword,
+    });
+  }
 
   /** 新增角色 */
   @Post()
   @Roles('admin')
   @ApiOperation({ summary: '新增角色' })
-  @ApiBody({ type: CreateRoleDto, description: '创建角色信息' })
+  @ApiBody({ type: CreateRoleDto })
   create(@Body() dto: CreateRoleDto) {
     return this.roleService.create(dto);
   }
@@ -62,36 +62,37 @@ findAll(@Query() query: RolePaginationDto) {
   @Put(':id')
   @Roles('admin')
   @ApiOperation({ summary: '更新角色' })
-  @ApiParam({ name: 'id', description: '角色ID', example: 1 })
-  @ApiBody({ type: UpdateRoleDto, description: '更新角色信息' })
+  @ApiParam({ name: 'id', example: 1 })
   update(@Param('id') id: number, @Body() dto: UpdateRoleDto) {
     return this.roleService.update(id, dto);
   }
 
-  /** 删除角色（支持批量） */
+  /** 删除角色（批量） */
   @Delete()
   @Roles('admin')
   @ApiOperation({ summary: '删除角色（支持批量）' })
-  @ApiBody({ type: DeleteRoleDto, description: '批量删除角色ID列表' })
+  @ApiBody({ type: DeleteRoleDto })
   remove(@Body() dto: DeleteRoleDto) {
-    // 调用 service 并传 roleIds
     return this.roleService.remove(dto.roleIds);
   }
 
-  /** 给角色分配权限 */
+  /** 分配权限 */
   @Post('permissions/assign')
   @Roles('admin')
   @ApiOperation({ summary: '给角色分配权限' })
-  @ApiBody({ type: AssignPermissionsDto, description: '分配权限信息' })
+  @ApiBody({ type: AssignPermissionsDto })
   assignPermissions(@Body() dto: AssignPermissionsDto) {
-    return this.roleService.assignPermissionsToRole(dto.roleCode, dto.permissionCodes);
+    return this.roleService.assignPermissionsToRole(
+      dto.roleCode,
+      dto.permissionCodes,
+    );
   }
 
   /** 查看角色权限 */
   @Get('permissions/:roleCode')
   @Roles('admin')
   @ApiOperation({ summary: '查看角色权限' })
-  @ApiParam({ name: 'roleCode', description: '角色名称', example: 'admin' })
+  @ApiParam({ name: 'roleCode', example: 'admin' })
   getRolePermissions(@Param('roleCode') roleCode: string) {
     return this.roleService.getRolePermissions(roleCode);
   }

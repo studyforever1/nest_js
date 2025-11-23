@@ -1,5 +1,5 @@
-import { 
-  Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, ConflictException 
+import {
+  Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, ConflictException
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody, ApiQuery } from '@nestjs/swagger';
 import { UserService } from './user.service';
@@ -7,7 +7,7 @@ import { RoleService } from '../role/role.service';
 import { AuthGuard } from '@nestjs/passport';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { RegisterDto } from '../auth/dto/register.dto';
+import { CreateUserDto } from './dto/create-user.dto';
 import * as bcrypt from 'bcryptjs';
 import { UserPaginationDto } from './dto/pagination.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -28,14 +28,16 @@ export class UserController {
   @ApiOperation({ summary: '管理员创建用户', description: '只有 admin 角色可以创建新用户' })
   @ApiResponse({ status: 201, description: '用户创建成功' })
   @ApiResponse({ status: 409, description: '用户名已存在' })
-  @ApiBody({ type: RegisterDto })
-  async create(@Body() registerDto: RegisterDto) {
+  @ApiBody({ type: CreateUserDto })
+  async create(@Body() registerDto: CreateUserDto) {
     const exist = await this.userService.findByUsername(registerDto.username);
     if (exist) throw new ConflictException('用户名已存在');
 
     const hashedPassword = await bcrypt.hash(registerDto.password, 10);
-    const roleNames = registerDto.roles && registerDto.roles.length > 0 ? registerDto.roles : ['user'];
-    const roles = await this.roleService.findByNames(roleNames);
+
+    // 前端传入 roles 期望为 roleCode 列表（例如 ['admin', 'operator']）
+    const roleCodes = registerDto.roles && registerDto.roles.length > 0 ? registerDto.roles : ['user'];
+    const roles = await this.roleService.findByCodes(roleCodes);
 
     return this.userService.create({
       username: registerDto.username,
@@ -90,10 +92,10 @@ export class UserController {
       dto.password = await bcrypt.hash(dto.password, 10);
     }
 
-    // 如果更新角色，需要先查询 Role 实体
+    // 如果更新角色，需要先查询 Role 实体（前端传 roleCode 数组）
     let roles;
     if (dto.roles) {
-      roles = await this.roleService.findByNames(dto.roles);
+      roles = await this.roleService.findByCodes(dto.roles);
     }
 
     return this.userService.update(id, {

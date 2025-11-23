@@ -7,7 +7,7 @@ export class AssignPermissionsDto {
   @IsString()
   roleCode: string;
 
-  @ApiProperty({ description: '权限编码数组', type: [String], example: ['烧结物料信息库', '烧结配料设置'] })
+  @ApiProperty({ description: '权限编码数组', type: [String], example: ['sj-material-info', 'sj-calc','sj-config'] })
   @IsArray()
   @ArrayNotEmpty()
   @IsString({ each: true })

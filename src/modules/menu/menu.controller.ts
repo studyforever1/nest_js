@@ -23,7 +23,8 @@ import { UseGuards } from '@nestjs/common';
 @UseGuards(AuthGuard('jwt'), RolesGuard)
 @Controller('menu')
 export class MenuController {
-  constructor(private readonly menuService: MenuService) {}
+  constructor(
+     readonly menuService: MenuService) {}
 
   @Get('routes')
 @ApiOperation({ summary: '获取路由（前端侧边栏菜单）' })

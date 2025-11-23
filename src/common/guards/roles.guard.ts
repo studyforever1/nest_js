@@ -29,13 +29,16 @@ export class RolesGuard implements CanActivate {
     }
 
     // user.roles 是 Role[]，取 name 比较
-    const userRoleNames = user.roles.map((r: Role) => r.name);
+    const userRoleCodes = user.roles.map((r: Role) => r.roleCode);
 
-    const hasRole = requiredRoles.some((role) => userRoleNames.includes(role));
+    const hasRole = requiredRoles.some((required) =>
+      userRoleCodes.includes(required),
+    );
+
 
     if (!hasRole) {
       throw new ForbiddenException(
-        `需要角色: ${requiredRoles}, 当前角色: ${userRoleNames}`,
+        `需要角色: ${requiredRoles}, 当前角色: ${userRoleCodes}`,
       );
     }
 
