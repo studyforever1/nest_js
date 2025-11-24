@@ -5,7 +5,6 @@ import { SjRawMaterialService } from './sj-raw-material.service';
 import { SjRawMaterialController } from './sj-raw-material.controller';
 import { User } from '../user/entities/user.entity';
 
-
 @Module({
   imports: [TypeOrmModule.forFeature([SjRawMaterial, User])],
   controllers: [SjRawMaterialController],

@@ -32,7 +32,7 @@ import type { Response } from 'express';
 import * as multer from 'multer';
 import { PaginationDto } from './dto/pagination.dto';
 
-@ApiTags('烧结原料库')
+@ApiTags('物料信息-烧结物料信息')
 @ApiBearerAuth('JWT')
 @UseGuards(AuthGuard('jwt'), PermissionsGuard)
 @Controller('sj-raw-material')
@@ -41,7 +41,7 @@ export class SjRawMaterialController {
 
   /** 新增原料 */
   @Post()
-  @ApiOperation({ summary: '新增原料' })
+  @ApiOperation({ summary: '添加按钮' })
   create(@Body() dto: CreateSjRawMaterialDto, @CurrentUser() user: { username: string }) {
     return this.rawService.create(dto, user.username);
   }
@@ -69,7 +69,7 @@ export class SjRawMaterialController {
 
   /** 更新原料 */
   @Put(':id')
-  @ApiOperation({ summary: '更新原料' })
+  @ApiOperation({ summary: '保存按钮' })
   update(
     @Param('id') id: string,
     @Body() dto: UpdateSjRawMaterialDto,

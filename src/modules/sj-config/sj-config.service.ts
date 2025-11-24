@@ -10,7 +10,6 @@ import { SjRawMaterial } from '../sj-raw-material/entities/sj-raw-material.entit
 
 import _ from 'lodash';
 
-
 @Injectable()
 export class SjconfigService {
   private readonly logger = new Logger(SjconfigService.name);
@@ -45,16 +44,17 @@ export class SjconfigService {
     const module = await this.moduleRepo.findOne({ where: { name: moduleName } });
     if (!module) throw new Error(`模块 "${moduleName}" 不存在`);
 
-    // 查询用户最新
+    // 查询用户最新参数组（仅用户自己的组，不包含默认组）
     let group = await this.configRepo.findOne({
       where: {
         user: { user_id: user.user_id },
         module: { module_id: module.module_id },
         is_latest: true,
+        is_default: false, // 排除默认组
       },
     });
 
-    // 用户没有 → 复制默认参数
+    // 用户没有 → 复制默认参数生成自己的组
     if (!group) {
       const defaultGroup = await this.getDefaultGroup(moduleName);
       if (!defaultGroup) throw new Error(`模块 "${moduleName}" 没有默认参数组`);
@@ -66,7 +66,7 @@ export class SjconfigService {
         module,
         config_data: _.cloneDeep(defaultGroup.config_data),
         is_latest: true,
-        is_default: false,
+        is_default: false, // 新用户组必须不是默认组
       });
 
       await this.configRepo.save(group);
@@ -126,59 +126,123 @@ export class SjconfigService {
     return await this.configRepo.save(group);
   }
 
-  /** 保存选择的原料序号（同步 ingredientLimits） */
-  async saveIngredientParams(user: User, moduleName: string, ingredientParams: number[]) {
-    let group = await this.getOrCreateUserGroup(user, moduleName);
+  /** 保存选择的原料序号（同步 ingredientLimits + 精粉列表） */
+  /** 保存选择的原料序号（重置 精粉 & 固定配比 列表） */
+async saveIngredientParams(
+  user: User,
+  moduleName: string,
+  ingredientParams: number[],
+) {
+  const group = await this.getOrCreateUserGroup(user, moduleName);
+  const configData = _.cloneDeep(group.config_data || {});
+  const oldLimits = configData.ingredientLimits || {};
 
-    const configData = _.cloneDeep(group.config_data || {});
-    const oldLimits = configData.ingredientLimits || {};
+  // ===============================
+  // 1. 重建 ingredientLimits
+  // ===============================
+  const newLimits: Record<string, any> = {};
+  ingredientParams.forEach((id) => {
+    if (oldLimits[id]) {
+      newLimits[id] = oldLimits[id];
+    } else {
+      newLimits[id] = {
+        low_limit: 0,
+        top_limit: 100,
+        lose_index: 1,
+      };
+    }
+  });
 
-    const newLimits: Record<string, any> = {};
+  // ===============================
+  // 2. 选中原料查询
+  // ===============================
+  const raws = await this.rawRepo.findByIds(ingredientParams);
 
-    ingredientParams.forEach((id) => {
-      if (oldLimits[id]) newLimits[id] = oldLimits[id];
-      else
-        newLimits[id] = {
-          low_limit: 0,
-          top_limit: 100,
-          lose_index: 1,
-        };
-    });
+  // ===============================
+  // 3. 重置：精粉 + 固定配比
+  // ===============================
+  configData.otherSettings = configData.otherSettings || {};
 
-    group.config_data = {
-      ...configData,
-      ingredientParams,
-      ingredientLimits: newLimits,
-    };
+  // 完全重置
+  configData.otherSettings['精粉'] = [];
+  configData.otherSettings['固定配比'] = [];
 
-    return await this.configRepo.save(group);
-  }
+  // ===============================
+  // 4. 重新根据规则生成两个列表
+  // ===============================
 
-  /** 删除选中的原料 */
+  raws.forEach((raw) => {
+    // =========== 精粉规则：T1 开头 ===========
+    if (raw.category?.startsWith('T1')) {
+      configData.otherSettings['精粉'].push(raw.id);
+    }
+
+    // =========== 固定配比规则（如需自定义，在这里写） ===========
+    // 假设固定配比规则是 category = 'FIX'
+    if (raw.category === 'FIX') {
+      configData.otherSettings['固定配比'].push(raw.id);
+    }
+  });
+
+  // ===============================
+  // 5. 保存
+  // ===============================
+  group.config_data = {
+    ...configData,
+    ingredientParams,
+    ingredientLimits: newLimits,
+  };
+
+  return await this.configRepo.save(group);
+}
+
+
+  /** 删除选中的原料（同步更新精粉 + 固定配比） */
   async deleteIngredientParams(user: User, moduleName: string, removeParams: number[]) {
-    let group = await this.getOrCreateUserGroup(user, moduleName);
+  let group = await this.getOrCreateUserGroup(user, moduleName);
 
-    const configData = _.cloneDeep(group.config_data || {});
-    const oldParams: number[] = configData.ingredientParams || [];
-    const oldLimits: Record<string, any> = configData.ingredientLimits || {};
+  const configData = _.cloneDeep(group.config_data || {});
+  const oldParams: number[] = configData.ingredientParams || [];
+  const oldLimits: Record<string, any> = configData.ingredientLimits || {};
 
-    const newParams = oldParams.filter((id) => !removeParams.includes(id));
+  // 过滤掉删除的原料
+  const newParams = oldParams.filter((id) => !removeParams.includes(id));
 
-    const newLimits: Record<string, any> = {};
-    Object.keys(oldLimits).forEach((id) => {
-      if (!removeParams.includes(Number(id))) {
-        newLimits[id] = oldLimits[id];
-      }
-    });
+  const newLimits: Record<string, any> = {};
+  Object.keys(oldLimits).forEach((id) => {
+    if (!removeParams.includes(Number(id))) {
+      newLimits[id] = oldLimits[id];
+    }
+  });
 
-    group.config_data = {
-      ...configData,
-      ingredientParams: newParams,
-      ingredientLimits: newLimits,
-    };
+  // ==========================================================
+  // 删除精粉和固定配比中对应的 T1 原料
+  // ==========================================================
+  if (configData.otherSettings) {
+    // 精粉
+    if (Array.isArray(configData.otherSettings['精粉'])) {
+      configData.otherSettings['精粉'] = configData.otherSettings['精粉'].filter(
+        (id: number | string) => !removeParams.includes(Number(id))
+      );
+    }
 
-    return await this.configRepo.save(group);
+    // 固定配比
+    if (Array.isArray(configData.otherSettings['固定配比'])) {
+      configData.otherSettings['固定配比'] = configData.otherSettings['固定配比'].filter(
+        (id: number | string) => !removeParams.includes(Number(id))
+      );
+    }
   }
+
+  group.config_data = {
+    ...configData,
+    ingredientParams: newParams,
+    ingredientLimits: newLimits,
+  };
+
+  return await this.configRepo.save(group);
+}
+
 
   /** 获取已选原料（分页） */
   async getSelectedIngredients(
@@ -188,7 +252,6 @@ export class SjconfigService {
     pageSize = 10,
   ) {
     const group = await this.getOrCreateUserGroup(user, moduleName);
-
     const configData = group.config_data || {};
     const ingredientParams: number[] = configData.ingredientParams || [];
 
@@ -203,7 +266,6 @@ export class SjconfigService {
     const list = raws.map((raw) => {
       const { id, name, category, origin, composition } = raw;
       const { TFe, 价格, H2O, 烧损, ...otherCompo } = composition || {};
-
       return {
         id,
         name,

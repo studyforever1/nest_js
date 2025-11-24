@@ -9,22 +9,19 @@ import {
   JoinTable,
 } from 'typeorm';
 import { User } from '../../user/entities/user.entity';
-import { Permission } from '../../permission/entities/permission.entity';
+import { Menu } from '../../menu/entity/menu.entity';
 
 @Entity('role')
 export class Role {
   @PrimaryGeneratedColumn()
   role_id: number;
 
-  /** 角色编码（唯一，系统内部使用，如 admin / operator / viewer） */
   @Column({ unique: true })
   roleCode: string;
 
-  /** 角色名称（展示用，如 管理员 / 操作员） */
   @Column()
   roleName: string;
 
-  /** 角色描述（可选） */
   @Column({ nullable: true })
   description: string;
 
@@ -37,14 +34,15 @@ export class Role {
   @ManyToMany(() => User, (user) => user.roles)
   users: User[];
 
-  @ManyToMany(() => Permission, (permission) => permission.roles, { cascade: true })
+  /** 角色关联菜单（含目录/菜单/按钮） */
+  @ManyToMany(() => Menu, (menu) => menu.roles, { cascade: true })
   @JoinTable({
-    name: 'role_permission',
+    name: 'role_menu',
     joinColumn: { name: 'role_id', referencedColumnName: 'role_id' },
     inverseJoinColumn: {
-      name: 'permission_id',
-      referencedColumnName: 'permission_id',
+      name: 'menu_id',
+      referencedColumnName: 'id',
     },
   })
-  permissions: Permission[];
+  menus: Menu[];
 }

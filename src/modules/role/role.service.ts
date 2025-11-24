@@ -7,7 +7,8 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { Role } from './entities/role.entity';
-import { Permission } from '../permission/entities/permission.entity';
+import { Menu } from '../menu/entity/menu.entity';
+
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 
@@ -16,9 +17,10 @@ export class RoleService {
   constructor(
     @InjectRepository(Role)
     private readonly roleRepo: Repository<Role>,
-    @InjectRepository(Permission)
-    private readonly permissionRepo: Repository<Permission>,
-  ) {}
+
+    @InjectRepository(Menu)
+    private readonly menuRepo: Repository<Menu>,
+  ) { }
 
   /** 角色列表 + 搜索 + 分页 */
   async findAll(query: { page?: number; pageSize?: number; keyword?: string }) {
@@ -49,11 +51,12 @@ export class RoleService {
     };
   }
 
-  /** 创建角色 */
+  /** 新建角色 */
   async create(dto: CreateRoleDto) {
     const exist = await this.roleRepo.findOne({
       where: { roleCode: dto.roleCode },
     });
+
     if (exist) throw new BadRequestException('角色编码已存在');
 
     const role = this.roleRepo.create(dto);
@@ -61,16 +64,15 @@ export class RoleService {
   }
 
   /** 更新角色 */
-async update(id: number, dto: UpdateRoleDto) {
-  const role = await this.roleRepo.findOne({ where: { role_id: id } });
-  if (!role) throw new NotFoundException('角色不存在');
+  async update(id: number, dto: UpdateRoleDto) {
+    const role = await this.roleRepo.findOne({ where: { role_id: id } });
+    if (!role) throw new NotFoundException('角色不存在');
 
-  Object.assign(role, dto);
-  return this.roleRepo.save(role);
-}
+    Object.assign(role, dto);
+    return this.roleRepo.save(role);
+  }
 
-
-  /** 删除角色（支持批量） */
+  /** 删除角色 */
   async remove(roleIds: number[]) {
     const roles = await this.roleRepo.find({
       where: { role_id: In(roleIds) },
@@ -84,49 +86,67 @@ async update(id: number, dto: UpdateRoleDto) {
     return { success: true };
   }
 
-  /** 通过编码查找角色 */
-  async findByCode(roleCode: string): Promise<Role | null> {
-    return this.roleRepo.findOne({ where: { roleCode } });
-  }
+  /** 给角色分配菜单 */
+  async assignMenusToRole(roleCode: string, menuIds: number[]) {
+  const role = await this.roleRepo.findOne({
+    where: { roleCode },
+    relations: ['menus'],
+  });
 
-  /** 批量查找角色（编码） */
-  async findByCodes(codes: string[]): Promise<Role[]> {
-    return this.roleRepo.find({
-      where: { roleCode: In(codes) },
-    });
-  }
+  if (!role) throw new NotFoundException(`角色不存在：${roleCode}`);
 
-  /** 分配权限 */
-  async assignPermissionsToRole(roleCode: string, permissionCodes: string[]) {
+  const menus = await this.menuRepo.find({
+    where: { id: In(menuIds) },
+  });
+
+  if (!menus.length) throw new BadRequestException('菜单不存在');
+
+  // 清空旧关联
+  role.menus = [];
+  await this.roleRepo.save(role);
+
+  // 重新关联
+  role.menus = menus;
+  const savedRole = await this.roleRepo.save(role);
+
+  return savedRole;
+}
+
+
+  /** 查询角色菜单 */
+  async getRoleMenus(roleCode: string) {
     const role = await this.roleRepo.findOne({
       where: { roleCode },
-      relations: ['permissions'],
+      relations: ['menus'],
     });
 
-    if (!role) throw new NotFoundException(`角色不存在: ${roleCode}`);
+    if (!role) throw new NotFoundException(`角色不存在：${roleCode}`);
 
-    const permissions = await this.permissionRepo.find({
-      where: { permissionCode: In(permissionCodes) },
+    return role.menus;
+  }
+  /** 根据 roleCode 数组查找 Role 实体 */
+  async findByCodes(codes: string[]): Promise<Role[]> {
+    if (!codes || codes.length === 0) return [];
+
+    const roles = await this.roleRepo.find({
+      where: { roleCode: In(codes) },
+      relations: ['menus'], // 加载菜单关系
     });
 
-    if (!permissions.length) {
-      throw new BadRequestException(`权限不存在: ${permissionCodes.join(', ')}`);
+    if (!roles || roles.length === 0) {
+      throw new NotFoundException(`未找到角色: ${codes.join(',')}`);
     }
 
-    role.permissions = permissions;
-    return this.roleRepo.save(role);
+    return roles;
   }
 
-  /** 查询角色权限 */
-  async getRolePermissions(roleCode: string) {
+  /** 根据单个 roleCode 查找 */
+  async findByCode(code: string): Promise<Role> {
     const role = await this.roleRepo.findOne({
-      where: { roleCode },
-      relations: ['permissions'],
+      where: { roleCode: code },
+      relations: ['menus'],
     });
-
-    if (!role) throw new NotFoundException(`角色不存在: ${roleCode}`);
-
-    return role.permissions;
+    if (!role) throw new NotFoundException(`未找到角色: ${code}`);
+    return role;
   }
-  
 }

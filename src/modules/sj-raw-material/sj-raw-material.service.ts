@@ -15,46 +15,49 @@ export class SjRawMaterialService {
   ) {}
 
   async create(dto: CreateSjRawMaterialDto, username: string) {
-    const raw = this.rawRepo.create({
-      ...dto,
-      modifier: username,
-    });
-    return await this.rawRepo.save(raw);
-  }
+  const raw = this.rawRepo.create({
+    ...dto,
+    inventory: dto.inventory ?? 0,
+    modifier: username,
+    remark: dto.remark ?? '',  // 新增 remark
+  });
+  return await this.rawRepo.save(raw);
+}
 
-  async update(id: number, dto: UpdateSjRawMaterialDto, username: string) {
-    const raw = await this.rawRepo.findOne({ where: { id } });
-    if (!raw) throw new NotFoundException(`原料ID ${id} 不存在`);
-    Object.assign(raw, dto, { modifier: username });
-    return await this.rawRepo.save(raw);
-  }
+async update(id: number, dto: UpdateSjRawMaterialDto, username: string) {
+  const raw = await this.rawRepo.findOne({ where: { id } });
+  if (!raw) throw new NotFoundException(`原料ID ${id} 不存在`);
+  Object.assign(raw, dto, {
+    inventory: dto.inventory ?? raw.inventory,
+    modifier: username,
+    remark: dto.remark ?? raw.remark,  // 更新 remark
+  });
+  return await this.rawRepo.save(raw);
+}
 
   /** 格式化原料数据（输出到前端） */
   private formatRaw(raw: SjRawMaterial) {
-    const { id, category, name, origin, composition } = raw;
-    if (!composition) return { id, category, name, origin };
+  const { id, category, name, origin, composition, remark, inventory } = raw; // 加上 inventory
+  if (!composition) return { id, category, name, origin, remark, inventory };
 
-    // 明确提取常用字段，剩余的放到 compositionFields
-    const {
-      TFe = null,
-      H2O = null,
-      烧损 = null,
-      价格 = null,
-      ...otherComposition
-    } = composition as Record<string, any>;
+  const { TFe = null, H2O = null, 烧损 = null, 价格 = null, ...otherComposition } = composition as Record<string, any>;
 
-    return {
-      id,
-      category,
-      name,
-      TFe,
-      ...otherComposition,
-      H2O,
-      烧损,
-      价格,
-      origin,
-    };
-  }
+  return {
+    id,
+    category,
+    name,
+    TFe,
+    ...otherComposition,
+    H2O,
+    烧损,
+    价格,
+    origin,
+    remark,
+    inventory, // 输出库存
+  };
+}
+
+
 
   /**
    * 合并查询接口（返回分页 + 总数 + data）

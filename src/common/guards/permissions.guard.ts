@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  CanActivate,
-  ExecutionContext,
-  ForbiddenException,
-} from '@nestjs/common';
+import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -28,18 +23,19 @@ export class PermissionsGuard implements CanActivate {
 
     const user = await this.userRepo.findOne({
       where: { user_id: userId },
-      relations: ['roles', 'roles.permissions'],
+      relations: ['roles', 'roles.menus'],
     });
-
     if (!user) throw new ForbiddenException('用户不存在');
 
-    const userPermissions = user.roles.flatMap((role) =>
-      role.permissions.map((p) => p.permissionCode),
-    );
-    const hasPermission = requiredPermissions.every((p) =>
-      userPermissions.includes(p),
+    // 管理员自动拥有所有权限
+    const isAdmin = user.roles.some(r => r.roleCode === 'admin');
+    if (isAdmin) return true;
+
+    const userPermissions = user.roles.flatMap(role =>
+      role.menus.map(menu => menu.perm).filter(Boolean),
     );
 
+    const hasPermission = requiredPermissions.every(p => userPermissions.includes(p));
     if (!hasPermission) throw new ForbiddenException('权限不足');
 
     return true;

@@ -8,29 +8,30 @@ import {
   Delete,
   Patch,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiQuery,ApiBearerAuth } from '@nestjs/swagger';
-import { ApiBody } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiQuery, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
 import { MenuService } from './menu.service';
 import { CreateMenuDto } from './dto/create-menu.dto';
 import { UpdateMenuDto } from './dto/update-menu.dto';
 import { AuthGuard } from '@nestjs/passport';
-import { RolesGuard } from '../../common/guards/roles.guard';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import { Permissions } from '../../common/decorators/permissions.decorator';
 import { UseGuards } from '@nestjs/common';
-
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { User } from '../user/entities/user.entity';
 
 @ApiTags('系统菜单')
 @ApiBearerAuth('JWT')
-@UseGuards(AuthGuard('jwt'), RolesGuard)
+@UseGuards(AuthGuard('jwt'), PermissionsGuard)
 @Controller('menu')
 export class MenuController {
-  constructor(
-     readonly menuService: MenuService) {}
+  constructor(private readonly menuService: MenuService) {}
 
+  /** 获取当前用户路由（前端侧边栏菜单） */
   @Get('routes')
-@ApiOperation({ summary: '获取路由（前端侧边栏菜单）' })
-getRoutes() {
-  return this.menuService.getRoutes();
-}
+  @ApiOperation({ summary: '获取当前用户路由（前端侧边栏菜单）' })
+  getRoutes(@CurrentUser() user: User) {
+    return this.menuService.getRoutes(user.user_id);
+  }
 
   @Post()
   @ApiOperation({ summary: '新增菜单' })
@@ -66,18 +67,12 @@ getRoutes() {
   }
 
   @Delete()
-@ApiOperation({ summary: '删除菜单（支持单个或多个）' })
-@ApiBody({ 
-  description: '要删除的菜单ID数组', 
-  schema: { 
-    type: 'object',
-    properties: {
-      ids: { type: 'array', items: { type: 'number' } },
-    },
-    example: { ids: [1, 2, 3] }
-  } 
-})
-remove(@Body('ids') ids: number[]) {
-  return this.menuService.remove(ids);
-}
+  @ApiOperation({ summary: '删除菜单（支持单个或多个）' })
+  @ApiBody({ 
+    description: '要删除的菜单ID数组', 
+    schema: { type: 'object', properties: { ids: { type: 'array', items: { type: 'number' } } }, example: { ids: [1,2,3] } } 
+  })
+  remove(@Body('ids') ids: number[]) {
+    return this.menuService.remove(ids);
+  }
 }

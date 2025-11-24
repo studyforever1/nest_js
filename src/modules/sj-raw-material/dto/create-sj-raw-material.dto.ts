@@ -1,17 +1,20 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsOptional, IsString, IsObject } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsNotEmpty, IsOptional, IsString, IsObject, IsNumber, Min } from 'class-validator';
 
 export class CreateSjRawMaterialDto {
+  /** 分类编号 */
   @ApiProperty({ example: 'X', description: '分类编号' })
   @IsNotEmpty()
   @IsString()
   category: string;
 
+  /** 原料名称 */
   @ApiProperty({ example: '国有资产格尔木', description: '原料名称' })
   @IsNotEmpty()
   @IsString()
   name: string;
 
+  /** 化学成分及指标 JSON 对象 */
   @ApiProperty({
     example: {
       TFe: 62.4,
@@ -25,9 +28,6 @@ export class CreateSjRawMaterialDto {
       K2O: 0.02,
       Na2O: 0.03,
       Zn: 0.09,
-      As: 0.0,
-      Pb: 0.0,
-      V2O5: 0.0,
       H2O: 0.0,
       烧损: 1.15,
       价格: 1050.0,
@@ -38,12 +38,21 @@ export class CreateSjRawMaterialDto {
   @IsObject()
   composition: Record<string, any>;
 
-  @ApiProperty({ example: '格尔木', description: '产地' })
+  /** 库存数量 */
+  @ApiPropertyOptional({ example: 1000, description: '库存数量' })
+  @IsOptional()
+  @IsNumber({}, { message: 'inventory 必须是数字' })
+  @Min(0, { message: '库存不能为负数' })
+  inventory?: number;
+
+  /** 产地 */
+  @ApiPropertyOptional({ example: '格尔木', description: '产地' })
   @IsOptional()
   @IsString()
   origin?: string;
 
-  @ApiProperty({ example: '备注信息', description: '备注' })
+  /** 备注 */
+  @ApiPropertyOptional({ example: '备注信息', description: '备注' })
   @IsOptional()
   @IsString()
   remark?: string;

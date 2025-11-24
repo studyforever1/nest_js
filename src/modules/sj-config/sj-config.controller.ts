@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, UseGuards,Query } from '@nestjs/common';
+import { Controller, Post, Body, Get, UseGuards, Query,Put,Delete } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { SjconfigService } from './sj-config.service';
 import { AuthGuard } from '@nestjs/passport';
@@ -28,22 +28,21 @@ export class SjconfigController {
   }
 
   /** 保存或更新完整参数组 */
-  @Post('save')
-  @Permissions('sj-config')
-  @ApiOperation({ summary: '保存参数组（原料/化学/其他参数）' })
-  async save(@CurrentUser() user: User, @Body() body: SaveConfigDto) {
-    return this.sjconfigService.saveFullConfig(
-      user,
-      this.MODULE_NAME,
-      body.ingredientLimits,
-      body.chemicalLimits,
-      body.otherSettings,
-    );
-  }
+  @Put('save')
+@ApiOperation({ summary: '保存参数组（原料/化学/其他参数）' })
+async save(@CurrentUser() user: User, @Body() body: SaveConfigDto) {
+  return this.sjconfigService.saveFullConfig(
+    user,
+    this.MODULE_NAME,
+    body.ingredientLimits,
+    body.chemicalLimits,
+    body.otherSettings,
+  );
+}
+
 
   /** 保存选中原料列表 */
   @Post('save-ingredient')
-  @Permissions('sj-config')
   @ApiOperation({ summary: '保存选中原料序号到参数组' })
   async saveIngredient(@CurrentUser() user: User, @Body() body: SaveIngredientDto) {
     return this.sjconfigService.saveIngredientParams(
@@ -53,32 +52,29 @@ export class SjconfigController {
     );
   }
 
-   /** 删除选中的原料（同步 ingredientParams 和 ingredientLimits） */
-  @Post('delete-ingredient')
-  @Permissions('sj-config')
-  @ApiOperation({ summary: '删除选中的原料' })
-  async deleteIngredient(
-    @CurrentUser() user: User,
-    @Body() body: DeleteIngredientDto,
-  ) {
-    return this.sjconfigService.deleteIngredientParams(
-      user,
-      this.MODULE_NAME,
-      body.removeParams,
-    );
-  }
-
-  @Get('selected-ingredients')
-@ApiOperation({ summary: '获取已选中原料详情（分页）' })
-async getSelectedIngredients(
-  @CurrentUser() user: User,
-  @Query() pagination: PaginationDto,
-) {
-  return this.sjconfigService.getSelectedIngredients(
+  /** 删除选中的原料（同步更新精粉和固定配比） */
+  @Delete('ingredient')
+@ApiOperation({ summary: '删除选中的原料' })
+async deleteIngredient(@CurrentUser() user: User, @Body() body: DeleteIngredientDto) {
+  return this.sjconfigService.deleteIngredientParams(
     user,
     this.MODULE_NAME,
-    pagination.page,
-    pagination.pageSize,
+    body.removeParams,
   );
 }
+
+  /** 获取已选中原料详情（分页） */
+  @Get('selected-ingredients')
+  @ApiOperation({ summary: '获取已选中原料详情（分页）' })
+  async getSelectedIngredients(
+    @CurrentUser() user: User,
+    @Query() pagination: PaginationDto,
+  ) {
+    return this.sjconfigService.getSelectedIngredients(
+      user,
+      this.MODULE_NAME,
+      pagination.page,
+      pagination.pageSize,
+    );
+  }
 }

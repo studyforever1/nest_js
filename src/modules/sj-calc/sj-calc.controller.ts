@@ -21,7 +21,7 @@ export class CalcController {
 
   /** 启动计算任务 */
   @Post('start')
-  @Permissions('sj-calc')
+  @Permissions('sj:calc')
   @ApiOperation({ summary: '启动计算任务' })
   @ApiOkResponseData(StartTaskResponseDto)
   @ApiErrorResponse()
