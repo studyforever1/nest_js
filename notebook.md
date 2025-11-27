@@ -59,3 +59,11 @@ npx ts-node -r tsconfig-paths/register src/init-permissions.ts
 
 npm run build
 npm run build:exe  
+
+
+# 数据迁移
+npm install typeorm -D
+npm install @nestjs/typeorm typeorm mysql2
+
+npx typeorm migration:create src/migrations/AddSomeTable src/database/database.module.ts
+

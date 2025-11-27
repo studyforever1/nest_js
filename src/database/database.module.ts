@@ -4,7 +4,6 @@ import { Task } from './entities/task.entity';
 import { Result } from '../modules/sj-calc/entities/result.entity';
 import { TaskLog } from '../modules/sj-calc/entities/task_log.entity';
 import { Role } from '../modules/role/entities/role.entity';
-import { Permission } from '../modules/permission/entities/permission.entity';
 import { SjRawMaterial } from '../modules/sj-raw-material/entities/sj-raw-material.entity';
 import { SjCandidate } from 'src/modules/sj-candidate/entities/sj-candidate.entity';
 import { SharedData } from 'src/modules/shared-data/entities/shared-data.entity';
@@ -34,7 +33,6 @@ export const databaseConfig: TypeOrmModuleOptions = {
     Result,
     TaskLog,
     Role,
-    Permission,
     SjRawMaterial,
     BizModule,
     ConfigGroup,
@@ -46,5 +44,7 @@ export const databaseConfig: TypeOrmModuleOptions = {
     ChatRoom,
     Menu
   ],
-  synchronize: true, // 开发环境可用，生产环境建议 false 并使用 migration
+  synchronize: false, // 开发环境可用，生产环境建议 false 并使用 migration
+  migrations: ['src/migrations/*{.ts,.js}'],
+  
 };

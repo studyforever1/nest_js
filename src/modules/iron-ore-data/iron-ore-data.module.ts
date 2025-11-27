@@ -24,7 +24,7 @@ import { PortMaterialInfo } from './entities/port-material-info.entity';
 // 用户权限相关实体（用于权限验证）
 import { User } from '../user/entities/user.entity';
 import { Role } from '../role/entities/role.entity';
-import { Permission } from '../permission/entities/permission.entity';
+
 
 // 配置相关实体
 import { ConfigGroup } from '../../database/entities/config-group.entity';
@@ -124,7 +124,6 @@ import { StatisticsService } from '../../common/services/statistics.service';
       // 用户权限相关实体（用于权限验证）
       User,
       Role,
-      Permission,
       
       // 配置相关实体
       ConfigGroup,

@@ -41,7 +41,8 @@ export class SjRawMaterialController {
 
   /** 新增原料 */
   @Post()
-  @ApiOperation({ summary: '添加按钮' })
+  @ApiOperation({ summary: '添加按钮' ,
+    description: '对应烧结物料信息中的添加按钮，在烧结物料信息库中添加新的物料'  })
   create(@Body() dto: CreateSjRawMaterialDto, @CurrentUser() user: { username: string }) {
     return this.rawService.create(dto, user.username);
   }
@@ -52,7 +53,9 @@ export class SjRawMaterialController {
    * 原来的 /search 和 /search-by-type 仍可使用（兼容前端），但建议统一请求到这里。
    */
   @Get()
-  @ApiOperation({ summary: '查询原料（支持分页、名称模糊、类型筛选）' })
+  @ApiOperation({ summary: '查询原料（支持分页、名称模糊、类型筛选）' ,
+    description: '对应烧结物料信息中的查询、刷新、外购含铁料、循环含铁料、溶剂、燃料按钮，外购含铁料分类编号为T，\
+    循环含铁料分类编号为X，溶剂分类编号为R，燃料分类编号为F' })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'pageSize', required: false })
   @ApiQuery({ name: 'name', required: false })

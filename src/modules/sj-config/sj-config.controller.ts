@@ -1,5 +1,5 @@
 import { Controller, Post, Body, Get, UseGuards, Query,Put,Delete } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth,ApiQuery } from '@nestjs/swagger';
 import { SjconfigService } from './sj-config.service';
 import { AuthGuard } from '@nestjs/passport';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
@@ -8,10 +8,10 @@ import { User } from '../user/entities/user.entity';
 import { SaveConfigDto } from './dto/save-config.dto';
 import { SaveIngredientDto } from './dto/save-ingredient.dto';
 import { DeleteIngredientDto } from './dto/delete-ingredient.dto';
-import { PaginationDto } from '../sj-raw-material/dto/pagination.dto';
+import { PaginationDto } from '../sj-config/dto/pagination.dto';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 
-@ApiTags('烧结参数配置')
+@ApiTags('烧结参数配置接口')
 @ApiBearerAuth('JWT')
 @UseGuards(AuthGuard('jwt'), PermissionsGuard)
 @Controller('sjconfig')
@@ -22,14 +22,20 @@ export class SjconfigController {
 
   /** 获取最新参数组 */
   @Get('latest')
-  @ApiOperation({ summary: '获取最新参数组' })
+  @ApiOperation({ summary: '获取最新参数组',
+    description: '获取当前用户最新保存的烧结配料计算参数组信息，chemicalLimits对应烧结矿化学成分设置，\
+    ingredientLimits对应烧结矿原料配比设置，otherSettings对应其他参数设置和算法设置，其中精粉和固定配比不需要\
+    呈现，其他参数设置中只有其他费用、计划上料量、脱硫率、烟气流量，其他参数都属于算法设置。化学成分余量设置暂时不用。 '
+   })
   async latest(@CurrentUser() user: User) {
     return this.sjconfigService.getLatestConfigByName(user, this.MODULE_NAME);
   }
 
   /** 保存或更新完整参数组 */
   @Put('save')
-@ApiOperation({ summary: '保存参数组（原料/化学/其他参数）' })
+@ApiOperation({ summary: '保存参数组（原料/化学/其他参数）',
+    description: '对应区间品位配料-烧结工序中的确定并保存按钮'
+    })
 async save(@CurrentUser() user: User, @Body() body: SaveConfigDto) {
   return this.sjconfigService.saveFullConfig(
     user,
@@ -40,21 +46,30 @@ async save(@CurrentUser() user: User, @Body() body: SaveConfigDto) {
   );
 }
 
+@Post('save-ingredients')
+@ApiOperation({
+  summary: '保存选中原料（全选模式或分类模式）',
+  description: 'category 不传 → 全选模式；传 category → 分类同步模式（增删选中）'
+})
+async saveIngredients(
+  @CurrentUser() user: User,
+  @Body() body: SaveIngredientDto,
+) {
+  // 传给 service 时，确保 selectedIds 不为 undefined，默认空数组
+  const selectedIds = body.ingredientParams || [];
+  return this.sjconfigService.saveSelectedIngredients(
+    user,
+    this.MODULE_NAME,
+    selectedIds,
+    body.category,
+  );
+}
 
-  /** 保存选中原料列表 */
-  @Post('save-ingredient')
-  @ApiOperation({ summary: '保存选中原料序号到参数组' })
-  async saveIngredient(@CurrentUser() user: User, @Body() body: SaveIngredientDto) {
-    return this.sjconfigService.saveIngredientParams(
-      user,
-      this.MODULE_NAME,
-      body.ingredientParams,
-    );
-  }
 
   /** 删除选中的原料（同步更新精粉和固定配比） */
   @Delete('ingredient')
-@ApiOperation({ summary: '删除选中的原料' })
+@ApiOperation({ summary: '删除选中的原料',
+    description: '对应烧结物料信息中的删除按钮'  })
 async deleteIngredient(@CurrentUser() user: User, @Body() body: DeleteIngredientDto) {
   return this.sjconfigService.deleteIngredientParams(
     user,
@@ -63,18 +78,24 @@ async deleteIngredient(@CurrentUser() user: User, @Body() body: DeleteIngredient
   );
 }
 
-  /** 获取已选中原料详情（分页） */
-  @Get('selected-ingredients')
-  @ApiOperation({ summary: '获取已选中原料详情（分页）' })
-  async getSelectedIngredients(
-    @CurrentUser() user: User,
-    @Query() pagination: PaginationDto,
-  ) {
-    return this.sjconfigService.getSelectedIngredients(
-      user,
-      this.MODULE_NAME,
-      pagination.page,
-      pagination.pageSize,
-    );
-  }
+ @Get('selected-ingredients')
+@ApiOperation({
+  summary: '获取已选原料（分页、搜索）',
+})
+async getSelectedIngredients(
+  @CurrentUser() user: User,
+  @Query() dto: PaginationDto,
+) {
+  return this.sjconfigService.getSelectedIngredients(
+    user,
+    this.MODULE_NAME,
+    dto.page,
+    dto.pageSize,
+    dto.name,
+    dto.type,
+  );
+}
+
+
+
 }

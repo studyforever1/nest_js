@@ -7,8 +7,9 @@ import { ConfigGroup } from '../../database/entities/config-group.entity';
 import { BizModule } from '../../database/entities/biz-module.entity';
 import { User } from '../user/entities/user.entity';
 import { SjRawMaterial } from '../sj-raw-material/entities/sj-raw-material.entity';
-
+import { formatRaw } from '../sj-config/util/format-raw.util';
 import _ from 'lodash';
+import { In } from 'typeorm';
 
 @Injectable()
 export class SjconfigService {
@@ -127,74 +128,87 @@ export class SjconfigService {
   }
 
   /** 保存选择的原料序号（同步 ingredientLimits + 精粉列表） */
-  /** 保存选择的原料序号（重置 精粉 & 固定配比 列表） */
-async saveIngredientParams(
+  /** 保存选中原料（支持全选模式 & 分类模式） */
+async saveSelectedIngredients(
   user: User,
   moduleName: string,
-  ingredientParams: number[],
+  selectedIds: number[],
+  category?: string,
 ) {
   const group = await this.getOrCreateUserGroup(user, moduleName);
   const configData = _.cloneDeep(group.config_data || {});
-  const oldLimits = configData.ingredientLimits || {};
+  const oldParams: number[] = configData.ingredientParams || [];
+  const oldLimits: Record<string, any> = configData.ingredientLimits || {};
 
-  // ===============================
-  // 1. 重建 ingredientLimits
-  // ===============================
-  const newLimits: Record<string, any> = {};
-  ingredientParams.forEach((id) => {
-    if (oldLimits[id]) {
-      newLimits[id] = oldLimits[id];
-    } else {
-      newLimits[id] = {
-        low_limit: 0,
-        top_limit: 100,
-        lose_index: 1,
-      };
-    }
-  });
+  if (!configData.otherSettings) configData.otherSettings = {};
+  if (!Array.isArray(configData.otherSettings['精粉'])) configData.otherSettings['精粉'] = [];
+  if (!Array.isArray(configData.otherSettings['固定配比'])) configData.otherSettings['固定配比'] = [];
 
-  // ===============================
-  // 2. 选中原料查询
-  // ===============================
-  const raws = await this.rawRepo.findByIds(ingredientParams);
+  let newParams: number[] = [];
+  const newLimits: Record<string, any> = { ...oldLimits };
 
-  // ===============================
-  // 3. 重置：精粉 + 固定配比
-  // ===============================
-  configData.otherSettings = configData.otherSettings || {};
+  if (category) {
+    // 分类模式
+    const categoryIdsInDB = await this.rawRepo.createQueryBuilder('raw')
+      .where('raw.id IN (:...ids)', { ids: oldParams })
+      .andWhere('raw.category LIKE :cat', { cat: `${category}%` })
+      .getMany()
+      .then(r => r.map(r => r.id));
 
-  // 完全重置
-  configData.otherSettings['精粉'] = [];
-  configData.otherSettings['固定配比'] = [];
+    const toRemove = categoryIdsInDB.filter(id => !selectedIds.includes(id));
+    const toAdd = selectedIds.filter(id => !categoryIdsInDB.includes(id));
 
-  // ===============================
-  // 4. 重新根据规则生成两个列表
-  // ===============================
+    // 删除取消选中的 ingredientLimits
+    toRemove.forEach(id => delete newLimits[id]);
+    // 新增选中的 ingredientLimits
+    toAdd.forEach(id => {
+      if (!newLimits[id]) newLimits[id] = { low_limit: 0, top_limit: 100, lose_index: 1 };
+    });
 
-  raws.forEach((raw) => {
-    // =========== 精粉规则：T1 开头 ===========
-    if (raw.category?.startsWith('T1')) {
-      configData.otherSettings['精粉'].push(raw.id);
-    }
+    // 更新 ingredientParams 去重
+    newParams = Array.from(new Set([...oldParams.filter(id => !toRemove.includes(id)), ...toAdd]));
 
-    // =========== 固定配比规则（如需自定义，在这里写） ===========
-    // 假设固定配比规则是 category = 'FIX'
-    if (raw.category === 'FIX') {
-      configData.otherSettings['固定配比'].push(raw.id);
-    }
-  });
+    // 更新精粉 / 固定配比
+    const raws = await this.rawRepo.findByIds(toAdd);
+    raws.forEach(raw => {
+      if (raw.category?.startsWith('T1') && !configData.otherSettings['精粉'].includes(raw.id)) {
+        configData.otherSettings['精粉'].push(raw.id);
+      }
+      // 固定配比逻辑
+    });
 
-  // ===============================
-  // 5. 保存
-  // ===============================
+    configData.otherSettings['精粉'] = configData.otherSettings['精粉'].filter(
+      id => !toRemove.includes(Number(id))
+    );
+    configData.otherSettings['固定配比'] = configData.otherSettings['固定配比'].filter(
+      id => !toRemove.includes(Number(id))
+    );
+
+  } else {
+    // 全选模式
+    selectedIds.forEach(id => {
+      if (!newLimits[id]) newLimits[id] = { low_limit: 0, top_limit: 100, lose_index: 1 };
+    });
+    newParams = Array.from(new Set(selectedIds));
+
+    const raws = await this.rawRepo.findByIds(selectedIds);
+    raws.forEach(raw => {
+      if (raw.category?.startsWith('T1') && !configData.otherSettings['精粉'].includes(raw.id)) {
+        configData.otherSettings['精粉'].push(raw.id);
+      }
+      // 固定配比逻辑
+    });
+  }
+
   group.config_data = {
     ...configData,
-    ingredientParams,
+    ingredientParams: newParams,
     ingredientLimits: newLimits,
   };
 
   return await this.configRepo.save(group);
 }
+
 
 
   /** 删除选中的原料（同步更新精粉 + 固定配比） */
@@ -245,40 +259,61 @@ async saveIngredientParams(
 
 
   /** 获取已选原料（分页） */
-  async getSelectedIngredients(
-    user: User,
-    moduleName: string,
-    page = 1,
-    pageSize = 10,
-  ) {
-    const group = await this.getOrCreateUserGroup(user, moduleName);
-    const configData = group.config_data || {};
-    const ingredientParams: number[] = configData.ingredientParams || [];
+  /** 获取已选原料（支持分页、名称模糊、分类筛选） */
+async getSelectedIngredients(
+  user: User,
+  moduleName: string,
+  page = 1,
+  pageSize = 10,
+  name?: string,
+  type?: string,
+) {
+  const group = await this.getOrCreateUserGroup(user, moduleName);
+  const configData = group.config_data || {};
+  const ingredientParams: number[] = configData.ingredientParams || [];
 
-    const total = ingredientParams.length;
-    if (!total) return { total: 0, page, pageSize, list: [] };
-
-    const start = (page - 1) * pageSize;
-    const ids = ingredientParams.slice(start, start + pageSize);
-
-    const raws = await this.rawRepo.findByIds(ids);
-
-    const list = raws.map((raw) => {
-      const { id, name, category, origin, composition } = raw;
-      const { TFe, 价格, H2O, 烧损, ...otherCompo } = composition || {};
-      return {
-        id,
-        name,
-        category,
-        origin,
-        TFe: TFe ?? null,
-        ...otherCompo,
-        H2O: H2O ?? null,
-        烧损: 烧损 ?? null,
-        价格: 价格 ?? null,
-      };
-    });
-
-    return { total, page, pageSize, list };
+  if (!ingredientParams.length) {
+    return {
+      data: [],
+      total: 0,
+      page,
+      pageSize,
+      totalPages: 0,
+    };
   }
+
+  /** ---- 1. 构建 query builder（先筛选用户所选原料） ---- */
+  const qb = this.rawRepo.createQueryBuilder('raw')
+    .where('raw.id IN (:...ids)', { ids: ingredientParams })
+    .orderBy('raw.id', 'ASC'); // 保持顺序一致
+
+  /** ---- 2. 追加搜索条件 ---- */
+  if (name) {
+    qb.andWhere('raw.name LIKE :name', { name: `%${name}%` });
+  }
+
+  if (type) {
+    qb.andWhere('raw.category LIKE :cat', { cat: `${type}%` });
+  }
+
+  /** ---- 3. 获取总数（用于分页） ---- */
+  const total = await qb.getCount();
+
+  /** ---- 4. 分页查询 ---- */
+  const records = await qb
+    .skip((page - 1) * pageSize)
+    .take(pageSize)
+    .getMany();
+
+  /** ---- 5. 统一格式化 ---- */
+  const list = records.map(formatRaw);
+
+  return {
+    data: list,
+    total,
+    page,
+    pageSize,
+    totalPages: Math.ceil(total / pageSize),
+  };
+}
 }
