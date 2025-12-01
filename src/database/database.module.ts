@@ -16,7 +16,8 @@ import { ChatMessage } from '../modules/chat/entities/chat-message.entity';
 import { History } from '../modules/history/entities/history.entity';
 import { ChatRoom } from 'src/modules/chat/entities/chat-room.entity';
 import { Menu } from 'src/modules/menu/entity/menu.entity';
-
+import { GlMaterialInfo } from 'src/modules/gl-material-info/entities/gl-material-info.entity';
+import { GlFuelInfo } from 'src/modules/gl-fuel-info/entities/gl-fuel-info.entity';
 // 数据库配置
 
 export const databaseConfig: TypeOrmModuleOptions = {
@@ -42,9 +43,11 @@ export const databaseConfig: TypeOrmModuleOptions = {
     SjCandidate,
     SharedData,
     ChatRoom,
-    Menu
+    Menu,
+    GlMaterialInfo,
+    GlFuelInfo
   ],
-  synchronize: false, // 开发环境可用，生产环境建议 false 并使用 migration
+  synchronize: true, // 开发环境可用，生产环境建议 false 并使用 migration
   migrations: ['src/migrations/*{.ts,.js}'],
   
 };

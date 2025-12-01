@@ -42,36 +42,47 @@ export class HistoryService {
   }
 
   /** 保存方案到历史记录 */
-  // src/modules/history/history.service.ts
+ /** 保存方案到历史记录 */
+// src/modules/history/history.service.ts
 async saveBatch(
   user: User,
   task: Task,
   results: any[],
   schemeIndexes: number[],
   moduleType: string,
-): Promise<ApiResponse<null>> {
-
+): Promise<ApiResponse<{ count: number }>> {
   const histories: History[] = [];
 
   for (const index of schemeIndexes) {
     const scheme = results[index];
     if (!scheme) continue;
 
-    const history = this.historyRepo.create({
-      task,
-      user,
-      scheme_id: `${task.task_uuid}-${index}`,
-      result: scheme,
-      module_type: moduleType,
+    // 检查是否已存在
+    const exists = await this.historyRepo.findOne({
+      where: { task: { task_uuid: task.task_uuid }, scheme_id: `${task.task_uuid}-${index}` },
     });
-    histories.push(history);
+
+    if (!exists) {
+      const history = this.historyRepo.create({
+        task,
+        user,
+        scheme_id: `${task.task_uuid}-${index}`,
+        result: scheme,
+        module_type: moduleType,
+      });
+      histories.push(history);
+    }
   }
 
   if (!histories.length) return ApiResponse.error('没有有效的方案可保存');
 
   await this.historyRepo.save(histories);
 
-  return ApiResponse.success(null, '批量保存成功');
+  return ApiResponse.success(
+    { count: histories.length },
+    '方案保存成功',
+  );
 }
+
 
 }

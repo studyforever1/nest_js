@@ -129,11 +129,13 @@ export class SjconfigService {
 
   /** 保存选择的原料序号（同步 ingredientLimits + 精粉列表） */
   /** 保存选中原料（支持全选模式 & 分类模式） */
+/** 保存选中原料（支持全选模式 & 分类模式） */
 async saveSelectedIngredients(
   user: User,
   moduleName: string,
   selectedIds: number[],
   category?: string,
+  name?: string,
 ) {
   const group = await this.getOrCreateUserGroup(user, moduleName);
   const configData = _.cloneDeep(group.config_data || {});
@@ -147,48 +149,77 @@ async saveSelectedIngredients(
   let newParams: number[] = [];
   const newLimits: Record<string, any> = { ...oldLimits };
 
-  if (category) {
-    // 分类模式
-    const categoryIdsInDB = await this.rawRepo.createQueryBuilder('raw')
-      .where('raw.id IN (:...ids)', { ids: oldParams })
-      .andWhere('raw.category LIKE :cat', { cat: `${category}%` })
-      .getMany()
-      .then(r => r.map(r => r.id));
+  // ============================================================
+  // ⭐ 判断分类同步模式
+  // 只要 category 或 name 任一不为空 → 分类模式
+  // ============================================================
+  const isCategoryMode =
+    (category && category.trim() !== '') ||
+    (name && name.trim() !== '');
 
+  if (isCategoryMode) {
+    // ============================================================
+    // ⭐ 分类同步模式（category 有值 或 name 有值）
+    // ============================================================
+    let qb = this.rawRepo.createQueryBuilder('raw')
+      .where('raw.id IN (:...ids)', { ids: oldParams });
+
+    // category 条件
+    if (category && category.trim()) {
+      qb = qb.andWhere('raw.category LIKE :cat', { cat: `${category}%` });
+    }
+
+    // name 条件
+    if (name && name.trim()) {
+      qb = qb.andWhere('raw.name LIKE :name', { name: `%${name}%` });
+    }
+
+    const categoryIdsInDB = await qb.getMany().then(r => r.map(r => r.id));
+
+    // 对比差异
     const toRemove = categoryIdsInDB.filter(id => !selectedIds.includes(id));
     const toAdd = selectedIds.filter(id => !categoryIdsInDB.includes(id));
 
-    // 删除取消选中的 ingredientLimits
+    // 删除取消选中的
     toRemove.forEach(id => delete newLimits[id]);
-    // 新增选中的 ingredientLimits
+
+    // 添加新增的
     toAdd.forEach(id => {
-      if (!newLimits[id]) newLimits[id] = { low_limit: 0, top_limit: 100, lose_index: 1 };
+      if (!newLimits[id]) {
+        newLimits[id] = { low_limit: 0, top_limit: 100, lose_index: 1 };
+      }
     });
 
-    // 更新 ingredientParams 去重
-    newParams = Array.from(new Set([...oldParams.filter(id => !toRemove.includes(id)), ...toAdd]));
+    // 更新 ingredientParams
+    newParams = Array.from(new Set([
+      ...oldParams.filter(id => !toRemove.includes(id)),
+      ...toAdd,
+    ]));
 
-    // 更新精粉 / 固定配比
+    // 同步精粉 & 固定配比
     const raws = await this.rawRepo.findByIds(toAdd);
     raws.forEach(raw => {
       if (raw.category?.startsWith('T1') && !configData.otherSettings['精粉'].includes(raw.id)) {
         configData.otherSettings['精粉'].push(raw.id);
       }
-      // 固定配比逻辑
     });
 
-    configData.otherSettings['精粉'] = configData.otherSettings['精粉'].filter(
-      id => !toRemove.includes(Number(id))
-    );
-    configData.otherSettings['固定配比'] = configData.otherSettings['固定配比'].filter(
-      id => !toRemove.includes(Number(id))
-    );
+    // 移除取消的
+    configData.otherSettings['精粉'] = configData.otherSettings['精粉']
+      .filter(id => !toRemove.includes(Number(id)));
+
+    configData.otherSettings['固定配比'] = configData.otherSettings['固定配比']
+      .filter(id => !toRemove.includes(Number(id)));
 
   } else {
-    // 全选模式
+    // ============================================================
+    // ⭐ 全选模式（category="" 且 name=""）
+    // ============================================================
+
     selectedIds.forEach(id => {
       if (!newLimits[id]) newLimits[id] = { low_limit: 0, top_limit: 100, lose_index: 1 };
     });
+
     newParams = Array.from(new Set(selectedIds));
 
     const raws = await this.rawRepo.findByIds(selectedIds);
@@ -196,10 +227,10 @@ async saveSelectedIngredients(
       if (raw.category?.startsWith('T1') && !configData.otherSettings['精粉'].includes(raw.id)) {
         configData.otherSettings['精粉'].push(raw.id);
       }
-      // 固定配比逻辑
     });
   }
 
+  // 保存最终数据
   group.config_data = {
     ...configData,
     ingredientParams: newParams,
@@ -208,6 +239,7 @@ async saveSelectedIngredients(
 
   return await this.configRepo.save(group);
 }
+
 
 
 

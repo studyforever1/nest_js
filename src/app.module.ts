@@ -14,6 +14,9 @@ import { SjCandidateModule } from './modules/sj-candidate/sj-candidate.module';
 import { SharedDataModule } from './modules/shared-data/shared-data.module';
 import { IronOreDataModule } from './modules/iron-ore-data/iron-ore-data.module';
 import { MenuModule } from './modules/menu/menu.module';
+import { GlMaterialInfoModule } from './modules/gl-material-info/gl-material-info.module';
+import { GlFuelInfoModule } from './modules/gl-fuel-info/gl-fuel-info.module';
+import { GlConfigModule } from './modules/gl-config/gl-config.module';
 
 
 @Module({
@@ -32,7 +35,10 @@ import { MenuModule } from './modules/menu/menu.module';
     ChatModule,
     HistoryModule,
     SjCandidateModule,
-    SharedDataModule
+    SharedDataModule,
+    GlMaterialInfoModule,
+    GlFuelInfoModule,
+    GlConfigModule
   ],
 })
 export class AppModule {}

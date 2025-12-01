@@ -36,9 +36,9 @@ mv src/calc/dto src/modules/calc/
 http://localhost:3000/api-docs 
 
 
-nest g module modules/gl-material-info
-nest g service modules/gl-material-info
-nest g controller modules/gl-material-info
+nest g module modules/gl-config
+nest g service modules/gl-config
+nest g controller modules/gl-config
 
 # 打包
 npm run build

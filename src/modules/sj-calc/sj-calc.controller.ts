@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, Param, UseGuards } from '@nestjs/common';
+import { Controller, Post, Body, Get, Param,Query, UseGuards } from '@nestjs/common';
 import { CalcService } from './sj-calc.service';
 import { ApiBearerAuth, ApiTags, ApiOperation, ApiParam } from '@nestjs/swagger';
 import { ApiOkResponseData, ApiErrorResponse } from '../../common/response/response.decorator';
@@ -10,6 +10,7 @@ import { Permissions } from '../../common/decorators/permissions.decorator';
 import { StopTaskDto } from './dto/stop-task.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { User } from '../user/entities/user.entity';
+import { PaginationDto } from './dto/pagination.dto';
 
 @ApiBearerAuth('JWT')
 @ApiTags('烧结计算任务接口')
@@ -57,38 +58,16 @@ export class CalcController {
   @Get('progress/:task_id')
   @Permissions('sj-calc')
   @ApiOperation({
-    summary: '查询任务进度',
-    description: '查询指定 task_id 的实时计算进度和当前状态，用于实现滚动条效果。',
+    summary: '查询任务进度（分页 + 排序）',
+    description: '查询增量结果，支持分页和排序',
   })
-  @ApiParam({
-    name: 'task_id',
-    description: '任务 ID，由 /start 返回',
-    required: true,
-  })
+  @ApiParam({ name: 'task_id', description: '任务 ID，由 /start 返回', required: true })
   @ApiOkResponseData(ProgressResponseDto)
   @ApiErrorResponse()
-  getProgress(@Param('task_id') task_id: string) {
-    return this.calcService.fetchAndSaveProgress(task_id);
+  async getProgress(
+    @Param('task_id') task_id: string,
+    @Query() pagination: PaginationDto
+  ) {
+    return this.calcService.fetchAndSaveProgress(task_id, pagination);
   }
-
-  /**
-   * 查询任务详情（结束后完整结果）
-   */
-  @Get('task/:task_id')
-  @Permissions('sj-calc')
-  @ApiOperation({
-    summary: '查询任务详情',
-    description: '查询一次计算任务的最终结果详情（适用于已经结束的任务）。',
-  })
-  @ApiParam({
-    name: 'task_id',
-    description: '任务 ID，由 /start 返回',
-    required: true,
-  })
-  @ApiOkResponseData(ProgressResponseDto)
-  @ApiErrorResponse()
-  getTaskDetails(@Param('task_id') task_id: string) {
-    return this.calcService.getTaskDetails(task_id);
-  }
-
 }
