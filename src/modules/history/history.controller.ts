@@ -24,11 +24,14 @@ export class HistoryController {
     private readonly taskRepo: Repository<Task>,
   ) {}
 
-  /** 查询历史记录 */
+   /** 查询历史记录（分页 + 当天 + 模块类型） */
   @Get('list')
-  @ApiOperation({ summary: '获取用户历史记录，可按模块类型筛选' })
-  async list(@CurrentUser() user: User, @Query() query: ListHistoryDto) {
-    return this.historyService.list(user, query.module_type);
+  @ApiOperation({ summary: '获取用户历史记录（分页、当天、模块筛选）' })
+  async list(
+    @CurrentUser() user: User,
+    @Query() query: ListHistoryDto
+  ) {
+    return this.historyService.list(user, query);
   }
 
   /** 删除历史记录 */

@@ -48,19 +48,8 @@ async save(@CurrentUser() user: User, @Body() body: SaveConfigDto) {
 
 @Post('save-ingredients')
 @ApiOperation({
-  summary: '保存选中原料（全选模式 & 分类模式）',
-  description: `
-【使用说明】
-
-⭕ 全选模式（覆盖式设置）：
-    - 当 category = "" 且 name = "" 时
-    - ingredientParams 将作为新的完整选中列表
-
-⭕ 分类模式（增删同步模式）：
-    - 当 category 有值 或 name 有值（任意一个有值即可）
-    - ingredientParams 只表示该分类下当前选中的内容
-    - 后端会自动对比历史，执行添加 + 删除操作（增量同步）
-  `
+  summary: '保存选中原料（全选模式或分类模式）',
+  description: 'category 不传 → 全选模式；传 category → 分类同步模式（增删选中）'
 })
 async saveIngredients(
   @CurrentUser() user: User,
@@ -73,7 +62,7 @@ async saveIngredients(
     this.MODULE_NAME,
     selectedIds,
     body.category,
-    body.name
+    
   );
 }
 

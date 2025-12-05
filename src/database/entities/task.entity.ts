@@ -10,7 +10,7 @@ import {
   Index,
 } from 'typeorm';
 import { User } from '../../modules/user/entities/user.entity';
-import { Result } from '../../modules/sj-calc/entities/result.entity';
+import { Result } from './result.entity';
 import { TaskLog } from '../../modules/sj-calc/entities/task_log.entity';
 import { BizModule } from '../entities/biz-module.entity';
 import { ConfigGroup } from '../entities/config-group.entity';

@@ -16,6 +16,7 @@ import { IronOreDataModule } from './modules/iron-ore-data/iron-ore-data.module'
 import { MenuModule } from './modules/menu/menu.module';
 import { GlMaterialInfoModule } from './modules/gl-material-info/gl-material-info.module';
 import { GlFuelInfoModule } from './modules/gl-fuel-info/gl-fuel-info.module';
+import { GlCalcModule } from './modules/gl-calc/gl-calc.module';
 import { GlConfigModule } from './modules/gl-config/gl-config.module';
 
 
@@ -39,6 +40,7 @@ import { GlConfigModule } from './modules/gl-config/gl-config.module';
     GlMaterialInfoModule,
     GlFuelInfoModule,
     GlConfigModule
+    // GlCalcModule
   ],
 })
 export class AppModule {}

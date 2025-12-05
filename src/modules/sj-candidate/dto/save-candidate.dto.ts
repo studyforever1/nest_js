@@ -16,7 +16,7 @@ export class SaveCandidateDto {
   @Min(0, { each: true })
   schemeIndexes: number[];
 
-  @ApiProperty({ example: '烧结配料', description: '模块类型' })
+  @ApiProperty({ example: '烧结配料计算', description: '模块类型' })
   @IsString()
   module_type: string;
 }

@@ -3,11 +3,14 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import axios, { AxiosResponse } from 'axios';
 import { Task, TaskStatus } from '../../database/entities/task.entity';
-import { Result } from './entities/result.entity';
+import { Result } from '../../database/entities/result.entity';
 import { User } from '../user/entities/user.entity';
 import { ApiResponse } from '../../common/response/response.dto';
 import { SjconfigService } from '../sj-config/sj-config.service';
 import { SjRawMaterial } from '../sj-raw-material/entities/sj-raw-material.entity';
+import { ExportSchemeDto } from './dto/export-scheme.dto';
+import ExcelJS from 'exceljs';
+
 
 /** 分页参数 DTO */
 export interface PaginationDto {
@@ -141,10 +144,23 @@ export class CalcService {
 
   /** 查询任务进度（增量返回 + 分页排序 + 总页数） */
 /** 查询任务进度（增量 + 分页排序 + 总页数 + 完成任务返回最终结果） */
+/** 查询任务进度（增量 + 分页排序 + 总页数 + 完成任务返回最终结果） */
 async fetchAndSaveProgress(taskUuid: string, pagination?: PaginationDto): Promise<ApiResponse<any>> {
   try {
     const task = await this.findTask(taskUuid);
-    if (!task) return ApiResponse.error('任务不存在');
+    if (!task) {
+      return ApiResponse.success({
+        taskUuid,
+        status: 'initializing',
+        progress: 0,
+        total: 0,
+        results: [],
+        page: pagination?.page ?? 1,
+        pageSize: pagination?.pageSize ?? 10,
+        totalResults: 0,
+        totalPages: 0,
+      }, '任务初始化中');
+    }
 
     let results: any[] = [];
 
@@ -154,25 +170,39 @@ async fetchAndSaveProgress(taskUuid: string, pagination?: PaginationDto): Promis
       const { code, message, data } = res.data;
       if (code !== 0 || !data) throw new Error(message || 'FastAPI 返回异常');
 
-      // ID → Name 映射
+      // 收集所有原料代号
       const idSet = new Set<number>();
       for (const result of data.results || []) {
         const rawMix = result["原料配比"] || {};
         Object.keys(rawMix).forEach(idStr => idSet.add(Number(idStr)));
       }
+
+      // 获取数据库原料信息
       const raws = await this.sjRawMaterialRepo.find({ where: { id: In([...idSet]) } });
       const idNameMap: Record<string, string> = {};
       raws.forEach(raw => idNameMap[String(raw.id)] = raw.name);
 
+      // 原料上下限信息
+      const ingredientLimits: Record<string, any> = task.parameters?.ingredientLimits || {};
+
+      // 增量结果处理
       results = (data.results || []).map(item => {
         const mapped = { ...item };
         if (item["原料配比"]) {
           const newMix: Record<string, any> = {};
-          Object.entries(item["原料配比"]).forEach(([id, val]) => {
-            newMix[idNameMap[id] || id] = val;
+          Object.entries(item["原料配比"]).forEach(([code, val]) => {
+            const valObj = val as Record<string, any>;
+            const limits = ingredientLimits[code] || {};
+            newMix[code] = {
+              ...valObj,                         // 保留原有字段
+              name: idNameMap[code] || limits.name || code, // 新增 name
+              配比: (valObj.配比 ?? 0) * 100,
+              };
           });
           mapped["原料配比"] = newMix;
         }
+        // 化学成分保持原有结构
+        mapped["化学成分"] = mapped["化学成分"] || {};
         return mapped;
       });
 
@@ -222,6 +252,53 @@ async fetchAndSaveProgress(taskUuid: string, pagination?: PaginationDto): Promis
     return this.handleError(err, '获取任务进度失败');
   }
 }
+/** 导出选中方案为 Excel */
+async exportSchemeExcel(dto: ExportSchemeDto): Promise<Buffer> {
+  const { taskUuid, schemeIndexes } = dto;
+
+  const task = await this.findTask(taskUuid, ['user']);
+  if (!task) throw new Error('任务不存在');
+  if (task.status !== TaskStatus.FINISHED) throw new Error('任务尚未完成，无法导出方案');
+
+  const resultEntity = await this.resultRepo.findOne({
+    where: { task: { task_uuid: taskUuid } },
+  });
+  if (!resultEntity) throw new Error('未找到任务结果');
+
+  const allResults = resultEntity.output_data || [];
+  const schemes = schemeIndexes.map(i => ({ index: i, data: allResults[i] })).filter(x => x.data);
+  if (!schemes.length) throw new Error('没有可导出的方案');
+
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet('方案导出');
+
+  // 自动生成列，嵌套对象用 JSON.stringify 展示
+  const example = schemes[0].data;
+  const columns = Object.keys(example).map(key => ({
+    header: key,
+    key: key,
+    width: 20,
+  }));
+
+  sheet.columns = [
+    { header: '方案序号', key: 'index', width: 15 },
+    ...columns,
+  ];
+
+  // 填充数据
+  schemes.forEach(item => {
+    const rowData: Record<string, any> = { index: item.index };
+    for (const [key, value] of Object.entries(item.data)) {
+      rowData[key] = typeof value === 'object' ? JSON.stringify(value) : value;
+    }
+    sheet.addRow(rowData);
+  });
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  return Buffer.from(buffer);
+}
+
+
 
 
 /** 分页 + 排序工具方法 */
@@ -303,4 +380,80 @@ private applyPaginationAndSort(results: any[], pagination?: PaginationDto) {
     this.logger.error(`${prefix}: ${message}`, (err as any)?.stack);
     return ApiResponse.error(message);
   }
+  async getSchemeByIndex(taskUuid: string, index: number): Promise<any | null> {
+  // 查找任务
+  const task = await this.taskRepo.findOne({ where: { task_uuid: taskUuid } });
+  if (!task) return null;
+
+  // 查询结果
+  const resultEntity = await this.resultRepo.findOne({
+    where: { task: { task_uuid: taskUuid } },
+  });
+  if (!resultEntity) return null;
+
+  // 确保 output_data 是数组
+  let allResults: any[] = [];
+  if (Array.isArray(resultEntity.output_data)) {
+    allResults = resultEntity.output_data;
+  } else if (typeof resultEntity.output_data === 'string') {
+    try {
+      allResults = JSON.parse(resultEntity.output_data);
+    } catch (err) {
+      this.logger.error(`解析 output_data 出错: ${err}`);
+      return null;
+    }
+  }
+
+  // 检查 index 是否越界
+  const scheme = allResults[index];
+  if (!scheme) return null;
+
+  // 原料上下限信息
+  const ingredientLimits: Record<string, { low_limit?: number; top_limit?: number; name?: string }> =
+    task.parameters?.ingredientLimits || {};
+
+  // 化学成分上下限信息
+  const chemicalLimits: Record<string, { low_limit?: number; top_limit?: number }> =
+    task.parameters?.chemicalLimits || {};
+
+  // 原料配比处理：保留代号 + 添加 name + 上下限 + 配比 x100
+  const ingredientWithLimits: Record<string, any> = {};
+  const rawIds = Object.keys(scheme['原料配比'] || {});
+  
+  // 从数据库获取原料名称映射
+  const raws = await this.sjRawMaterialRepo.find({ where: { id: In(rawIds.map(Number)) } });
+  const idNameMap: Record<string, string> = {};
+  raws.forEach(raw => idNameMap[String(raw.id)] = raw.name);
+
+  Object.entries(scheme['原料配比'] || {}).forEach(([code, val]) => {
+    const valObj = val as Record<string, any>;
+    const limits = ingredientLimits[code] || {};
+    ingredientWithLimits[code] = {
+      ...valObj,
+      name: idNameMap[code] || limits.name || code,
+      low_limit: limits.low_limit ?? null,
+      top_limit: limits.top_limit ?? null // 小数转百分比
+    };
+  });
+
+  // 化学成分处理：保留原有字段 + 上下限
+  // 化学成分处理：保留原有值 + 上下限
+const chemicalWithLimits: Record<string, any> = {};
+Object.entries(scheme['化学成分'] || {}).forEach(([key, val]) => {
+  const limits = chemicalLimits[key] || {};
+  chemicalWithLimits[key] = {
+    value: val, // 原来的数值
+    low_limit: limits.low_limit ?? null,
+    top_limit: limits.top_limit ?? null,
+  };
+});
+
+
+  return {
+    ...scheme,
+    '原料配比': ingredientWithLimits,
+    '化学成分': chemicalWithLimits,
+  };
+}
+
 }

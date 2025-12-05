@@ -11,6 +11,11 @@ import { StopTaskDto } from './dto/stop-task.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { User } from '../user/entities/user.entity';
 import { PaginationDto } from './dto/pagination.dto';
+import { ExportSchemeDto } from './dto/export-scheme.dto';
+import { Res } from '@nestjs/common';
+import type { Response } from 'express';
+import { GetSchemeDto } from './dto/get-scheme.dto';
+
 
 @ApiBearerAuth('JWT')
 @ApiTags('烧结计算任务接口')
@@ -70,4 +75,44 @@ export class CalcController {
   ) {
     return this.calcService.fetchAndSaveProgress(task_id, pagination);
   }
+  @Post('export')
+@Permissions('sj:calc')
+@ApiOperation({
+  summary: '导出选中的候选方案（Excel）',
+  description: '根据方案序号导出方案，生成 xlsx 文件下载',
+})
+@ApiErrorResponse()
+async exportTask(
+  @Body() dto: ExportSchemeDto,
+  @Res() res: Response,  // ✅ express Response
+): Promise<void> {        // 返回 void
+  try {
+    const buffer = await this.calcService.exportSchemeExcel(dto);
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename=schemes_${dto.taskUuid}.xlsx`);
+    res.setHeader('Content-Length', buffer.length);
+    res.end(buffer); // ✅ 手动结束
+  } catch (err: any) {
+    res.status(400).json({ code: 400, message: err.message });
+  }
+}
+  @Get('scheme')
+@Permissions('sj:calc')
+@ApiOperation({
+  summary: '获取指定任务的某个方案信息',
+  description: '根据 taskUuid 和方案序号 index 获取该方案的详细计算结果',
+})
+@ApiErrorResponse()
+async getScheme(
+  @Query() dto: GetSchemeDto,
+  @CurrentUser() user: User,
+): Promise<any> {
+  const scheme = await this.calcService.getSchemeByIndex(dto.taskUuid, dto.index);
+  if (!scheme) {
+    return { code: 404, message: '方案不存在', data: null };
+  }
+
+  return { code: 0, message: '获取成功', data: scheme };
+}
 }

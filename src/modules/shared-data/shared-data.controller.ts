@@ -1,3 +1,4 @@
+// src/modules/shared-data/shared-data.controller.ts
 import { Controller, Post, Body, Get, Query, Delete, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
@@ -28,11 +29,11 @@ export class SharedDataController {
     );
   }
 
-  /** 查询共享方案 */
+  /** 分页查询共享方案 */
   @Get('list')
-  @ApiOperation({ summary: '获取共享方案，可按模块类型筛选' })
-  async list(@Query() query: ListSharedDto) {
-    return this.sharedService.list(query.module_type);
+  @ApiOperation({ summary: '获取共享方案（分页 + 模块筛选 + 日期筛选）' })
+  async list(@CurrentUser() user: User, @Query() query: ListSharedDto) {
+    return this.sharedService.list(user, query);
   }
 
   /** 删除共享方案 */

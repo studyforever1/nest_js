@@ -3,7 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { CalcService } from './sj-calc.service';
 import { CalcController } from './sj-calc.controller';
 import { Task } from '../../database/entities/task.entity';
-import { Result } from './entities/result.entity';
+import { Result } from '../../database/entities/result.entity';
 import { User } from '../user/entities/user.entity';
 import { SjRawMaterial } from '../sj-raw-material/entities/sj-raw-material.entity';
 import { SjconfigModule } from '../sj-config/sj-config.module';

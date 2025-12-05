@@ -1,7 +1,7 @@
 import { TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { User } from '../modules/user/entities/user.entity';
 import { Task } from './entities/task.entity';
-import { Result } from '../modules/sj-calc/entities/result.entity';
+import { Result } from './entities/result.entity';
 import { TaskLog } from '../modules/sj-calc/entities/task_log.entity';
 import { Role } from '../modules/role/entities/role.entity';
 import { SjRawMaterial } from '../modules/sj-raw-material/entities/sj-raw-material.entity';

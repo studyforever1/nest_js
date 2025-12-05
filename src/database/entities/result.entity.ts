@@ -6,7 +6,7 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import { Task } from '../../../database/entities/task.entity';
+import { Task } from './task.entity';
 
 @Entity('result')
 export class Result {

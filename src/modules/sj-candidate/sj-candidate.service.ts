@@ -1,10 +1,13 @@
+// src/modules/sj-candidate/sj-candidate.service.ts
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository, In, Between } from 'typeorm';
 import { SjCandidate } from './entities/sj-candidate.entity';
 import { Task } from '../../database/entities/task.entity';
 import { User } from '../user/entities/user.entity';
 import { ApiResponse } from '../../common/response/response.dto';
+import { ListCandidateDto } from './dto/list-candidate.dto';
+import dayjs from 'dayjs';
 
 @Injectable()
 export class SjCandidateService {
@@ -17,13 +20,26 @@ export class SjCandidateService {
     private readonly userRepo: Repository<User>,
   ) {}
 
-  /** 批量保存候选方案 */
+  /** ----------- 统一格式方法（对齐 Shared / History） ----------- */
+  private formatRaw = (item: SjCandidate) => {
+    return {
+      id: item.id,
+      scheme_id: item.scheme_id,
+      module_type: item.module_type,
+      result: item.result,
+      created_at: dayjs(item.created_at).format('YYYY-MM-DD HH:mm:ss'),
+      task_uuid: item.task?.task_uuid || null,
+      username: item.user?.username || null,
+    };
+  };
+
+  /** ----------- 批量保存候选方案 ----------- */
   async saveCandidate(
     taskUuid: string,
     userId: number,
     schemeIndexes: number[],
     moduleType: string,
-  ): Promise<ApiResponse<{ count: number }>> {
+  ) {
     const task = await this.taskRepo.findOne({
       where: { task_uuid: taskUuid },
       relations: ['results'],
@@ -45,22 +61,24 @@ export class SjCandidateService {
       }
     }
 
-    const candidates: SjCandidate[] = [];
+    const toSave: SjCandidate[] = [];
 
-    for (const index of schemeIndexes) {
-      const scheme = results[index];
+    for (const idx of schemeIndexes) {
+      const scheme = results[idx];
       if (!scheme) continue;
 
+      const schemeId = `${task.task_uuid}-${idx}`;
+
       const exists = await this.candidateRepo.findOne({
-        where: { task: { task_uuid: task.task_uuid }, scheme_id: `${task.task_uuid}-${index}` },
+        where: { scheme_id: schemeId },
       });
 
       if (!exists) {
-        candidates.push(
+        toSave.push(
           this.candidateRepo.create({
             task,
             user,
-            scheme_id: `${task.task_uuid}-${index}`,
+            scheme_id: schemeId,
             result: scheme,
             module_type: moduleType,
           }),
@@ -68,43 +86,58 @@ export class SjCandidateService {
       }
     }
 
-    if (candidates.length) {
-      await this.candidateRepo.save(candidates);
-    }
+    if (toSave.length) await this.candidateRepo.save(toSave);
 
-    return ApiResponse.success({ count: candidates.length }, '候选方案保存成功');
+    return ApiResponse.success({ count: toSave.length }, '候选方案保存成功');
   }
 
-  /** 查询候选方案 */
-  async list(user: User, module_type?: string): Promise<ApiResponse<any[]>> {
+  /** ----------- 分页查询候选方案（对齐 History/Shared） ----------- */
+  async list(user: User, query: ListCandidateDto) {
+    const { module_type, date, page = 1, pageSize = 10 } = query;
+
     const where: any = { user: { user_id: user.user_id } };
+
     if (module_type) where.module_type = module_type;
 
-    const data = await this.candidateRepo.find({
+    // 日期筛选 YYYY-MM-DD
+    if (date) {
+      const start = new Date(`${date} 00:00:00`);
+      const end = new Date(`${date} 23:59:59`);
+      where.created_at = Between(start, end);
+    }
+
+    const [records, total] = await this.candidateRepo.findAndCount({
       where,
+      relations: ['task', 'user'],
       order: { created_at: 'DESC' },
+      skip: (Number(page) - 1) * Number(pageSize),
+      take: Number(pageSize),
     });
 
-    const formatted = data.map(item => ({
-      id: item.id,
-      scheme_id: item.scheme_id,
-      result: item.result,
-      module_type: item.module_type,
-      created_at: item.created_at,
-    }));
-
-    return ApiResponse.success(formatted, '获取候选方案成功');
+    return ApiResponse.success(
+      {
+        data: records.map(this.formatRaw),
+        total,
+        page: Number(page),
+        pageSize: Number(pageSize),
+        totalPages: Math.ceil(total / pageSize),
+      },
+      '获取候选方案成功',
+    );
   }
 
-  /** 删除候选方案 */
-  async delete(user: User, ids: number[] | string[]): Promise<ApiResponse<{ count: number }>> {
-    const idArray = Array.isArray(ids) ? ids : [ids];
+  /** ----------- 删除候选方案（对齐 Shared/History） ----------- */
+  async delete(user: User, ids: number[]) {
+    const idArray = (Array.isArray(ids) ? ids : [ids]).map(Number);
 
     const result = await this.candidateRepo.delete({
-      id: In(idArray as any),
+      id: In(idArray),
       user: { user_id: user.user_id },
     });
 
-    return ApiResponse.success({ count: result.affected || 0 }, '删除候选方案成功');
+    return ApiResponse.success(
+      { count: result.affected || 0 },
+      '删除候选方案成功',
+    );
   }
 }
