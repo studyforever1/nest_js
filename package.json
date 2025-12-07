@@ -44,6 +44,7 @@
     "dayjs": "^1.11.19",
     "dotenv": "^17.2.3",
     "exceljs": "^4.4.0",
+    "git-filter-repo": "^0.0.30",
     "graphql": "^16.11.0",
     "lodash": "^4.17.21",
     "multer": "^2.0.2",
