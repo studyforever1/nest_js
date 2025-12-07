@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 
-export class StartTaskResponseDto {
+export class GLStartTaskResponseDto {
   @ApiProperty({ description: '任务 UUID', example: 'uuid-1234-5678' })
   taskUuid: string;
 

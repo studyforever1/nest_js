@@ -1,9 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Repository, In } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, In } from 'typeorm';
+import _ from 'lodash';
+
 import { ConfigGroup } from '../../database/entities/config-group.entity';
 import { BizModule } from '../../database/entities/biz-module.entity';
 import { User } from '../user/entities/user.entity';
+import { GlMaterialInfo } from '../gl-material-info/entities/gl-material-info.entity';
+import { GlFuelInfo } from '../gl-fuel-info/entities/gl-fuel-info.entity';
 
 @Injectable()
 export class GlConfigService {
@@ -14,42 +18,510 @@ export class GlConfigService {
     private readonly configRepo: Repository<ConfigGroup>,
     @InjectRepository(BizModule)
     private readonly moduleRepo: Repository<BizModule>,
-  ) {}
+    @InjectRepository(GlMaterialInfo)
+    private readonly rawRepo: Repository<GlMaterialInfo>,
+    @InjectRepository(GlFuelInfo)
+    private readonly fuelRepo: Repository<GlFuelInfo>,
+  ) { }
 
-  /** 获取用户最新参数，如果没有，则复制默认参数生成 */
-  async getOrCreateUserGroup(user: User, moduleName: string) {
-    const module = await this.moduleRepo.findOne({ where: { name: moduleName } });
-    if (!module) throw new Error(`模块 "${moduleName}" 不存在`);
+  // ===================== 公共方法 =====================
+  // ============================================================
+// 获取模块默认参数组（不依赖用户）
+// ============================================================
+async getDefaultGroup(moduleName: string) {
+  const module = await this.moduleRepo.findOne({ where: { name: moduleName } });
+  if (!module) throw new Error(`模块 "${moduleName}" 不存在`);
 
-    let group = await this.configRepo.findOne({
-      where: { user: { user_id: user.user_id }, module: { module_id: module.module_id }, is_latest: true, is_default: false },
+  const defaultGroup = await this.configRepo.findOne({
+    where: { module: { module_id: module.module_id }, is_default: true },
+  });
+  if (!defaultGroup) throw new Error(`模块 "${moduleName}" 没有默认参数组`);
+  
+  return defaultGroup;
+}
+
+// ============================================================
+// 获取或创建用户专属参数组（不写 name）
+// ============================================================
+async getOrCreateUserGroup(user: User, moduleName: string) {
+  const module = await this.moduleRepo.findOne({ where: { name: moduleName } });
+  if (!module) throw new Error(`模块 "${moduleName}" 不存在`);
+
+  // 查找用户最新参数组
+  let group = await this.configRepo.findOne({
+    where: {
+      user: { user_id: user.user_id },
+      module: { module_id: module.module_id },
+      is_latest: true,
+      is_default: false,
+    },
+  });
+
+  // 用户没有 → 复制默认组
+  if (!group) {
+    const defaultGroup = await this.getDefaultGroup(moduleName);
+    this.logger.log(`用户没有参数组，为用户复制默认参数组`);
+
+    group = this.configRepo.create({
+      user,
+      module,
+      config_data: _.cloneDeep(defaultGroup.config_data), // ❌ 不加 name
+      is_latest: true,
+      is_default: false,
     });
+    await this.configRepo.save(group);
+  }
 
-    if (!group) {
-      const defaultGroup = await this.configRepo.findOne({ where: { module: { module_id: module.module_id }, is_default: true } });
-      if (!defaultGroup) throw new Error(`模块 "${moduleName}" 没有默认参数组`);
+  return group;
+}
 
-      group = this.configRepo.create({
-        user,
-        module,
-        config_data: JSON.parse(JSON.stringify(defaultGroup.config_data)),
-        is_latest: true,
-        is_default: false,
+// ============================================================
+// 获取用户最新参数组（读取时动态附加 name）
+// ============================================================
+async getLatestConfigByName(user: User, moduleName: string) {
+  const group = await this.getOrCreateUserGroup(user, moduleName);
+  const configData = _.cloneDeep(group.config_data);
+
+  // ----------------- 原料 -----------------
+  const ingredientLimits = configData.ingredientLimits || {};
+  const rawIds = Object.keys(ingredientLimits).map(id => Number(id));
+
+  if (rawIds.length) {
+    const raws = await this.rawRepo.findByIds(rawIds);
+    const limitsWithName: Record<string, any> = {};
+    raws.forEach(r => {
+      if (ingredientLimits[r.id]) {
+        limitsWithName[r.id] = {
+          name: r.name, // ✅ 只读时附加 name
+          ...ingredientLimits[r.id],
+        };
+      }
+    });
+    configData.ingredientLimits = limitsWithName;
+  }
+
+  // ----------------- 燃料 -----------------
+  const fuelLimits = configData.fuelLimits || {};
+  const fuelIds = Object.keys(fuelLimits).map(id => Number(id));
+
+  if (fuelIds.length) {
+    const fuels = await this.fuelRepo.findByIds(fuelIds);
+    const limitsWithName: Record<string, any> = {};
+    fuels.forEach(f => {
+      if (fuelLimits[f.id]) {
+        limitsWithName[f.id] = {
+          name: f.name, // ✅ 只读时附加 name
+          ...fuelLimits[f.id],
+        };
+      }
+    });
+    configData.fuelLimits = limitsWithName;
+  }
+
+  return configData;
+}
+
+
+
+  // ===================== 高炉原料方法（块矿） =====================
+  async getLatestIngredients(user: User, moduleName: string) {
+    const group = await this.getOrCreateUserGroup(user, moduleName);
+    const configData = _.cloneDeep(group.config_data || {});
+
+    const ingredientLimits = configData.ingredientLimits || {};
+    const ids = Object.keys(ingredientLimits).map(Number).filter(Boolean);
+    if (ids.length) {
+      const raws = await this.rawRepo.find({ where: { id: In(ids) } });
+      const limitsWithName: Record<string, any> = {};
+      raws.forEach(r => {
+        if (ingredientLimits[r.id]) limitsWithName[r.id] = {...ingredientLimits[r.id] };
       });
-
-      await this.configRepo.save(group);
+      configData.ingredientLimits = limitsWithName;
     }
 
-    return group;
+    return configData;
   }
 
-  /** 获取最新参数组 */
-  async getLatestConfigByName(user: User, moduleName: string) {
+  /** 保存选中原料（支持分类 & 全选模式） */
+async saveSelectedIngredients(
+  user: User,
+  moduleName: string,
+  selectedIds: number[],
+  category?: string,
+  name?: string,
+) {
+  const group = await this.getOrCreateUserGroup(user, moduleName);
+  const configData = _.cloneDeep(group.config_data || {});
+
+  if (!configData.otherSettings) configData.otherSettings = {};
+  if (!Array.isArray(configData.otherSettings['块矿'])) configData.otherSettings['块矿'] = [];
+  if (!Array.isArray(configData.otherSettings['固定配比'])) configData.otherSettings['固定配比'] = [];
+
+  const cleanCat = category?.trim();
+  const cleanName = name?.trim();
+
+  const oldParams: number[] = configData.ingredientParams || [];
+  const oldLimits: Record<string, any> = configData.ingredientLimits || {};
+
+  // 空状态直接清空
+  const isEmptyReset = (!selectedIds?.length) && !cleanCat && !cleanName;
+  if (isEmptyReset) {
+    group.config_data = {
+      ...configData,
+      ingredientParams: [],
+      ingredientLimits: {},
+      otherSettings: { '块矿': [], '固定配比': [] },
+    };
+    return await this.configRepo.save(group);
+  }
+
+  const newLimits: Record<string, any> = {};
+  let newParams: number[] = [];
+
+  const isCategoryMode = !!(cleanCat || cleanName);
+
+  if (isCategoryMode) {
+    let qb = this.rawRepo.createQueryBuilder('raw').where('raw.id IN (:...ids)', { ids: oldParams });
+    if (cleanCat) qb = qb.andWhere('raw.category LIKE :cat', { cat: `${cleanCat}%` });
+    if (cleanName) qb = qb.andWhere('raw.name LIKE :nm', { nm: `%${cleanName}%` });
+
+    const oldCategoryIds = (await qb.getMany()).map(r => r.id);
+
+    const toRemove = oldCategoryIds.filter(id => !selectedIds.includes(id));
+    const toAdd = selectedIds.filter(id => !oldCategoryIds.includes(id));
+
+    // 保留未变更且已有 limits 的项
+    oldParams.forEach(id => {
+      if (!toRemove.includes(id) && !toAdd.includes(id)) {
+        if (oldLimits[id]) newLimits[id] = oldLimits[id];
+      }
+    });
+
+    if (toAdd.length) {
+      const addRaws = await this.rawRepo.find({ where: { id: In(toAdd) } });
+      addRaws.forEach(r => newLimits[r.id] = { low_limit: 0, top_limit: 100 });
+      addRaws.forEach(r => {
+        if (r.category?.startsWith('K') && !configData.otherSettings['块矿'].includes(r.id)) {
+          configData.otherSettings['块矿'].push(r.id);
+        }
+      });
+    }
+
+    newParams = [...oldParams.filter(id => !toRemove.includes(id)), ...toAdd];
+
+    configData.otherSettings['块矿'] =
+      configData.otherSettings['块矿'].filter((id: number) => !toRemove.includes(id));
+    configData.otherSettings['固定配比'] =
+      configData.otherSettings['固定配比'].filter((id: number) => !toRemove.includes(id));
+
+  } else {
+    // 全选模式
+    const safeSelected = (selectedIds || []).filter(Boolean);
+    const raws = safeSelected.length ? await this.rawRepo.find({ where: { id: In(safeSelected) } }) : [];
+
+    raws.forEach(r => {
+      if (oldLimits[r.id]) newLimits[r.id] = oldLimits[r.id];
+      else newLimits[r.id] = { low_limit: 0, top_limit: 100 };
+    });
+
+    newParams = raws.map(r => r.id);
+
+    configData.otherSettings['块矿'] = Array.from(
+      new Set(raws.filter(r => r.category?.startsWith('K')).map(r => String(r.id)))
+    );
+
+    configData.otherSettings['固定配比'] = Array.from(
+      new Set((configData.otherSettings['固定配比'] || [])
+        .filter((id: number) => newParams.includes(Number(id)))
+        .map(id => String(id)))
+    );
+  }
+
+  group.config_data = {
+    ...configData,
+    ingredientParams: newParams,
+    ingredientLimits: newLimits,
+  };
+
+  return await this.configRepo.save(group);
+}
+
+
+  async deleteSelectedIngredients(user: User, moduleName: string, removeIds: number[]) {
     const group = await this.getOrCreateUserGroup(user, moduleName);
-    return JSON.parse(JSON.stringify(group.config_data));
+    const configData = _.cloneDeep(group.config_data || {});
+    const oldParams: number[] = configData.ingredientParams || [];
+    const oldLimits: Record<string, any> = configData.ingredientLimits || {};
+
+    const newParams = oldParams.filter(id => !removeIds.includes(id));
+    const newLimits: Record<string, any> = {};
+    Object.keys(oldLimits).forEach(id => {
+      if (!removeIds.includes(Number(id))) newLimits[id] = oldLimits[id];
+    });
+
+    if (configData.otherSettings) {
+      if (Array.isArray(configData.otherSettings['块矿'])) {
+        configData.otherSettings['块矿'] = configData.otherSettings['块矿'].filter((id: number) => !removeIds.includes(Number(id)));
+      }
+      if (Array.isArray(configData.otherSettings['固定配比'])) {
+        configData.otherSettings['固定配比'] = configData.otherSettings['固定配比'].filter((id: number) => !removeIds.includes(Number(id)));
+      }
+    }
+
+    group.config_data = { ...configData, ingredientParams: newParams, ingredientLimits: newLimits };
+    return await this.configRepo.save(group);
   }
 
-  /** 保存完整参数组 */
+  async getSelectedIngredients(options: {
+    user: User;
+    moduleName: string;
+    page?: number;
+    pageSize?: number;
+    name?: string;
+    type?: string;
+  }) {
+    const { user, moduleName, page = 1, pageSize = 10, name, type } = options;
+
+    const group = await this.getOrCreateUserGroup(user, moduleName);
+    const ingredientParams: number[] = group.config_data?.ingredientParams || [];
+
+    if (!ingredientParams.length) {
+      return { data: [], total: 0, page, pageSize, totalPages: 0 };
+    }
+
+    /** ---- 1. 构建 QueryBuilder，仅查询已选材料 ---- */
+    let qb = this.rawRepo.createQueryBuilder('raw')
+      .where('raw.id IN (:...ids)', { ids: ingredientParams })
+      .orderBy('raw.id', 'ASC'); // 保持用户选择顺序
+
+    /** ---- 2. 追加筛选条件 ---- */
+    if (name) {
+      qb = qb.andWhere('raw.name LIKE :name', { name: `%${name}%` });
+    }
+
+    if (type) {
+      qb = qb.andWhere('raw.category LIKE :type', { type: `${type}%` });
+    }
+
+    /** ---- 3. 执行分页 ---- */
+    const [records, total] = await qb
+      .skip((page - 1) * pageSize)
+      .take(pageSize)
+      .getManyAndCount();
+
+    /** ---- 4. 展开 composition 字段（保持你原来的格式） ---- */
+    const formatRaw = (raw: any) => {
+      const { id, category, name, composition, inventory, remark } = raw;
+      if (!composition)
+        return { id, category, name, inventory, remark };
+
+      const {
+        TFe = null,
+        H2O = null,
+        返矿率 = null,
+        干基价格 = null,
+        返矿价格 = null,
+        ...others
+      } = composition;
+
+      return {
+        id,
+        category,
+        name,
+        TFe,
+        ...others,
+        H2O,
+        返矿率,
+        返矿价格,
+        干基价格,
+        inventory,
+        remark
+      };
+    };
+
+    return {
+      data: records.map(formatRaw),
+      total,
+      page,
+      pageSize,
+      totalPages: Math.ceil(total / pageSize)
+    };
+  }
+
+
+
+  async getSelectedFuels(options: {
+    user: User;
+    moduleName: string;
+    page?: number;
+    pageSize?: number;
+    name?: string;
+    type?: string;
+  }) {
+    const { user, moduleName, page = 1, pageSize = 10, name, type } = options;
+
+    const group = await this.getOrCreateUserGroup(user, moduleName);
+    const fuelParams: number[] = group.config_data?.fuelParams || [];
+
+    if (!fuelParams.length) {
+      return { data: [], total: 0, page, pageSize, totalPages: 0 };
+    }
+
+    /** ---- 1. 构建 QueryBuilder ---- */
+    let qb = this.fuelRepo.createQueryBuilder('fuel')
+      .where('fuel.id IN (:...ids)', { ids: fuelParams })
+      .orderBy('fuel.id', 'ASC');
+
+    /** ---- 2. 追加筛选 ---- */
+    if (name) {
+      qb = qb.andWhere('fuel.name LIKE :name', { name: `%${name}%` });
+    }
+
+    if (type) {
+      qb = qb.andWhere('fuel.category LIKE :type', { type: `${type}%` });
+    }
+
+    /** ---- 3. 分页 ---- */
+    const [records, total] = await qb
+      .skip((page - 1) * pageSize)
+      .take(pageSize)
+      .getManyAndCount();
+
+    /** ---- 4. 同样格式化 composition ---- */
+    const formatFuel = (raw: any) => {
+      const { id, category, name, composition, inventory, remark } = raw;
+
+      if (!composition)
+        return { id, category, name, inventory, remark };
+
+      const {
+        TFe = null,
+        H2O = null,
+        返矿率 = null,
+        干基价格 = null,
+        返矿价格 = null,
+        ...others
+      } = composition;
+
+      return {
+        id,
+        category,
+        name,
+        TFe,
+        ...others,
+        H2O,
+        返矿率,
+        返矿价格,
+        干基价格,
+        inventory,
+        remark,
+      };
+    };
+
+    return {
+      data: records.map(formatFuel),
+      total,
+      page,
+      pageSize,
+      totalPages: Math.ceil(total / pageSize)
+    };
+  }
+
+
+
+
+  // ===================== 燃料方法 =====================
+  /** 保存选中燃料（支持分类 & 全选模式） */
+async saveSelectedFuels(
+  user: User,
+  moduleName: string,
+  selectedIds: number[],
+  category?: string,
+  name?: string,
+) {
+  const group = await this.getOrCreateUserGroup(user, moduleName);
+  const configData = _.cloneDeep(group.config_data || {});
+
+  const cleanCat = category?.trim();
+  const cleanName = name?.trim();
+
+  const oldParams: number[] = configData.fuelParams || [];
+  const oldLimits: Record<string, any> = configData.fuelLimits || {};
+
+  const isEmptyReset = (!selectedIds?.length) && !cleanCat && !cleanName;
+  if (isEmptyReset) {
+    group.config_data = { ...configData, fuelParams: [], fuelLimits: {} };
+    return await this.configRepo.save(group);
+  }
+
+  const newLimits: Record<string, any> = {};
+  let newParams: number[] = [];
+
+  const isCategoryMode = !!(cleanCat || cleanName);
+
+  if (isCategoryMode) {
+    let qb = this.fuelRepo.createQueryBuilder('fuel').where('fuel.id IN (:...ids)', { ids: oldParams });
+    if (cleanCat) qb = qb.andWhere('fuel.category LIKE :cat', { cat: `${cleanCat}%` });
+    if (cleanName) qb = qb.andWhere('fuel.name LIKE :nm', { nm: `%${cleanName}%` });
+
+    const oldCategoryIds = (await qb.getMany()).map(r => r.id);
+
+    const toRemove = oldCategoryIds.filter(id => !selectedIds.includes(id));
+    const toAdd = selectedIds.filter(id => !oldCategoryIds.includes(id));
+
+    oldParams.forEach(id => {
+      if (!toRemove.includes(id) && oldLimits[id]) newLimits[id] = oldLimits[id];
+    });
+
+    if (toAdd.length) {
+      const addFuels = await this.fuelRepo.find({ where: { id: In(toAdd) } });
+      addFuels.forEach(f => {
+        newLimits[f.id] = { low_limit: 0, top_limit: 100 };
+      });
+    }
+
+    newParams = [...oldParams.filter(id => !toRemove.includes(id)), ...toAdd];
+
+  } else {
+    const safeSelected = (selectedIds || []).filter(Boolean);
+    const fuels = safeSelected.length ? await this.fuelRepo.find({ where: { id: In(safeSelected) } }) : [];
+
+    fuels.forEach(f => {
+      if (oldLimits[f.id]) newLimits[f.id] = oldLimits[f.id];
+      else newLimits[f.id] = { low_limit: 0, top_limit: 100 };
+    });
+
+    newParams = fuels.map(f => f.id);
+  }
+
+  group.config_data = {
+    ...configData,
+    fuelParams: newParams,
+    fuelLimits: newLimits,
+  };
+
+  return await this.configRepo.save(group);
+}
+
+
+
+
+  async deleteSelectedFuels(user: User, moduleName: string, removeIds: number[]) {
+    const group = await this.getOrCreateUserGroup(user, moduleName);
+    const configData = _.cloneDeep(group.config_data || {});
+    const oldParams: number[] = configData.fuelParams || [];
+    const oldLimits: Record<string, any> = configData.fuelLimits || {};
+
+    const newParams = oldParams.filter(id => !removeIds.includes(id));
+    const newLimits: Record<string, any> = {};
+    Object.keys(oldLimits).forEach(id => {
+      if (!removeIds.includes(Number(id))) newLimits[id] = oldLimits[id];
+    });
+
+    group.config_data = { ...configData, fuelParams: newParams, fuelLimits: newLimits };
+    return await this.configRepo.save(group);
+  }
+  // ===================== 保存完整配置 =====================
   async saveFullConfig(
     user: User,
     moduleName: string,
@@ -58,164 +530,17 @@ export class GlConfigService {
     slagLimits?: Record<string, any>,
     hotMetalRatio?: Record<string, any>,
     loadTopLimits?: Record<string, any>,
-    ironWaterTopLimits?: Record<string, any>,
     otherSettings?: Record<string, any>,
   ) {
     const group = await this.getOrCreateUserGroup(user, moduleName);
-
-    group.config_data = {
-      ...group.config_data,
+    group.config_data = _.merge({}, group.config_data || {}, {
       ...(ingredientLimits ? { ingredientLimits } : {}),
       ...(fuelLimits ? { fuelLimits } : {}),
       ...(slagLimits ? { slagLimits } : {}),
       ...(hotMetalRatio ? { hotMetalRatio } : {}),
       ...(loadTopLimits ? { loadTopLimits } : {}),
-      ...(ironWaterTopLimits ? { ironWaterTopLimits } : {}),
       ...(otherSettings ? { otherSettings } : {}),
-    };
-
-    return await this.configRepo.save(group);
-  }
-
-  /** 保存选中原料/燃料（支持两种模式：全选覆盖 或 分类增量同步） */
-  async saveSelectedIngredients(
-    user: User,
-    moduleName: string,
-    selectedIds: number[],
-    category?: string,
-    name?: string,
-    type: 'ingredient' | 'fuel' = 'ingredient',
-  ) {
-    const group = await this.getOrCreateUserGroup(user, moduleName);
-    const config = JSON.parse(JSON.stringify(group.config_data || {}));
-
-    // 初始化两套结构，确保不会 undefined
-    if (!config.ingredientLimits) config.ingredientLimits = {};
-    if (!config.fuelLimits) config.fuelLimits = {};
-    if (!config.ingredientParams) config.ingredientParams = [];
-    if (!config.fuelParams) config.fuelParams = [];
-
-    const keyLimits = type === 'fuel' ? 'fuelLimits' : 'ingredientLimits';
-    const keyParams = type === 'fuel' ? 'fuelParams' : 'ingredientParams';
-
-    // 分类模式判断（任一非空，则视为分类模式）
-    const isCategoryMode = (category && category.trim() !== '') || (name && name.trim() !== '');
-
-    if (isCategoryMode) {
-      // 分类模式：对该分类下的历史选中进行差异对比 ----
-      // NOTE: 这里的实现是通用版本（如果需要根据 DB 的 category/name 精确查询 raw 表并计算 toAdd/toRemove，
-      // 可以把 rawRepo 注入并查询真实数据库；当前版本只在已有的 Params 列表上做对比）
-      const oldParams: number[] = Array.isArray(config[keyParams]) ? config[keyParams].map((i: any) => Number(i)) : [];
-
-      // 计算 toAdd / toRemove（基于前端传来的 selectedIds 与历史 selected 列表做差异）
-      const toAdd = selectedIds.filter(id => !oldParams.includes(id));
-      const toRemove = oldParams.filter(id => !selectedIds.includes(id));
-
-      // 删除取消的
-      toRemove.forEach(id => {
-        delete config[keyLimits][id];
-      });
-
-      // 添加新增的并初始化 limits（如果不存在）
-      toAdd.forEach(id => {
-        if (!config[keyLimits][id]) {
-          config[keyLimits][id] = { low_limit: 0, top_limit: 100 };
-        }
-      });
-
-      // 更新 Params 列表（保留原有在其他分类保留的项）
-      const merged = Array.from(new Set([
-        ...oldParams.filter(id => !toRemove.includes(id)),
-        ...toAdd,
-      ]));
-
-      config[keyParams] = merged;
-
-    } else {
-      // 全选覆盖模式：selectedIds 作为新的完整列表
-      // 1. 为每个 selectedId 确保在 limits 中存在
-      selectedIds.forEach(id => {
-        if (!config[keyLimits][id]) config[keyLimits][id] = { low_limit: 0, top_limit: 100 };
-      });
-
-      // 2. 删除 limits 中不在 selectedIds 的项（保持一致）
-      Object.keys(config[keyLimits]).forEach(k => {
-        const idNum = Number(k);
-        if (!selectedIds.includes(idNum)) {
-          delete config[keyLimits][k];
-        }
-      });
-
-      // 3. 设置 params 为 selectedIds（唯一化）
-      config[keyParams] = Array.from(new Set(selectedIds));
-    }
-
-    group.config_data = config;
-    return await this.configRepo.save(group);
-  }
-
-  /** 删除选中原料/燃料（同步更新 Limits 与 Params） */
-  async deleteSelected(
-    user: User,
-    moduleName: string,
-    removeIds: number[],
-    type: 'ingredient' | 'fuel' = 'ingredient',
-  ) {
-    const group = await this.getOrCreateUserGroup(user, moduleName);
-    const config = JSON.parse(JSON.stringify(group.config_data || {}));
-
-    const keyLimits = type === 'fuel' ? 'fuelLimits' : 'ingredientLimits';
-    const keyParams = type === 'fuel' ? 'fuelParams' : 'ingredientParams';
-
-    if (!config[keyLimits]) config[keyLimits] = {};
-    if (!config[keyParams]) config[keyParams] = [];
-
-    // 从 limits 中删除
-    removeIds.forEach(id => {
-      delete config[keyLimits][id];
     });
-
-    // 从 params 数组中移除
-    config[keyParams] = (config[keyParams] || []).filter((id: number) => !removeIds.includes(Number(id)));
-
-    group.config_data = config;
     return await this.configRepo.save(group);
-  }
-
-  /** 分页获取已选原料/燃料（返回 id + limits） */
-  async getSelectedItems(
-    user: User,
-    moduleName: string,
-    page = 1,
-    pageSize = 10,
-    name?: string,
-    type: 'ingredient' | 'fuel' = 'ingredient',
-  ) {
-    const group = await this.getOrCreateUserGroup(user, moduleName);
-    const config = group.config_data || {};
-    const keyLimits = type === 'fuel' ? 'fuelLimits' : 'ingredientLimits';
-    const keyParams = type === 'fuel' ? 'fuelParams' : 'ingredientParams';
-
-    const selectedIds: number[] = Array.isArray(config[keyParams])
-      ? config[keyParams].map((i: any) => Number(i))
-      : Object.keys(config[keyLimits] || {}).map(k => Number(k));
-
-    const total = selectedIds.length;
-    const start = (page - 1) * pageSize;
-    const end = page * pageSize;
-    const pagedIds = selectedIds.slice(start, end);
-
-    const items = pagedIds.map(id => ({
-      id,
-      ...(config[keyLimits] && config[keyLimits][id] ? config[keyLimits][id] : {}),
-    }));
-
-    return {
-      data: items,
-      page,
-      pageSize,
-      total,
-      totalPages: Math.ceil(total / pageSize),
-    };
   }
 }

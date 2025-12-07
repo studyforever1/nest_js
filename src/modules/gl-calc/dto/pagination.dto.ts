@@ -2,7 +2,7 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsOptional, IsInt, Min, IsString, IsIn } from 'class-validator';
 import { Type } from 'class-transformer';
 
-export class PaginationDto {
+export class GLPaginationDto {
   @ApiPropertyOptional({ description: '页码，默认1', example: 1 })
   @IsOptional()
   @Type(() => Number)

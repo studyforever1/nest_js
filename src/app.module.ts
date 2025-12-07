@@ -39,8 +39,8 @@ import { GlConfigModule } from './modules/gl-config/gl-config.module';
     SharedDataModule,
     GlMaterialInfoModule,
     GlFuelInfoModule,
-    GlConfigModule
-    // GlCalcModule
+    GlConfigModule,
+    GlCalcModule
   ],
 })
 export class AppModule {}

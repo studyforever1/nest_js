@@ -5,10 +5,10 @@ import { AuthGuard } from '@nestjs/passport';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { User } from '../user/entities/user.entity';
-import { SaveConfigDto } from './dto/save-config.dto';
-import { SaveIngredientDto } from './dto/save-ingredient.dto';
-import { DeleteIngredientDto } from './dto/delete-ingredient.dto';
-import { PaginationDto } from '../sj-config/dto/pagination.dto';
+import { SJSaveConfigDto } from './dto/sj-save-config.dto';
+import { SJSaveIngredientDto } from './dto/sj-save-ingredient.dto';
+import { SJDeleteIngredientDto } from './dto/sj-delete-ingredient.dto';
+import { SJPaginationDto } from './dto/sj-pagination.dto';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 
 @ApiTags('烧结参数配置接口')
@@ -36,7 +36,7 @@ export class SjconfigController {
 @ApiOperation({ summary: '保存参数组（原料/化学/其他参数）',
     description: '对应区间品位配料-烧结工序中的确定并保存按钮'
     })
-async save(@CurrentUser() user: User, @Body() body: SaveConfigDto) {
+async save(@CurrentUser() user: User, @Body() body: SJSaveConfigDto) {
   return this.sjconfigService.saveFullConfig(
     user,
     this.MODULE_NAME,
@@ -48,12 +48,23 @@ async save(@CurrentUser() user: User, @Body() body: SaveConfigDto) {
 
 @Post('save-ingredients')
 @ApiOperation({
-  summary: '保存选中原料（全选模式或分类模式）',
-  description: 'category 不传 → 全选模式；传 category → 分类同步模式（增删选中）'
+  summary: '保存选中原料（全选模式 & 分类模式）',
+  description: `
+【使用说明】
+
+⭕ 全选模式（覆盖式设置）：
+    - 当 category = "" 且 name = "" 时
+    - ingredientParams 将作为新的完整选中列表
+
+⭕ 分类模式（增删同步模式）：
+    - 当 category 有值 或 name 有值（任意一个有值即可）
+    - ingredientParams 只表示该分类下当前选中的内容
+    - 后端会自动对比历史，执行添加 + 删除操作（增量同步）
+  `
 })
 async saveIngredients(
   @CurrentUser() user: User,
-  @Body() body: SaveIngredientDto,
+  @Body() body: SJSaveIngredientDto,
 ) {
   // 传给 service 时，确保 selectedIds 不为 undefined，默认空数组
   const selectedIds = body.ingredientParams || [];
@@ -62,7 +73,7 @@ async saveIngredients(
     this.MODULE_NAME,
     selectedIds,
     body.category,
-    
+    body.name
   );
 }
 
@@ -71,7 +82,7 @@ async saveIngredients(
   @Delete('ingredient')
 @ApiOperation({ summary: '删除选中的原料',
     description: '对应烧结物料信息中的删除按钮'  })
-async deleteIngredient(@CurrentUser() user: User, @Body() body: DeleteIngredientDto) {
+async deleteIngredient(@CurrentUser() user: User, @Body() body: SJDeleteIngredientDto) {
   return this.sjconfigService.deleteIngredientParams(
     user,
     this.MODULE_NAME,
@@ -85,7 +96,7 @@ async deleteIngredient(@CurrentUser() user: User, @Body() body: DeleteIngredient
 })
 async getSelectedIngredients(
   @CurrentUser() user: User,
-  @Query() dto: PaginationDto,
+  @Query() dto: SJPaginationDto,
 ) {
   return this.sjconfigService.getSelectedIngredients(
     user,

@@ -1,7 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsArray, IsNumber, IsOptional, IsString } from 'class-validator';
 
-export class SaveIngredientDto {
+export class SJSaveIngredientDto {
   @ApiProperty({
     example: [1, 2],
     description: '选中的原料ID列表，可为空',

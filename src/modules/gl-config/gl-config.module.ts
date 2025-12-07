@@ -4,17 +4,21 @@ import { GlConfigService } from './gl-config.service';
 import { GlConfigController } from './gl-config.controller';
 import { ConfigGroup } from '../../database/entities/config-group.entity';
 import { BizModule } from '../../database/entities/biz-module.entity';
-import { User } from '../user/entities/user.entity'; // User 实体
-import { UserModule } from '../user/user.module'; // User 模块
+import { User } from '../user/entities/user.entity';
+import { UserModule } from '../user/user.module';
+import { GlMaterialInfo } from '../gl-material-info/entities/gl-material-info.entity';
+import { GlFuelInfo } from '../gl-fuel-info/entities/gl-fuel-info.entity';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([
       ConfigGroup,
       BizModule,
-      User, // 注册 User Repository
+      User,
+      GlMaterialInfo, // <-- 注册
+      GlFuelInfo,     // <-- 注册
     ]),
-    UserModule, // 导入 UserModule，确保 PermissionsGuard 能获取 UserRepository
+    UserModule,
   ],
   providers: [GlConfigService],
   controllers: [GlConfigController],

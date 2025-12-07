@@ -40,7 +40,7 @@ async update(id: number, dto: UpdateGlFuelInfoDto, username: string) {
   const { id, category, name, composition, remark, inventory } = raw; // 加上 inventory
   if (!composition) return { id, category, name, remark, inventory };
 
-  const { TFe = null, H2O = null, 烧损 = null, 价格 = null, ...otherComposition } = composition as Record<string, any>;
+  const { TFe = null, H2O = null,返矿率=null,干基价格=null,返矿价格=null, ...otherComposition } = composition as Record<string, any>;
 
   return {
     id,
@@ -49,8 +49,9 @@ async update(id: number, dto: UpdateGlFuelInfoDto, username: string) {
     TFe,
     ...otherComposition,
     H2O,
-    烧损,
-    价格,
+    返矿率,
+    返矿价格,
+    干基价格,
     inventory,
     remark,
      // 输出库存
@@ -218,11 +219,11 @@ async update(id: number, dto: UpdateGlFuelInfoDto, username: string) {
     const 返矿价格Index = getIndex('返矿价格');
     const 干基价格Index = getIndex('干基价格');
 
-    // 动态字段
+    // 动态字段（除固定列外）
     const dynamicFieldIndices: { idx: number; key: string }[] = [];
     headers.forEach((h, i) => {
       const col = i + 1;
-      if ([categoryIndex, nameIndex, inventoryIndex, remarkIndex, TFeIndex, H2OIndex, 返矿率Index, 返矿价格Index,干基价格Index].includes(col)) return;
+      if ([categoryIndex, nameIndex, inventoryIndex, remarkIndex, TFeIndex, H2OIndex, 返矿率Index, 返矿价格Index, 干基价格Index].includes(col)) return;
       if (h && h.trim()) dynamicFieldIndices.push({ idx: col, key: h });
     });
 
@@ -241,19 +242,19 @@ async update(id: number, dto: UpdateGlFuelInfoDto, username: string) {
       // 构建 composition
       const composition: Record<string, any> = {};
 
+      // 动态字段
       dynamicFieldIndices.forEach(({ idx, key }) => {
         const val = row.getCell(idx).value;
         const num = val === null || val === undefined || val === '' ? null : parseFloat(String(val).trim());
         composition[key] = (num !== null && !Number.isNaN(num)) ? num : val;
       });
 
-      // 固定字段
-      composition['TFe'] = TFeIndex > 0 ? parseFloat(String(row.getCell(TFeIndex).value ?? 0)) || 0 : composition['TFe'] ?? 0;
-      composition['H2O'] = H2OIndex > 0 ? parseFloat(String(row.getCell(H2OIndex).value ?? 0)) || 0 : composition['H2O'] ?? 0;
-      composition['返矿率'] = 返矿率Index > 0 ? parseFloat(String(row.getCell(返矿率Index).value ?? 0)) || 0 : composition['返矿率'] ?? 0;
-      composition['返矿价格'] = 返矿价格Index > 0 ? parseFloat(String(row.getCell(返矿价格Index).value ?? 0)) || 0 : composition['返矿价格'] ?? 0;
-      composition['干基价格'] = 返矿价格Index > 0 ? parseFloat(String(row.getCell(干基价格Index).value ?? 0)) || 0 : composition['干基价格'] ?? 0;
-
+      // 固定字段，只加入 Excel 中存在的列
+      if (TFeIndex > 0) composition['TFe'] = parseFloat(String(row.getCell(TFeIndex).value ?? 0)) || 0;
+      if (H2OIndex > 0) composition['H2O'] = parseFloat(String(row.getCell(H2OIndex).value ?? 0)) || 0;
+      if (返矿率Index > 0) composition['返矿率'] = parseFloat(String(row.getCell(返矿率Index).value ?? 0)) || 0;
+      if (返矿价格Index > 0) composition['返矿价格'] = parseFloat(String(row.getCell(返矿价格Index).value ?? 0)) || 0;
+      if (干基价格Index > 0) composition['干基价格'] = parseFloat(String(row.getCell(干基价格Index).value ?? 0)) || 0;
 
       rawsToSave.push(this.rawRepo.create({
         category,

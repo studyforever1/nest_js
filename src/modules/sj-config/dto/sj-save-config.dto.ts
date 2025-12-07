@@ -1,7 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsOptional, IsObject } from 'class-validator';
 
-export class SaveConfigDto {
+export class SJSaveConfigDto {
   @ApiProperty({
     required: false,
     example: {

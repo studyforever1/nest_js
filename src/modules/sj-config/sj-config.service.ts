@@ -128,8 +128,7 @@ export class SjconfigService {
   }
 
   /** 保存选择的原料序号（同步 ingredientLimits + 精粉列表） */
-  /** 保存选中原料（支持全选模式 & 分类模式） */
-/** 保存选中原料（支持全选模式 & 分类模式） */
+
 async saveSelectedIngredients(
   user: User,
   moduleName: string,
@@ -151,7 +150,6 @@ async saveSelectedIngredients(
 
   // ============================================================
   // ⭐ 判断分类同步模式
-  // 只要 category 或 name 任一不为空 → 分类模式
   // ============================================================
   const isCategoryMode =
     (category && category.trim() !== '') ||
@@ -159,38 +157,27 @@ async saveSelectedIngredients(
 
   if (isCategoryMode) {
     // ============================================================
-    // ⭐ 分类同步模式（category 有值 或 name 有值）
+    // 分类同步模式
     // ============================================================
     let qb = this.rawRepo.createQueryBuilder('raw')
       .where('raw.id IN (:...ids)', { ids: oldParams });
 
-    // category 条件
-    if (category && category.trim()) {
-      qb = qb.andWhere('raw.category LIKE :cat', { cat: `${category}%` });
-    }
-
-    // name 条件
-    if (name && name.trim()) {
-      qb = qb.andWhere('raw.name LIKE :name', { name: `%${name}%` });
-    }
+    if (category?.trim()) qb = qb.andWhere('raw.category LIKE :cat', { cat: `${category}%` });
+    if (name?.trim()) qb = qb.andWhere('raw.name LIKE :name', { name: `%${name}%` });
 
     const categoryIdsInDB = await qb.getMany().then(r => r.map(r => r.id));
 
-    // 对比差异
     const toRemove = categoryIdsInDB.filter(id => !selectedIds.includes(id));
     const toAdd = selectedIds.filter(id => !categoryIdsInDB.includes(id));
 
-    // 删除取消选中的
+    // 删除取消选中的 Limits
     toRemove.forEach(id => delete newLimits[id]);
 
-    // 添加新增的
+    // 添加新增的 Limits
     toAdd.forEach(id => {
-      if (!newLimits[id]) {
-        newLimits[id] = { low_limit: 0, top_limit: 100, lose_index: 1 };
-      }
+      if (!newLimits[id]) newLimits[id] = { low_limit: 0, top_limit: 100, lose_index: 1 };
     });
 
-    // 更新 ingredientParams
     newParams = Array.from(new Set([
       ...oldParams.filter(id => !toRemove.includes(id)),
       ...toAdd,
@@ -205,29 +192,56 @@ async saveSelectedIngredients(
     });
 
     // 移除取消的
-    configData.otherSettings['精粉'] = configData.otherSettings['精粉']
-      .filter(id => !toRemove.includes(Number(id)));
+    configData.otherSettings['精粉'] = Array.from(
+      new Set(configData.otherSettings['精粉']
+        .filter(id => !toRemove.includes(Number(id)))
+        .map(id => String(id)))
+    );
 
-    configData.otherSettings['固定配比'] = configData.otherSettings['固定配比']
-      .filter(id => !toRemove.includes(Number(id)));
+    configData.otherSettings['固定配比'] = Array.from(
+      new Set(configData.otherSettings['固定配比']
+        .filter(id => !toRemove.includes(Number(id)))
+        .map(id => String(id)))
+    );
 
   } else {
     // ============================================================
-    // ⭐ 全选模式（category="" 且 name=""）
+    // 全选模式
     // ============================================================
 
+    // 删除取消选择的 Limits
+    Object.keys(newLimits).forEach(idStr => {
+      const id = Number(idStr);
+      if (!selectedIds.includes(id)) delete newLimits[id];
+    });
+
+    // 新增原料添加默认 Limits（已有的保留原值）
     selectedIds.forEach(id => {
       if (!newLimits[id]) newLimits[id] = { low_limit: 0, top_limit: 100, lose_index: 1 };
     });
 
     newParams = Array.from(new Set(selectedIds));
 
+    // 同步精粉 & 固定配比
     const raws = await this.rawRepo.findByIds(selectedIds);
     raws.forEach(raw => {
       if (raw.category?.startsWith('T1') && !configData.otherSettings['精粉'].includes(raw.id)) {
         configData.otherSettings['精粉'].push(raw.id);
       }
     });
+
+    // 移除取消的 & 转成字符串 & 去重
+    configData.otherSettings['精粉'] = Array.from(
+      new Set(configData.otherSettings['精粉']
+        .filter(id => selectedIds.includes(Number(id)))
+        .map(id => String(id)))
+    );
+
+    configData.otherSettings['固定配比'] = Array.from(
+      new Set(configData.otherSettings['固定配比']
+        .filter(id => selectedIds.includes(Number(id)))
+        .map(id => String(id)))
+    );
   }
 
   // 保存最终数据
@@ -239,6 +253,7 @@ async saveSelectedIngredients(
 
   return await this.configRepo.save(group);
 }
+
 
 
 

@@ -1,117 +1,110 @@
-import { Controller, Get, Put, Post, Delete, Body, Query, UseGuards } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { Controller, Post, Body, Get, Put, Delete, Query, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { User } from '../user/entities/user.entity';
-import { GlConfigService } from './gl-config.service';
-import { SaveConfigDto } from './dto/save-config.dto';
-import { SaveIngredientDto } from './dto/save-ingredient.dto';
-import { DeleteIngredientDto } from './dto/delete-ingredient.dto';
-import { PaginationDto } from './dto/pagination.dto';
 
-@ApiTags('高炉配料参数配置接口')
+import { GlConfigService } from './gl-config.service';
+import { GLSaveConfigDto } from './dto/gl-save-config.dto';
+import { GLSaveIngredientDto } from './dto/gl-save-ingredient.dto';
+import { GLSaveFuelDto } from './dto/gl-save-fuel.dto';
+import { GLDeleteIngredientDto } from './dto/gl-delete-ingredient.dto';
+import { GLDeleteFuelDto } from './dto/gl-delete-fuel.dto';
+import { GLPaginationDto } from './dto/gl-pagination.dto';
+
+@ApiTags('高炉参数配置接口')
 @ApiBearerAuth('JWT')
 @UseGuards(AuthGuard('jwt'), PermissionsGuard)
-@Controller('gl-config')
+@Controller('glconfig')
 export class GlConfigController {
+  private readonly MODULE_NAME = '单独高炉配料计算';
+
   constructor(private readonly glConfigService: GlConfigService) {}
 
-  private readonly MODULE_NAME = '高炉配料计算';
-
-  /** 获取最新参数组 */
+  // ===================== 获取最新参数组 =====================
   @Get('latest')
-  @ApiOperation({
-    summary: '获取最新高炉参数组',
-    description:
-      '获取当前用户最新保存的高炉配料计算参数组信息，ingredientLimits/fuelLimits/slageLimits对应原料/燃料/炉渣设置，otherSettings对应其他算法参数和优化设置。'
-  })
+  @ApiOperation({ summary: '获取最新参数组', description: '返回用户当前最新配置' })
   async latest(@CurrentUser() user: User) {
     return this.glConfigService.getLatestConfigByName(user, this.MODULE_NAME);
   }
 
-  /** 保存完整参数组 */
+  // ===================== 保存完整参数组 =====================
   @Put('save')
-  @ApiOperation({ summary: '保存完整参数组（原料/燃料/炉渣/其他参数）' })
-  async save(@CurrentUser() user: User, @Body() body: SaveConfigDto) {
+  @ApiOperation({ summary: '保存完整参数组' })
+  async save(@CurrentUser() user: User, @Body() body: GLSaveConfigDto) {
     return this.glConfigService.saveFullConfig(
       user,
       this.MODULE_NAME,
-      body.ingredientLimits || {},
-      body.fuelLimits || {},
-      body.slagLimits || {},
-      body.hotMetalRatio || {},
-      body.loadTopLimits || {},
-      body.ironWaterTopLimits || {},
-      body.otherSettings || {},
+      body.ingredientLimits,
+      body.fuelLimits,
+      body.slagLimits,
+      body.hotMetalRatio,
+      body.loadTopLimits,
+      body.otherSettings,
     );
   }
 
-  /** 保存选中原料/燃料（全选模式 & 分类模式） */
-  @Post('save-selected')
-  @ApiOperation({
-    summary: '保存选中原料/燃料',
-    description: `
-【使用说明】
-
-⭕ 全选模式（覆盖式设置）：
-    - 当 category = "" 且 name = "" 时
-    - ingredientParams 将作为新的完整选中列表
-
-⭕ 分类模式（增删同步模式）：
-    - 当 category 或 name 有值时
-    - ingredientParams 只表示该分类下当前选中的内容
-    - 后端会自动对比历史，执行添加 + 删除操作
-    `
-  })
-  async saveSelected(
-    @CurrentUser() user: User,
-    @Body() body: SaveIngredientDto,
-  ) {
-    const ingredientParams = body.ingredientParams || [];
+  // ===================== 原料 =====================
+  @Post('save-ingredients')
+  @ApiOperation({ summary: '保存选中原料（全选 & 分类模式）' })
+  async saveIngredients(@CurrentUser() user: User, @Body() body: GLSaveIngredientDto) {
     return this.glConfigService.saveSelectedIngredients(
       user,
       this.MODULE_NAME,
-      ingredientParams,
+      body.ingredientParams || [],
       body.category,
       body.name,
-      body.type // 'ingredient' 或 'fuel'
     );
   }
 
-  /** 删除选中原料/燃料 */
-  @Delete('remove')
-  @ApiOperation({ summary: '删除选中原料/燃料' })
-  async removeSelected(
-    @CurrentUser() user: User,
-    @Body() body: DeleteIngredientDto,
-  ) {
-    return this.glConfigService.deleteSelected(
+  @Delete('ingredient')
+  @ApiOperation({ summary: '删除选中原料' })
+  async deleteIngredient(@CurrentUser() user: User, @Body() body: GLDeleteIngredientDto) {
+    return this.glConfigService.deleteSelectedIngredients(user, this.MODULE_NAME, body.removeParams);
+  }
+
+  @Get('selected-ingredients')
+@ApiOperation({ summary: '分页查询已选原料', description: '支持分页、名称模糊搜索、分类筛选' })
+async getSelectedIngredients(@CurrentUser() user: User, @Query() dto: GLPaginationDto) {
+  return this.glConfigService.getSelectedIngredients({
+    user,
+    moduleName: this.MODULE_NAME,
+    page: dto.page,
+    pageSize: dto.pageSize,
+    name: dto.name,
+    type: dto.type,
+  });
+}
+  // ===================== 燃料 =====================
+  @Post('save-fuels')
+  @ApiOperation({ summary: '保存选中燃料（全选 & 分类模式）' })
+  async saveFuels(@CurrentUser() user: User, @Body() body: GLSaveFuelDto) {
+    return this.glConfigService.saveSelectedFuels(
       user,
       this.MODULE_NAME,
-      body.removeParams,
-      body.type // 'ingredient' 或 'fuel'
+      body.fuelParams || [],
+      body.category,
+      body.name,
     );
   }
 
-  /** 分页获取已选原料/燃料 */
-  @Get('selected')
-  @ApiOperation({ summary: '获取已选原料/燃料（分页、搜索）' })
-  async getSelected(
-    @CurrentUser() user: User,
-    @Query() dto: PaginationDto,
-  ) {
-    // dto.type 已经通过 SelectedQueryDto 验证为 'ingredient' | 'fuel' | ''
-    // 如果为空字符串，后端可把它视为 undefined
-    const type = dto.type && dto.type.length > 0 ? (dto.type as 'ingredient' | 'fuel') : undefined;
-
-    return this.glConfigService.getSelectedItems(
-      user,
-      this.MODULE_NAME,
-      dto.page,
-      dto.pageSize,
-      dto.name,
-      type,
-    );
+  @Delete('fuel')
+  @ApiOperation({ summary: '删除选中燃料' })
+  async deleteFuel(@CurrentUser() user: User, @Body() body: GLDeleteFuelDto) {
+    return this.glConfigService.deleteSelectedFuels(user, this.MODULE_NAME, body.removeParams);
   }
+
+  @Get('selected-fuels')
+@ApiOperation({ summary: '分页查询已选燃料', description: '支持分页、名称模糊搜索、分类筛选' })
+async getSelectedFuels(@CurrentUser() user: User, @Query() dto: GLPaginationDto) {
+  return this.glConfigService.getSelectedFuels({
+    user,
+    moduleName: this.MODULE_NAME,
+    page: dto.page,
+    pageSize: dto.pageSize,
+    name: dto.name,
+    type: dto.type,
+  });
+}
 }
