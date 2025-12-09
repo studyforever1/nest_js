@@ -90,25 +90,31 @@ async saveBatch(
   user: User,
   task: Task,
   results: any[],
-  schemeIndexes: number[],
+  schemeIndexes: number[], // 这里是方案序号数组
   moduleType: string,
 ): Promise<ApiResponse<{ count: number }>> {
+  if (!results || !results.length) {
+    return ApiResponse.error('没有可保存的方案数据');
+  }
+
   const histories: History[] = [];
 
-  for (const index of schemeIndexes) {
-    const scheme = results[index];
+  for (const schemeNo of schemeIndexes) {
+    // 根据方案序号查找对应方案
+    const scheme = results.find(r => r['方案序号'] === schemeNo);
     if (!scheme) continue;
 
-    // 检查是否已存在
+    const schemeId = `${task.task_uuid}-${scheme['方案序号']}`;
+
     const exists = await this.historyRepo.findOne({
-      where: { task: { task_uuid: task.task_uuid }, scheme_id: `${task.task_uuid}-${index}` },
+      where: { task: { task_uuid: task.task_uuid }, scheme_id: schemeId },
     });
 
     if (!exists) {
       const history = this.historyRepo.create({
         task,
         user,
-        scheme_id: `${task.task_uuid}-${index}`,
+        scheme_id: schemeId,
         result: scheme,
         module_type: moduleType,
       });
@@ -116,7 +122,9 @@ async saveBatch(
     }
   }
 
-  if (!histories.length) return ApiResponse.error('没有有效的方案可保存');
+  if (!histories.length) {
+    return ApiResponse.error('所有方案已存在或无有效方案可保存');
+  }
 
   await this.historyRepo.save(histories);
 

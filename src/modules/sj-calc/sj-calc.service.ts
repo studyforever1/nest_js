@@ -47,51 +47,63 @@ export class CalcService {
   ) {}
 
   /** 启动计算任务 */
-  async startTask(moduleName: string, user: User): Promise<ApiResponse<{ taskUuid: string; resultMap: Record<string, any> }>> {
-    try {
-      this.logger.debug(`准备启动任务，userId=${user.user_id}, module=${moduleName}`);
+  /** 启动计算任务（支持 taskUuid 未及时返回 → 初始化中） */
+async startTask(moduleName: string, user: User): Promise<ApiResponse<{ taskUuid?: string; resultMap: Record<string, any>; status: string }>> {
+  try {
+    this.logger.debug(`准备启动任务，userId=${user.user_id}, module=${moduleName}`);
 
-      const config = await this.sjconfigService.getLatestConfigByName(user, moduleName);
-      if (!config) throw new Error(`未找到模块 ${moduleName} 的配置`);
+    // 获取最新配置
+    const config = await this.sjconfigService.getLatestConfigByName(user, moduleName);
+    if (!config) throw new Error(`未找到模块 ${moduleName} 的配置`);
 
-      const ingredientIds = config.ingredientParams || [];
-      const raws = await this.sjRawMaterialRepo.find({ where: { id: In(ingredientIds), enabled: true } });
+    // 获取原料参数
+    const ingredientIds = config.ingredientParams || [];
+    const raws = await this.sjRawMaterialRepo.find({ where: { id: In(ingredientIds), enabled: true } });
 
-      const ingredientParams: Record<number, any> = {};
-      raws.forEach(raw => {
-        ingredientParams[raw.id] = {
-          ...raw.composition,
-          TFe: raw.composition?.TFe ?? 0,
-          烧损: raw.composition?.['烧损'] ?? 0,
-          价格: raw.composition?.['价格'] ?? 0,
-          库存: raw.inventory ?? 0,
-        };
-      });
-
-      const ingredientLimitsClean: Record<string, any> = {};
-      Object.keys(config.ingredientLimits || {}).forEach(id => {
-        const { name, ...limits } = config.ingredientLimits[id];
-        ingredientLimitsClean[id] = limits;
-      });
-
-      const fullParams = {
-        calculateType: moduleName,
-        ingredientParams,
-        ingredientLimits: ingredientLimitsClean,
-        chemicalLimits: config.chemicalLimits || {},
-        otherSettings: config.otherSettings || {},
+    const ingredientParams: Record<number, any> = {};
+    raws.forEach(raw => {
+      ingredientParams[raw.id] = {
+        ...raw.composition,
+        TFe: raw.composition?.TFe ?? 0,
+        烧损: raw.composition?.['烧损'] ?? 0,
+        价格: raw.composition?.['价格'] ?? 0,
+        库存: raw.inventory ?? 0,
       };
+    });
 
-      this.logger.debug('=== fullParams JSON ===');
-      this.logger.debug(JSON.stringify(fullParams, null, 2));
+    // 清理原料上下限
+    const ingredientLimitsClean: Record<string, any> = {};
+    Object.keys(config.ingredientLimits || {}).forEach(id => {
+      const { name, ...limits } = config.ingredientLimits[id];
+      ingredientLimitsClean[id] = limits;
+    });
 
+    const fullParams = {
+      calculateType: moduleName,
+      ingredientParams,
+      ingredientLimits: ingredientLimitsClean,
+      chemicalLimits: config.chemicalLimits || {},
+      otherSettings: config.otherSettings || {},
+    };
+
+    this.logger.debug('=== fullParams JSON ===');
+    this.logger.debug(JSON.stringify(fullParams, null, 2));
+
+    let taskUuid: string | undefined;
+    let resultsById: Record<string, any> | undefined;
+
+    try {
+      // 调用 FastAPI 启动任务
       const res = await this.apiPost('/sj/start/', fullParams);
-      const taskUuid = res.data?.data?.taskUuid;
-      const resultsById = res.data?.data?.results;
+      taskUuid = res.data?.data?.taskUuid;
+      resultsById = res.data?.data?.results;
+    } catch (err) {
+      // FastAPI 可能未及时返回 taskUuid → 初始化中
+      this.logger.warn(`启动 FastAPI 任务未返回 taskUuid: ${(err as any)?.message || err}`);
+    }
 
-      if (!taskUuid) throw new Error(res.data?.message || 'FastAPI 未返回 taskUuid');
-
-      // 保存 Task
+    // 保存 Task（仅当 taskUuid 可用）
+    if (taskUuid) {
       const task = this.taskRepo.create({
         task_uuid: taskUuid,
         module_type: moduleName,
@@ -103,25 +115,35 @@ export class CalcService {
 
       // 初始化内存缓存
       this.taskCache.set(taskUuid, { results: [], lastUpdated: Date.now() });
-
-      // ID → Name 映射
-      const idNameMap: Record<number, string> = {};
-      raws.forEach(raw => idNameMap[raw.id] = raw.name);
-
-      const resultMap: Record<string, any> = {};
-      if (resultsById) {
-        Object.keys(resultsById).forEach(idStr => {
-          const id = Number(idStr);
-          const name = idNameMap[id];
-          if (name) resultMap[name] = resultsById[id];
-        });
-      }
-
-      return ApiResponse.success({ taskUuid, resultMap }, '任务启动成功 (ID → Name 映射)');
-    } catch (err: any) {
-      return this.handleError(err, '启动任务失败');
     }
+
+    // ID → Name 映射
+    const idNameMap: Record<number, string> = {};
+    raws.forEach(raw => idNameMap[raw.id] = raw.name);
+
+    const resultMap: Record<string, any> = {};
+    if (resultsById) {
+      Object.keys(resultsById).forEach(idStr => {
+        const id = Number(idStr);
+        const name = idNameMap[id];
+        if (name) resultMap[name] = resultsById[id];
+      });
+    }
+
+    return ApiResponse.success(
+      {
+        taskUuid,
+        resultMap,
+        status: taskUuid ? 'RUNNING' : 'INITIALIZING', // taskUuid 未返回 → 初始化中
+      },
+      taskUuid ? '任务启动成功 (ID → Name 映射)' : '任务初始化中'
+    );
+
+  } catch (err: unknown) {
+    return this.handleError(err, '启动任务失败');
   }
+}
+
 
   /** 停止任务 */
   async stopTask(taskUuid: string): Promise<ApiResponse<{ taskUuid: string; status: string }>> {

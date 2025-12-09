@@ -8,7 +8,7 @@ export class GLStartTaskResponseDto {
   resultMap: Record<string, any>;
 }
 
-export class StopTaskResponseDto {
+export class GLStopTaskResponseDto {
   @ApiProperty({ description: '任务 UUID', example: 'uuid-1234-5678' })
   taskUuid: string;
 
@@ -16,7 +16,7 @@ export class StopTaskResponseDto {
   status: string;
 }
 
-export class ProgressResponseDto {
+export class GLProgressResponseDto {
   @ApiProperty({ description: '任务 UUID', example: 'uuid-1234-5678' })
   taskUuid: string;
 

@@ -18,7 +18,7 @@ export class SharedDataService {
     private readonly taskRepo: Repository<Task>,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
-  ) {}
+  ) { }
 
   /** ----------- 统一格式（完全对齐 History） ----------- */
   private formatRaw = (item: SharedData) => {
@@ -37,18 +37,21 @@ export class SharedDataService {
   async saveShared(
     taskUuid: string,
     userId: number,
-    schemeIndexes: number[],
+    schemeIndexes: number[], // 这里是方案序号数组
     moduleType: string,
   ): Promise<ApiResponse<{ count: number }>> {
+    // 1️⃣ 查任务
     const task = await this.taskRepo.findOne({
       where: { task_uuid: taskUuid },
       relations: ['results'],
     });
     if (!task) return ApiResponse.error('任务不存在');
 
+    // 2️⃣ 查用户
     const user = await this.userRepo.findOneBy({ user_id: userId });
     if (!user) return ApiResponse.error('用户不存在');
 
+    // 3️⃣ 获取结果
     let results = task.results?.[0]?.output_data;
     if (!results) return ApiResponse.error('任务结果为空');
 
@@ -62,12 +65,17 @@ export class SharedDataService {
 
     const sharedItems: SharedData[] = [];
 
-    for (const index of schemeIndexes) {
-      const scheme = results[index];
+    // 4️⃣ 遍历方案序号
+    for (const schemeNo of schemeIndexes) {
+      // 根据方案序号查找对应方案
+      const scheme = results.find(r => r['方案序号'] === schemeNo);
       if (!scheme) continue;
 
+      const schemeId = `${task.task_uuid}-${scheme['方案序号']}`;
+
+      // 5️⃣ 检查是否已存在
       const exists = await this.sharedRepo.findOne({
-        where: { task: { task_uuid: task.task_uuid }, scheme_id: `${task.task_uuid}-${index}` },
+        where: { task: { task_uuid: task.task_uuid }, scheme_id: schemeId },
       });
 
       if (!exists) {
@@ -75,14 +83,15 @@ export class SharedDataService {
           this.sharedRepo.create({
             task,
             user,
-            scheme_id: `${task.task_uuid}-${index}`,
-            result: scheme,
+            scheme_id: schemeId,
+            result: scheme, // 确保 SharedData.result 字段是 JSON 类型
             module_type: moduleType,
           }),
         );
       }
     }
 
+    // 6️⃣ 保存
     if (sharedItems.length) {
       await this.sharedRepo.save(sharedItems);
     }
@@ -92,6 +101,7 @@ export class SharedDataService {
       '共享方案保存成功',
     );
   }
+
 
   /** ----------- 分页查询（完全对齐 History） ----------- */
   async list(user: User, query: ListSharedDto) {

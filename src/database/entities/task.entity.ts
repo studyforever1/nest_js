@@ -72,15 +72,8 @@ export class Task {
   @Column({ type: 'int', default: 100 })
   total: number; // 总进度量
 
-  @Column({ type: 'timestamp', nullable: true })
-  finished_at?: Date; // 任务完成时间
-  // -----------------------------------------
-
   @CreateDateColumn({ type: 'timestamp' })
   created_at: Date;
-
-  @UpdateDateColumn({ type: 'timestamp' })
-  updated_at: Date;
 
   @DeleteDateColumn({ type: 'timestamp', nullable: true })
   deleted_at?: Date; // 软删除

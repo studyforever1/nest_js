@@ -78,6 +78,7 @@ async getOrCreateUserGroup(user: User, moduleName: string) {
 // ============================================================
 // 获取用户最新参数组（读取时动态附加 name）
 // ============================================================
+// ============================================================
 async getLatestConfigByName(user: User, moduleName: string) {
   const group = await this.getOrCreateUserGroup(user, moduleName);
   const configData = _.cloneDeep(group.config_data);
@@ -92,7 +93,7 @@ async getLatestConfigByName(user: User, moduleName: string) {
     raws.forEach(r => {
       if (ingredientLimits[r.id]) {
         limitsWithName[r.id] = {
-          name: r.name, // ✅ 只读时附加 name
+          name: r.name,
           ...ingredientLimits[r.id],
         };
       }
@@ -104,22 +105,39 @@ async getLatestConfigByName(user: User, moduleName: string) {
   const fuelLimits = configData.fuelLimits || {};
   const fuelIds = Object.keys(fuelLimits).map(id => Number(id));
 
+  // 从 otherSettings 中取选择项
+  const coalSelected = configData.otherSettings?.["煤比选择"];        // 比如 "3"
+  const jiaodingSelected = configData.otherSettings?.["焦丁比选择"];  // 比如 "2"
+
   if (fuelIds.length) {
     const fuels = await this.fuelRepo.findByIds(fuelIds);
     const limitsWithName: Record<string, any> = {};
+
     fuels.forEach(f => {
       if (fuelLimits[f.id]) {
+        // 默认空
+        let type = "";
+
+        if (String(f.id) === String(coalSelected)) {
+          type = "煤比";
+        } else if (String(f.id) === String(jiaodingSelected)) {
+          type = "焦丁比";
+        }
+
         limitsWithName[f.id] = {
-          name: f.name, // ✅ 只读时附加 name
-          ...fuelLimits[f.id],
+          name: f.name,
+          type,                // ← 新增字段（必需）
+          ...fuelLimits[f.id], // ← low_limit, top_limit
         };
       }
     });
+
     configData.fuelLimits = limitsWithName;
   }
 
   return configData;
 }
+
 
 
 

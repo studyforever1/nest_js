@@ -34,62 +34,73 @@ export class SjCandidateService {
   };
 
   /** ----------- 批量保存候选方案 ----------- */
-  async saveCandidate(
-    taskUuid: string,
-    userId: number,
-    schemeIndexes: number[],
-    moduleType: string,
-  ) {
-    const task = await this.taskRepo.findOne({
-      where: { task_uuid: taskUuid },
-      relations: ['results'],
-    });
-    if (!task) return ApiResponse.error('任务不存在');
+async saveCandidate(
+  taskUuid: string,
+  userId: number,
+  schemeIndexes: number[], // 这里是方案序号数组
+  moduleType: string,
+) {
+  // 1️⃣ 查任务
+  const task = await this.taskRepo.findOne({
+    where: { task_uuid: taskUuid },
+    relations: ['results'],
+  });
+  if (!task) return ApiResponse.error('任务不存在');
 
-    const user = await this.userRepo.findOneBy({ user_id: userId });
-    if (!user) return ApiResponse.error('用户不存在');
+  // 2️⃣ 查用户
+  const user = await this.userRepo.findOneBy({ user_id: userId });
+  if (!user) return ApiResponse.error('用户不存在');
 
-    const resultEntity = task.results?.[0];
-    if (!resultEntity?.output_data) return ApiResponse.error('任务结果为空');
+  // 3️⃣ 获取结果
+  const resultEntity = task.results?.[0];
+  if (!resultEntity?.output_data) return ApiResponse.error('任务结果为空');
 
-    let results = resultEntity.output_data;
-    if (typeof results === 'string') {
-      try {
-        results = JSON.parse(results);
-      } catch (e) {
-        return ApiResponse.error('任务结果 JSON 解析失败');
-      }
+  let results = resultEntity.output_data;
+  if (typeof results === 'string') {
+    try {
+      results = JSON.parse(results);
+    } catch (e) {
+      return ApiResponse.error('任务结果 JSON 解析失败');
     }
-
-    const toSave: SjCandidate[] = [];
-
-    for (const idx of schemeIndexes) {
-      const scheme = results[idx];
-      if (!scheme) continue;
-
-      const schemeId = `${task.task_uuid}-${idx}`;
-
-      const exists = await this.candidateRepo.findOne({
-        where: { scheme_id: schemeId },
-      });
-
-      if (!exists) {
-        toSave.push(
-          this.candidateRepo.create({
-            task,
-            user,
-            scheme_id: schemeId,
-            result: scheme,
-            module_type: moduleType,
-          }),
-        );
-      }
-    }
-
-    if (toSave.length) await this.candidateRepo.save(toSave);
-
-    return ApiResponse.success({ count: toSave.length }, '候选方案保存成功');
   }
+
+  const toSave: SjCandidate[] = [];
+
+  // 4️⃣ 遍历方案序号
+  for (const schemeNo of schemeIndexes) {
+    // 根据方案序号查找对应方案
+    const scheme = results.find(r => r['方案序号'] === schemeNo);
+    if (!scheme) continue;
+
+    const schemeId = `${task.task_uuid}-${scheme['方案序号']}`;
+
+    // 5️⃣ 检查是否已存在
+    const exists = await this.candidateRepo.findOne({
+      where: { scheme_id: schemeId },
+    });
+
+    if (!exists) {
+      toSave.push(
+        this.candidateRepo.create({
+          task,
+          user,
+          scheme_id: schemeId,
+          result: scheme, // 确保 SjCandidate.result 支持 JSON 类型
+          module_type: moduleType,
+        }),
+      );
+    }
+  }
+
+  // 6️⃣ 保存
+  if (toSave.length) await this.candidateRepo.save(toSave);
+
+  return ApiResponse.success(
+    { count: toSave.length },
+    '候选方案保存成功',
+  );
+}
+
 
   /** ----------- 分页查询候选方案（对齐 History/Shared） ----------- */
   async list(user: User, query: ListCandidateDto) {

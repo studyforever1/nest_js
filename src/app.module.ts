@@ -18,6 +18,9 @@ import { GlMaterialInfoModule } from './modules/gl-material-info/gl-material-inf
 import { GlFuelInfoModule } from './modules/gl-fuel-info/gl-fuel-info.module';
 import { GlCalcModule } from './modules/gl-calc/gl-calc.module';
 import { GlConfigModule } from './modules/gl-config/gl-config.module';
+// import { SjEconInfoModule } from './modules/sj-econ-info/sj-econ-info.module';
+// import { SjEconConfigModule } from './modules/sj-econ-config/sj-econ-config.module';
+// import { SjEconCalcModule } from './modules/sj-econ-calc/sj-econ-calc.module';
 
 
 @Module({
@@ -40,7 +43,10 @@ import { GlConfigModule } from './modules/gl-config/gl-config.module';
     GlMaterialInfoModule,
     GlFuelInfoModule,
     GlConfigModule,
-    GlCalcModule
+    GlCalcModule,
+    // SjEconInfoModule,
+    // SjEconConfigModule,
+    // SjEconCalcModule
   ],
 })
 export class AppModule {}

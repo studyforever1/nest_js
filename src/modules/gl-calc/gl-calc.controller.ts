@@ -3,7 +3,7 @@ import { GlCalcService } from './gl-calc.service';
 import { ApiBearerAuth, ApiTags, ApiOperation, ApiParam } from '@nestjs/swagger';
 import { ApiOkResponseData, ApiErrorResponse } from '../../common/response/response.decorator';
 import { GLStartTaskDto } from './dto/start-task.dto';
-import { GLStartTaskResponseDto, StopTaskResponseDto, ProgressResponseDto } from './dto/response.dto';
+import { GLStartTaskResponseDto, GLStopTaskResponseDto, GLProgressResponseDto } from './dto/response.dto';
 import { AuthGuard } from '@nestjs/passport';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
@@ -31,7 +31,7 @@ export class GlCalcController {
   @Post('stop')
   @Permissions('gl:calc')
   @ApiOperation({ summary: '停止GL计算任务', description: '根据 task_id 停止正在运行的任务' })
-  @ApiOkResponseData(StopTaskResponseDto)
+  @ApiOkResponseData(GLStopTaskResponseDto)
   @ApiErrorResponse()
   stopTask(@Body() dto: GLStopTaskDto) {
     return this.glCalcService.stopTask(dto.task_id);
@@ -41,7 +41,7 @@ export class GlCalcController {
   @Permissions('gl:calc')
   @ApiOperation({ summary: '查询GL任务进度', description: '支持分页和排序' })
   @ApiParam({ name: 'task_id', description: '任务ID，由 /start 返回', required: true })
-  @ApiOkResponseData(ProgressResponseDto)
+  @ApiOkResponseData(GLProgressResponseDto)
   @ApiErrorResponse()
   async getProgress(@Param('task_id') task_id: string, @Query() pagination: GLPaginationDto) {
     return this.glCalcService.fetchAndSaveProgress(task_id, pagination);
