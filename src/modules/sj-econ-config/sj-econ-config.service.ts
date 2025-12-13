@@ -1,41 +1,23 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Repository, In } from 'typeorm';
+import { Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ConfigGroup } from '../../database/entities/config-group.entity';
 import { BizModule } from '../../database/entities/biz-module.entity';
 import { User } from '../user/entities/user.entity';
-import { SjRawMaterial } from '../sj-raw-material/entities/sj-raw-material.entity';
+import { SjEconInfo } from '../sj-econ-info/entities/sj-econ-info.entity';
 import _ from 'lodash';
 
 // 格式化原料数据工具函数
-function formatRaw(raw: SjRawMaterial) {
-  const { id, category, name, origin, remark, inventory, composition } = raw;
-
-  // composition 为空时直接返回基本字段
-  if (!composition) {
-    return { id, category, name, origin, remark, inventory };
-  }
-
-  const {
-    TFe = null,
-    H2O = null,
-    烧损 = null,
-    价格 = null,
-    ...otherComposition
-  } = composition as Record<string, any>;
-
+function formatRaw(raw: SjEconInfo) {
+  const { id, name, composition, modifier, created_at, updated_at, enabled } = raw;
   return {
     id,
-    category,
     name,
-    TFe,
-    ...otherComposition,
-    H2O,
-    烧损,
-    价格,
-    inventory,
-    origin,
-    remark,
+    composition: composition || {},
+    modifier,
+    created_at,
+    updated_at,
+    enabled,
   };
 }
 
@@ -53,8 +35,8 @@ export class SjEconConfigService {
     @InjectRepository(BizModule)
     private readonly moduleRepo: Repository<BizModule>,
 
-    @InjectRepository(SjRawMaterial)
-    private readonly rawRepo: Repository<SjRawMaterial>,
+    @InjectRepository(SjEconInfo)
+    private readonly rawRepo: Repository<SjEconInfo>,
   ) {}
 
   /**
@@ -336,57 +318,16 @@ export class SjEconConfigService {
   async saveSelectedIngredients(
     user: User,
     selectedIds: number[],
-    category?: string,
-    name?: string,
+    _name?: string, // 保留参数兼容调用方，但不再使用
   ) {
     const group = await this.getOrCreateUserGroup(user, this.MODULE_NAME);
     const configData = _.cloneDeep(group.config_data || {});
     const oldParams: number[] = configData.ingredientParams || [];
 
-    let newParams: number[] = [];
-
-    // ============================================================
-    // ⭐ 判断分类同步模式
-    // 只要 category 或 name 任一不为空 → 分类模式
-    // ============================================================
-    const isCategoryMode =
-      (category && category.trim() !== '') ||
-      (name && name.trim() !== '');
-
-    if (isCategoryMode) {
-      // ============================================================
-      // ⭐ 分类同步模式（category 有值 或 name 有值）
-      // ============================================================
-      let qb = this.rawRepo.createQueryBuilder('raw')
-        .where('raw.id IN (:...ids)', { ids: oldParams });
-
-      // category 条件
-      if (category && category.trim()) {
-        qb = qb.andWhere('raw.category LIKE :cat', { cat: `${category}%` });
-      }
-
-      // name 条件
-      if (name && name.trim()) {
-        qb = qb.andWhere('raw.name LIKE :name', { name: `%${name}%` });
-      }
-
-      const categoryIdsInDB = await qb.getMany().then(r => r.map(r => r.id));
-
-      // 对比差异
-      const toRemove = categoryIdsInDB.filter(id => !selectedIds.includes(id));
-      const toAdd = selectedIds.filter(id => !categoryIdsInDB.includes(id));
-
-      // 更新 ingredientParams
-      newParams = Array.from(new Set([
-        ...oldParams.filter(id => !toRemove.includes(id)),
-        ...toAdd,
-      ]));
-    } else {
-      // ============================================================
-      // ⭐ 全选模式（category="" 且 name=""）
-      // ============================================================
-      newParams = Array.from(new Set(selectedIds));
-    }
+    // 统一策略：不做“差异删除”，只做增量添加，避免在筛选场景下误删
+    // 如需删除，请使用 DELETE /sj-econ-config/ingredient 接口
+    const toAdd = selectedIds.filter(id => !oldParams.includes(id));
+    const newParams = Array.from(new Set([...oldParams, ...toAdd]));
 
     // 保存最终数据
     group.config_data = {
@@ -430,20 +371,12 @@ export class SjEconConfigService {
     page = 1,
     pageSize = 10,
     name?: string,
-    type?: string,
   ) {
     const group = await this.getOrCreateUserGroup(user, this.MODULE_NAME);
     const configData = group.config_data || {};
-    const ingredientParams: Record<string, any> = configData.ingredientParams || {};
-    
-    // ingredientParams 可能是对象（key为原料ID，value为原料数据），需要转换为数组
-    const ingredientIds = typeof ingredientParams === 'object' && !Array.isArray(ingredientParams)
-      ? Object.keys(ingredientParams).map(id => Number(id))
-      : Array.isArray(ingredientParams)
-      ? ingredientParams
-      : [];
+    const ingredientParams: number[] = configData.ingredientParams || [];
 
-    if (!ingredientIds.length) {
+    if (!ingredientParams.length) {
       return {
         data: [],
         total: 0,
@@ -455,16 +388,12 @@ export class SjEconConfigService {
 
     /** ---- 1. 构建 query builder（先筛选用户所选原料） ---- */
     const qb = this.rawRepo.createQueryBuilder('raw')
-      .where('raw.id IN (:...ids)', { ids: ingredientIds })
+      .where('raw.id IN (:...ids)', { ids: ingredientParams })
       .orderBy('raw.id', 'ASC'); // 保持顺序一致
 
     /** ---- 2. 追加搜索条件 ---- */
     if (name) {
       qb.andWhere('raw.name LIKE :name', { name: `%${name}%` });
-    }
-
-    if (type) {
-      qb.andWhere('raw.category LIKE :cat', { cat: `${type}%` });
     }
 
     /** ---- 3. 获取总数（用于分页） ---- */

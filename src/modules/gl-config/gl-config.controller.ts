@@ -1,5 +1,5 @@
 import { Controller, Post, Body, Get, Put, Delete, Query, UseGuards } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth,ApiQuery } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -23,27 +23,60 @@ export class GlConfigController {
   constructor(private readonly glConfigService: GlConfigService) {}
 
   // ===================== 获取最新参数组 =====================
-  @Get('latest')
-  @ApiOperation({ summary: '获取最新参数组', description: '返回用户当前最新配置' })
-  async latest(@CurrentUser() user: User) {
-    return this.glConfigService.getLatestConfigByName(user, this.MODULE_NAME);
-  }
+@Get('latest')
+@ApiOperation({ summary: '获取最新参数组', description: '返回用户指定模块的最新配置' })
+@ApiQuery({
+  name: 'moduleName',
+  required: true,
+  description: '模块名称，可选：单独高炉配料计算 | 铁前一体化配料计算I | 铁前一体化配料计算II | 利润一体化配料计算',
+  enum: [
+    '单独高炉配料计算',
+    '铁前一体化配料计算I',
+    '铁前一体化配料计算II',
+    '利润一体化配料计算',
+  ],
+})
+async latest(
+  @CurrentUser() user: User,
+  @Query('moduleName') moduleName: string,
+) {
+  return this.glConfigService.getLatestConfigByName(user, moduleName);
+}
+
+
 
   // ===================== 保存完整参数组 =====================
-  @Put('save')
-  @ApiOperation({ summary: '保存完整参数组' })
-  async save(@CurrentUser() user: User, @Body() body: GLSaveConfigDto) {
-    return this.glConfigService.saveFullConfig(
-      user,
-      this.MODULE_NAME,
-      body.ingredientLimits,
-      body.fuelLimits,
-      body.slagLimits,
-      body.hotMetalRatio,
-      body.loadTopLimits,
-      body.otherSettings,
-    );
-  }
+@Put('save')
+@ApiOperation({ summary: '保存完整参数组' })
+@ApiQuery({
+  name: 'moduleName',
+  required: true,
+  description: '模块名称，可选：单独高炉配料计算｜铁前一体化配料计算I｜铁前一体化配料计算II｜利润一体化配料计算',
+  enum: [
+    '单独高炉配料计算',
+    '铁前一体化配料计算I',
+    '铁前一体化配料计算II',
+    '利润一体化配料计算',
+  ],
+})
+async save(
+  @CurrentUser() user: User,
+  @Query('moduleName') moduleName: string,
+  @Body() body: GLSaveConfigDto,
+) {
+  return this.glConfigService.saveFullConfig(
+    user,
+    moduleName,  // ← 改这里
+    body.ingredientLimits,
+    body.fuelLimits,
+    body.slagLimits,
+    body.hotMetalRatio,
+    body.loadTopLimits,
+    body.ironWaterTopLimits,
+    body.otherSettings,
+  );
+}
+
 
   // ===================== 原料 =====================
   @Post('save-ingredients')

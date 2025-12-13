@@ -21,6 +21,8 @@ import { GlConfigModule } from './modules/gl-config/gl-config.module';
 import { SjEconInfoModule } from './modules/sj-econ-info/sj-econ-info.module';
 import { SjEconConfigModule } from './modules/sj-econ-config/sj-econ-config.module';
 // import { SjEconCalcModule } from './modules/sj-econ-calc/sj-econ-calc.module';
+import { TqythCalcModule } from './modules/tqyth-calc/tqyth-calc.module';
+import { LlythCalcModule } from './modules/llyth-calc/llyth-calc.module';
 
 
 @Module({
@@ -44,8 +46,10 @@ import { SjEconConfigModule } from './modules/sj-econ-config/sj-econ-config.modu
     GlFuelInfoModule,
     GlConfigModule,
     GlCalcModule,
-    SjEconInfoModule,
-    SjEconConfigModule,
+    TqythCalcModule,
+    LlythCalcModule,
+    // SjEconInfoModule,
+    // SjEconConfigModule,
     // SjEconCalcModule
   ],
 })

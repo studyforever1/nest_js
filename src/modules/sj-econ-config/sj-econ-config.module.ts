@@ -5,11 +5,11 @@ import { SjEconConfigService } from './sj-econ-config.service';
 import { ConfigGroup } from '../../database/entities/config-group.entity';
 import { BizModule } from '../../database/entities/biz-module.entity';
 import { User } from '../user/entities/user.entity';
-import { SjRawMaterial } from '../sj-raw-material/entities/sj-raw-material.entity';
+import { SjEconInfo } from '../sj-econ-info/entities/sj-econ-info.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([ConfigGroup, BizModule, User, SjRawMaterial]),
+    TypeOrmModule.forFeature([ConfigGroup, BizModule, User, SjEconInfo]),
   ],
   controllers: [SjEconConfigController],
   providers: [SjEconConfigService],

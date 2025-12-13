@@ -13,15 +13,6 @@ export class SaveIngredientDto {
   ingredientParams?: number[];
 
   @ApiProperty({
-    example: 'T1',
-    description: '分类名称，可选（分类同步模式使用）',
-    required: false,
-  })
-  @IsOptional()
-  @IsString()
-  category?: string;
-
-  @ApiProperty({
     example: '铁',
     description: '模糊匹配原料名称，可选（分类同步模式下，用于名称搜索）',
     required: false,

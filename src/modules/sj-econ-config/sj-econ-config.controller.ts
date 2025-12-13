@@ -31,7 +31,7 @@ export class SjEconConfigController {
     try {
       const fullConfig = await this.sjEconConfigService.getFullConfig(user);
       const data = {
-        ingredientParams: fullConfig.ingredientParams || {},
+        ingredientParams: fullConfig.ingredientParams || [],
         singleBurnSet: fullConfig.singleBurnSet || {},
         ironCostSet: fullConfig.ironCostSet || {},
       };
@@ -275,8 +275,7 @@ export class SjEconConfigController {
       const result = await this.sjEconConfigService.saveSelectedIngredients(
         user,
         selectedIds,
-        body.category,
-        body.name
+  
       );
       return ApiResponse.success(result, '保存选中原料成功');
     } catch (error: any) {
@@ -329,7 +328,6 @@ export class SjEconConfigController {
         dto.page,
         dto.pageSize,
         dto.name,
-        dto.type,
       );
       return ApiResponse.success(result, '获取已选原料成功');
     } catch (error: any) {
