@@ -18,7 +18,7 @@ import { GLExportSchemeDto } from './dto/export-scheme.dto';
 import { ApiResponse } from '../../common/response/response.dto'
 
 @ApiBearerAuth('JWT')
-@ApiTags('GL计算任务接口')
+@ApiTags('单独高炉计算任务接口')
 @UseGuards(AuthGuard('jwt'), PermissionsGuard)
 @Controller('gl')
 export class GlCalcController {

@@ -15,7 +15,7 @@ import { GLGetSchemeDto } from '../gl-calc/dto/get-scheme.dto';
 import { ApiResponse } from '../../common/response/response.dto'
 
 @ApiBearerAuth('JWT')
-@ApiTags('铁前一体化配料计算I任务接口')
+@ApiTags('铁前一体化配料计算任务接口')
 @UseGuards(AuthGuard('jwt'), PermissionsGuard)
 @Controller('tqyth')
 export class TqythCalcController {
