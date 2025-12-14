@@ -67,3 +67,16 @@ npm install @nestjs/typeorm typeorm mysql2
 
 npx typeorm migration:create src/migrations/AddSomeTable src/database/database.module.ts
 
+# 数据传到git
+git创建新仓库
+git init初始化
+git remote add origin https://github.com/studyforever1/nest_js.git    
+或 git remote set-url origin https://github.com/studyforever1/nest_js.git
+git remote -v   如果显示如下表示连接成功 
+origin  https://github.com/studyforever1/nest_js.git (fetch)
+origin  https://github.com/studyforever1/nest_js.git (push)
+就可以正常的上传代码了
+git add .
+git commit -m "12.07"
+git push
+

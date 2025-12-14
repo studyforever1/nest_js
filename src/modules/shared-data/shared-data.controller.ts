@@ -9,6 +9,7 @@ import { User } from '../user/entities/user.entity';
 import { SaveSharedDto } from './dto/save-shared.dto';
 import { DeleteSharedDto } from './dto/delete-shared.dto';
 import { ListSharedDto } from './dto/list-shared.dto';
+import { ImportGlMaterialDto } from '../history/dto/import-gl-material.dto';
 
 @ApiTags('共享方案管理')
 @ApiBearerAuth('JWT')
@@ -42,4 +43,19 @@ export class SharedDataController {
   async delete(@Body() body: DeleteSharedDto) {
     return this.sharedService.delete(body.ids);
   }
+
+  /** 导入共享方案到高炉原料库 */
+@Post('import-gl-material')
+@ApiOperation({ summary: '将共享方案导入高炉原料信息库（支持多方案，按共享方案ID）' })
+async importGLMaterial(
+  @CurrentUser() user: User,
+  @Body() body: ImportGlMaterialDto, // ✅ 使用 DTO
+) {
+  const result = await this.sharedService.importSharedToGlMaterial(
+    user,
+    body.Ids,
+  );
+  return result;
+}
+
 }

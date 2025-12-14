@@ -12,6 +12,7 @@ import { SaveHistoryDto } from './dto/save-history.dto';
 import { Task } from '../../database/entities/task.entity';
 import { Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
+import { ImportGlMaterialDto } from './dto/import-gl-material.dto';
 
 @ApiTags('历史记录管理')
 @ApiBearerAuth('JWT')
@@ -78,5 +79,16 @@ async save(@CurrentUser() user: User, @Body() body: SaveHistoryDto) {
     body.module_type,
   );
 }
-
+@Post('import-gl-material')
+@ApiOperation({ summary: '将历史烧结方案导入高炉原料信息库（支持多方案，按历史记录ID）' })
+async importGLMaterial(
+  @CurrentUser() user: User,
+  @Body() body: ImportGlMaterialDto, // ✅ 使用 DTO
+) {
+  const result = await this.historyService.importGLMaterialFromHistory(
+    user,
+    body.Ids,
+  );
+  return result;
+}
 }

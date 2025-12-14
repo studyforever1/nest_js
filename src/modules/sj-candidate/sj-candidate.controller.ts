@@ -9,6 +9,7 @@ import { SjCandidateService } from './sj-candidate.service';
 import { SaveCandidateDto } from './dto/save-candidate.dto';
 import { DeleteCandidateDto } from './dto/delete-candidate.dto';
 import { ListCandidateDto } from './dto/list-candidate.dto';
+import { Param } from '@nestjs/common';
 
 @ApiTags('烧结候选方案')
 @ApiBearerAuth('JWT')
@@ -42,4 +43,17 @@ export class SjCandidateController {
   async delete(@CurrentUser() user: User, @Body() body: DeleteCandidateDto) {
     return this.candidateService.delete(user, body.ids);
   }
+
+
+/** 根据 ID 获取单个候选方案 */
+@Get(':id')
+@ApiOperation({ summary: '根据 ID 获取烧结候选方案详情' })
+async getById(
+  @CurrentUser() user: User,
+  @Param('id') id: number,
+) {
+  return this.candidateService.getById(user, Number(id));
+}
+
+
 }

@@ -8,8 +8,6 @@ import { User } from '../user/entities/user.entity';
 import { ApiResponse } from '../../common/response/response.dto';
 import { SjconfigService } from '../sj-config/sj-config.service';
 import { SjRawMaterial } from '../sj-raw-material/entities/sj-raw-material.entity';
-import { ExportSchemeDto } from './dto/export-scheme.dto';
-import ExcelJS from 'exceljs';
 
 
 /** 分页参数 DTO */
@@ -274,53 +272,6 @@ async fetchAndSaveProgress(taskUuid: string, pagination?: PaginationDto): Promis
     return this.handleError(err, '获取任务进度失败');
   }
 }
-/** 导出选中方案为 Excel */
-async exportSchemeExcel(dto: ExportSchemeDto): Promise<Buffer> {
-  const { taskUuid, schemeIndexes } = dto;
-
-  const task = await this.findTask(taskUuid, ['user']);
-  if (!task) throw new Error('任务不存在');
-  if (task.status !== TaskStatus.FINISHED) throw new Error('任务尚未完成，无法导出方案');
-
-  const resultEntity = await this.resultRepo.findOne({
-    where: { task: { task_uuid: taskUuid } },
-  });
-  if (!resultEntity) throw new Error('未找到任务结果');
-
-  const allResults = resultEntity.output_data || [];
-  const schemes = schemeIndexes.map(i => ({ index: i, data: allResults[i] })).filter(x => x.data);
-  if (!schemes.length) throw new Error('没有可导出的方案');
-
-  const workbook = new ExcelJS.Workbook();
-  const sheet = workbook.addWorksheet('方案导出');
-
-  // 自动生成列，嵌套对象用 JSON.stringify 展示
-  const example = schemes[0].data;
-  const columns = Object.keys(example).map(key => ({
-    header: key,
-    key: key,
-    width: 20,
-  }));
-
-  sheet.columns = [
-    { header: '方案序号', key: 'index', width: 15 },
-    ...columns,
-  ];
-
-  // 填充数据
-  schemes.forEach(item => {
-    const rowData: Record<string, any> = { index: item.index };
-    for (const [key, value] of Object.entries(item.data)) {
-      rowData[key] = typeof value === 'object' ? JSON.stringify(value) : value;
-    }
-    sheet.addRow(rowData);
-  });
-
-  const buffer = await workbook.xlsx.writeBuffer();
-  return Buffer.from(buffer);
-}
-
-
 
 
 /** 分页 + 排序工具方法 */
@@ -478,4 +429,70 @@ Object.entries(scheme['化学成分'] || {}).forEach(([key, val]) => {
   };
 }
 
+
+/** 导出单个方案为 Excel，并整理所需参数 */
+async exportSchemeExcel(taskUuid: string, index: number) {
+  // 1️⃣ 获取方案信息
+  const scheme = await this.getSchemeByIndex(taskUuid, index);
+  if (!scheme) throw new Error('方案不存在');
+
+  const ingredientWithLimits = scheme['原料配比'] || {};
+  const mainParams = scheme['主要参数'] || {};
+  const chemical = scheme['化学成分'] || {};
+
+  // 2️⃣ 获取任务参数（用于 其他费用）
+  const task = await this.taskRepo.findOne({
+    where: { task_uuid:taskUuid },
+  });
+
+  // 3️⃣ 获取原料 ID 列表
+  const ingredientIds = Object.keys(ingredientWithLimits).map(Number);
+
+  // 4️⃣ 查询原料基础信息
+  const rawMaterials = await this.sjRawMaterialRepo.find({
+    where: { id: In(ingredientIds) },
+  });
+
+  // 5️⃣ 组装 ingredientParams（FastAPI 需要的结构）
+  const ingredientParams: Record<string, any> = {};
+
+  for (const id of ingredientIds) {
+    const val = ingredientWithLimits[id];
+    const raw = rawMaterials.find(r => r.id === id);
+
+    if (!raw) continue;
+
+    ingredientParams[val.name] = {
+      原料产地: raw.origin || '',
+      分类编号: raw.category || '',
+      H2O: raw.composition?.H2O ?? 0,
+      价格: raw.composition?.价格 ?? 0,
+      lose_index: val.lose_index ?? 1,
+      配比: Number(val.配比) || 0,
+    };
+  }
+
+  // 6️⃣ 组装 otherSettings（FastAPI 用）
+  const finalOtherSettings = {
+    ...scheme.otherSettings,
+    ...mainParams,
+    导出名称: `${taskUuid}-${index}`,
+    其他费用: task?.parameters?.['otherSettings']["其他费用"] ?? 0,
+    干基总残存: mainParams['干基总残存'] ?? 0,
+    品位: chemical?.TFe?.value ?? 0,
+  };
+  console.log(ingredientParams,finalOtherSettings)
+  return {
+    ingredientParams,
+    otherSettings: finalOtherSettings,
+  };
+}
+
+/** 调用 FastAPI 生成 Excel */
+async callFastApi(payload: { ingredientParams: any; otherSettings: any }) {
+  const response = await axios.post(`${this.fastApiUrl}${'/sj/export/excel/'}`, payload, { responseType: 'arraybuffer' });
+  return Buffer.from(response.data);
+}
+
+  /** 调用 FastAPI 生成 Excel buffer */
 }

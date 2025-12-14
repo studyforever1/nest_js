@@ -151,4 +151,25 @@ async saveCandidate(
       '删除候选方案成功',
     );
   }
+
+  /** ----------- 根据 ID 获取单个候选方案 ----------- */
+async getById(user: User, id: number) {
+  const item = await this.candidateRepo.findOne({
+    where: {
+      id,
+      user: { user_id: user.user_id }, // 防止越权
+    },
+    relations: ['task', 'user'],
+  });
+
+  if (!item) {
+    return ApiResponse.error('候选方案不存在');
+  }
+
+  return ApiResponse.success(
+    this.formatRaw(item),
+    '获取候选方案成功',
+  );
+}
+
 }

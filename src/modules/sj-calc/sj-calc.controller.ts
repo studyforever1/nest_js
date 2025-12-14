@@ -75,28 +75,7 @@ export class CalcController {
   ) {
     return this.calcService.fetchAndSaveProgress(task_id, pagination);
   }
-  @Post('export')
-@Permissions('sj:calc')
-@ApiOperation({
-  summary: '导出选中的候选方案（Excel）',
-  description: '根据方案序号导出方案，生成 xlsx 文件下载',
-})
-@ApiErrorResponse()
-async exportTask(
-  @Body() dto: ExportSchemeDto,
-  @Res() res: Response,  // ✅ express Response
-): Promise<void> {        // 返回 void
-  try {
-    const buffer = await this.calcService.exportSchemeExcel(dto);
-
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename=schemes_${dto.taskUuid}.xlsx`);
-    res.setHeader('Content-Length', buffer.length);
-    res.end(buffer); // ✅ 手动结束
-  } catch (err: any) {
-    res.status(400).json({ code: 400, message: err.message });
-  }
-}
+  
   @Get('scheme')
 @Permissions('sj:calc')
 @ApiOperation({
@@ -115,4 +94,43 @@ async getScheme(
 
   return { code: 0, message: '获取成功', data: scheme };
 }
+
+@Post('export/excel')
+@Permissions('sj:calc')
+@ApiOperation({
+  summary: '导出烧结矿方案（Excel）',
+  description: '根据 taskUuid 和方案序号导出 Excel 文件',
+})
+@ApiErrorResponse()
+async exportExcel(
+  @Body() dto: ExportSchemeDto,
+  @Res() res: Response,
+): Promise<void> {
+  try {
+    // 1️⃣ 整理参数
+    const { ingredientParams, otherSettings } =
+      await this.calcService.exportSchemeExcel(dto.taskUuid, dto.index);
+
+    // 2️⃣ 调用 FastAPI 生成 Excel buffer
+    const buffer = await this.calcService.callFastApi({
+      ingredientParams,
+      otherSettings,
+    });
+
+    // 3️⃣ 文件名优先使用 otherSettings['导出名称']
+    const exportName = otherSettings?.['导出名称'] || `${dto.taskUuid}-${dto.index}`;
+    const filename = encodeURIComponent(`${exportName}.xlsx`);
+
+    // 4️⃣ 返回文件
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', buffer.length);
+    res.end(buffer);
+  } catch (err: any) {
+    console.error(err);
+    res.status(400).json({ code: 400, message: err.message || '导出失败' });
+  }
 }
+
+}
+

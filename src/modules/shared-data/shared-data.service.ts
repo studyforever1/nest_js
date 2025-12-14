@@ -8,6 +8,7 @@ import { User } from '../user/entities/user.entity';
 import { ApiResponse } from '../../common/response/response.dto';
 import dayjs from 'dayjs';
 import { ListSharedDto } from './dto/list-shared.dto';
+import { GlMaterialInfo } from '../gl-material-info/entities/gl-material-info.entity';
 
 @Injectable()
 export class SharedDataService {
@@ -18,6 +19,8 @@ export class SharedDataService {
     private readonly taskRepo: Repository<Task>,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
+    @InjectRepository(GlMaterialInfo)
+    private readonly rawRepo: Repository<GlMaterialInfo>,
   ) { }
 
   /** ----------- 统一格式（完全对齐 History） ----------- */
@@ -153,4 +156,60 @@ export class SharedDataService {
       '删除共享记录成功',
     );
   }
+
+  async importSharedToGlMaterial(
+  user: User,
+  sharedIds: number[],
+) {
+  if (!sharedIds?.length) return ApiResponse.error('未选择共享方案');
+
+  const sharedRecords = await this.sharedRepo.find({
+    where: { id: In(sharedIds), user: { user_id: user.user_id } },
+  });
+
+  if (!sharedRecords.length) return ApiResponse.error('没有找到有效共享方案');
+
+  const toInsert: Partial<GlMaterialInfo>[] = [];
+  const now = new Date();
+
+  // 模板字段保持一致
+  const templateKeys: Record<string, number> = { P: 0, S: 0, Cr: 0, Ni: 0, Pb: 0, Zn: 0, CaO: 0, H2O: 0, K2O: 0, MgO: 0, MnO: 0, TFe: 0, Na2O: 0, SiO2: 0, TiO2: 0, V2O5: 0, Al2O3: 0, R2: 0, '返矿率': 0, '干基价格': 0, '返矿价格': 500 };
+
+  for (const record of sharedRecords) {
+    if (record.module_type !== '烧结配料计算') continue;
+
+    const result = typeof record.result === 'string' ? JSON.parse(record.result) : record.result;
+    if (!result) continue;
+
+    const composition: Record<string, number> = { ...templateKeys };
+
+    const chem = result['化学成分'] || {};
+    for (const key of Object.keys(templateKeys)) {
+      if (key in chem) composition[key] = Number(chem[key]) || composition[key];
+    }
+
+    const mainParam = result['主要参数'] || {};
+    if ('成本' in mainParam) composition['干基价格'] = Number(mainParam['成本']) || composition['干基价格'];
+
+    toInsert.push({
+      name: '自产烧结矿',
+      composition,
+      category: 'S',
+      origin: '其他粉矿',
+      inventory: 1000,
+      modifier: user.username || 'admin',
+      enabled: true,
+      remark: record.scheme_id || '',
+      created_at: now,
+      updated_at: now,
+    });
+  }
+
+  if (!toInsert.length) return ApiResponse.error('没有可导入的共享方案原料');
+
+  await this.rawRepo.save(toInsert);
+
+  return ApiResponse.success({ count: toInsert.length }, '导入高炉原料库成功');
+}
+
 }
