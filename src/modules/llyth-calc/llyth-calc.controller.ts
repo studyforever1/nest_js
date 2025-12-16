@@ -46,7 +46,7 @@ export class LlythCalcController {
   @Get('progress/:task_id')
   @Permissions('llyth:calc')
   @ApiOperation({ summary: '查询利润一体化计算任务进度' })
-  @ApiParam({ name: 'task_id', description: '任务ID，由 /start 返回', required: true })
+  @ApiParam({ name: 'task_id', description: '可以按照默认 主要参数.吨材毛利润', required: true })
   @ApiOkResponseData(GLProgressResponseDto)
   @ApiErrorResponse()
   async getProgress(@Param('task_id') task_id: string, @Query() pagination: GLPaginationDto) {

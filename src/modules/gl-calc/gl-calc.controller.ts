@@ -26,7 +26,7 @@ export class GlCalcController {
 
   @Post('start')
   @Permissions('gl:calc')
-  @ApiOperation({ summary: '启动GL计算任务', description: '返回 task_id 用于查询进度和停止任务' })
+  @ApiOperation({ summary: '启动GL计算任务', description: '计算类型填：单独高炉配料计算' })
   @ApiOkResponseData(GLStartTaskResponseDto)
   @ApiErrorResponse()
   startTask(@CurrentUser() user: User, @Body() dto: GLStartTaskDto) {
@@ -67,5 +67,55 @@ async getScheme(
   // 直接返回 Service 的 ApiResponse
   return await this.glCalcService.getSchemeByIndex(dto.taskUuid, dto.index);
 }
+
+
+@Post('export/excel')
+@Permissions('gl:calc')
+@ApiOperation({
+  summary: '导出高炉方案（Excel）',
+  description: '根据 taskUuid 和方案序号导出 Excel 文件',
+})
+@ApiErrorResponse()
+async exportExcel(
+  @Body() dto: GLExportSchemeDto,
+  @Res() res: Response,
+): Promise<void> {
+  try {
+    // 1️⃣ 整理导出参数
+    const { ingredientParams,fuelParams,otherSettings } =
+      await this.glCalcService.exportSchemeExcel(dto.taskUuid, dto.index);
+
+    // 2️⃣ 调用 FastAPI 生成 Excel
+    const buffer = await this.glCalcService.callFastApi({
+      ingredientParams,
+      fuelParams,
+      otherSettings,
+    });
+
+    // 3️⃣ 文件名
+    const exportName =
+      otherSettings?.['导出名称'] || `${dto.taskUuid}-${dto.index}`;
+    const filename = encodeURIComponent(`${exportName}.xlsx`);
+
+    // 4️⃣ 返回文件
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${filename}"`,
+    );
+    res.setHeader('Content-Length', buffer.length);
+    res.end(buffer);
+  } catch (err: any) {
+    console.error(err);
+    res.status(400).json({
+      code: 400,
+      message: err.message || '导出失败',
+    });
+  }
+}
+
 
 }

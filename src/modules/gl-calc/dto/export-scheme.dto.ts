@@ -1,14 +1,20 @@
-// gl/dto/export-scheme.dto.ts
 import { ApiProperty } from '@nestjs/swagger';
-import { IsArray, IsNotEmpty, IsString } from 'class-validator';
+import { IsNotEmpty, IsString, IsNumber } from 'class-validator';
 
 export class GLExportSchemeDto {
-  @ApiProperty({ description: '任务 UUID' })
+  @ApiProperty({
+    description: '任务 UUID',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
   @IsString()
   @IsNotEmpty()
   taskUuid: string;
 
-  @ApiProperty({ description: '要导出的方案序号数组' })
-  @IsArray()
-  indexes: number[];
+  @ApiProperty({
+    description: '方案序号',
+    example: 0,
+  })
+  @IsNumber()
+  @IsNotEmpty()
+  index: number;
 }
