@@ -36,9 +36,9 @@ mv src/calc/dto src/modules/calc/
 http://localhost:3000/api-docs 
 
 
-nest g module modules/llyth-calc
-nest g service modules/llyth-calc
-nest g controller modules/llyth-calc
+nest g module modules/price-profit-calc
+nest g service modules/price-profit-calc
+nest g controller modules/price-profit-calc
 
 # 打包
 npm run build

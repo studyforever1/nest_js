@@ -23,6 +23,7 @@ import { SjEconConfigModule } from './modules/sj-econ-config/sj-econ-config.modu
 // import { SjEconCalcModule } from './modules/sj-econ-calc/sj-econ-calc.module';
 import { TqythCalcModule } from './modules/tqyth-calc/tqyth-calc.module';
 import { LlythCalcModule } from './modules/llyth-calc/llyth-calc.module';
+import { PriceProfitCalcModule } from './modules/price-profit-calc/price-profit-calc.module';
 
 
 @Module({
@@ -48,6 +49,7 @@ import { LlythCalcModule } from './modules/llyth-calc/llyth-calc.module';
     GlCalcModule,
     TqythCalcModule,
     LlythCalcModule,
+    PriceProfitCalcModule,
     // SjEconInfoModule,
     // SjEconConfigModule,
     // SjEconCalcModule
