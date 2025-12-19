@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import axios from 'axios';
 import _ from 'lodash';
-
+import { ApiResponse } from '../../common/response/response.dto';
 import { ConfigGroup } from '../../database/entities/config-group.entity';
 import { BizModule } from '../../database/entities/biz-module.entity';
 import { User } from '../user/entities/user.entity';
@@ -147,19 +147,11 @@ export class PriceProfitCalcService {
       }
     }
 
-    return {
-      code: 0,
-      message: '计算完成',
-      data: results, // { localPrice: {...}, portPrice: {...} }
-    };
+    return ApiResponse.success(results);
 
   } catch (err: any) {
     this.logger.error('计算失败', err);
-    return {
-      code: 500,
-      message: `计算失败: ${err?.message || err}`,
-      data: null,
-    };
+    return  ApiResponse.error('计算失败: ' + (err?.message || '未知错误'));
   }
 }
 }

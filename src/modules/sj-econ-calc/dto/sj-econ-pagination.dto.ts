@@ -1,8 +1,8 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsInt, Min, Max, IsOptional, IsString } from 'class-validator';
+import { IsInt, Min, Max, IsOptional, IsString, IsIn } from 'class-validator';
 
-export class PaginationDto {
+export class SJEconPaginationDto {
   @ApiPropertyOptional({ description: '页码（默认1）', example: 1 })
   @Type(() => Number)
   @IsInt({ message: 'page 必须是整数' })
@@ -16,14 +16,14 @@ export class PaginationDto {
   @Max(100, { message: 'pageSize 最大为 100' })
   pageSize: number = 10;
 
-  @ApiPropertyOptional({ description: '名称模糊搜索', example: '粉' })
+  @ApiPropertyOptional({ description: '排序字段，例如 "主要参数.成本" 或 "化学成分.TFe"', example: '主要参数.成本' })
   @IsOptional()
-  @IsString({ message: 'name 必须为字符串' })
-  name?: string;
+  @IsString({ message: 'sort 必须是字符串' })
+  sort?: string;
 
-  @ApiPropertyOptional({ description: '分类前缀筛选', example: 'X' })
+  @ApiPropertyOptional({ description: '排序方式 asc/desc', example: 'asc' })
   @IsOptional()
-  @IsString({ message: 'type 必须为字符串' })
-  type?: string;
+  @IsString({ message: 'order 必须是字符串' })
+  @IsIn(['asc', 'desc'], { message: 'order 必须是 "asc" 或 "desc"' })
+  order?: 'asc' | 'desc';
 }
-

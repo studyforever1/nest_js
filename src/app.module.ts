@@ -20,10 +20,10 @@ import { GlCalcModule } from './modules/gl-calc/gl-calc.module';
 import { GlConfigModule } from './modules/gl-config/gl-config.module';
 import { SjEconInfoModule } from './modules/sj-econ-info/sj-econ-info.module';
 import { SjEconConfigModule } from './modules/sj-econ-config/sj-econ-config.module';
-// import { SjEconCalcModule } from './modules/sj-econ-calc/sj-econ-calc.module';
 import { TqythCalcModule } from './modules/tqyth-calc/tqyth-calc.module';
 import { LlythCalcModule } from './modules/llyth-calc/llyth-calc.module';
 import { PriceProfitCalcModule } from './modules/price-profit-calc/price-profit-calc.module';
+import { SjEconCalcModule } from './modules/sj-econ-calc/sj-econ-calc.module';
 
 
 @Module({
@@ -32,27 +32,27 @@ import { PriceProfitCalcModule } from './modules/price-profit-calc/price-profit-
       isGlobal: true, // 全局可用 process.env
     }),
     TypeOrmModule.forRoot(databaseConfig),
-    MenuModule,
+    // MenuModule,
     CalcModule,
     AuthModule,
-    UserModule,
-    RoleModule,
+    // UserModule,
+    // RoleModule,
     SjconfigModule,
     SjRawMaterialModule,
-    ChatModule,
-    HistoryModule,
-    SjCandidateModule,
-    SharedDataModule,
-    GlMaterialInfoModule,
-    GlFuelInfoModule,
-    GlConfigModule,
-    GlCalcModule,
-    TqythCalcModule,
-    LlythCalcModule,
+    // ChatModule,
+    // HistoryModule,
+    // SjCandidateModule,
+    // SharedDataModule,
+    // GlMaterialInfoModule,
+    // GlFuelInfoModule,
+    // GlConfigModule,
+    // GlCalcModule,
+    // TqythCalcModule,
+    // LlythCalcModule,
     PriceProfitCalcModule,
-    // SjEconInfoModule,
-    // SjEconConfigModule,
-    // SjEconCalcModule
+    SjEconInfoModule,
+    SjEconConfigModule,
+    SjEconCalcModule,
   ],
 })
 export class AppModule {}
