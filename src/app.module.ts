@@ -24,6 +24,24 @@ import { TqythCalcModule } from './modules/tqyth-calc/tqyth-calc.module';
 import { LlythCalcModule } from './modules/llyth-calc/llyth-calc.module';
 import { PriceProfitCalcModule } from './modules/price-profit-calc/price-profit-calc.module';
 import { SjEconCalcModule } from './modules/sj-econ-calc/sj-econ-calc.module';
+import { CokeEconInfoModule } from './modules/coke-econ-info/coke-econ-info.module';
+import { CokeEconConfigModule } from './modules/coke-econ-config/coke-econ-config.module';
+import { CokeEconCalcModule } from './modules/coke-econ-calc/coke-econ-calc.module';
+import { CoalEconInfoModule } from './modules/coal-econ-info/coal-econ-info.module';
+import { CoalEconConfigModule } from './modules/coal-econ-config/coal-econ-config.module';
+import { PelletEconInfoModule } from './modules/pellet-econ-info/pellet-econ-info.module';
+import { LumpEconInfoModule } from './modules/lump-econ-info/lump-econ-info.module';
+import { FinesHtBasePropModule } from './modules/fines-ht-base-prop/fines-ht-base-prop.module';
+import { LumpMetallurgyPropModule } from './modules/lump-metallurgy-prop/lump-metallurgy-prop.module';
+import { MineTypIndModule } from './modules/mine-typ-ind/mine-typ-ind.module';
+import { SjFinesChemTypModule } from './modules/sj-fines-chem-typ/sj-fines-chem-typ.module';
+import { LumpEconConfigModule } from './modules/lump-econ-config/lump-econ-config.module';
+import { LumpEconCalcModule } from './modules/lump-econ-calc/lump-econ-calc.module';
+import { PelletEconConfigModule } from './modules/pellet-econ-config/pellet-econ-config.module';
+import { PelletEconCalcModule } from './modules/pellet-econ-calc/pellet-econ-calc.module';
+import { CoalEconCalcModule } from './modules/coal-econ-calc/coal-econ-calc.module';
+import { MixCoalConfigModule } from './modules/mix-coal-config/mix-coal-config.module';
+import { MixCoalCalcModule } from './modules/mix-coal-calc/mix-coal-calc.module';
 
 
 @Module({
@@ -32,7 +50,7 @@ import { SjEconCalcModule } from './modules/sj-econ-calc/sj-econ-calc.module';
       isGlobal: true, // 全局可用 process.env
     }),
     TypeOrmModule.forRoot(databaseConfig),
-    // MenuModule,
+    MenuModule,
     CalcModule,
     AuthModule,
     // UserModule,
@@ -45,7 +63,7 @@ import { SjEconCalcModule } from './modules/sj-econ-calc/sj-econ-calc.module';
     // SharedDataModule,
     // GlMaterialInfoModule,
     // GlFuelInfoModule,
-    // GlConfigModule,
+    GlConfigModule,
     // GlCalcModule,
     // TqythCalcModule,
     // LlythCalcModule,
@@ -53,6 +71,24 @@ import { SjEconCalcModule } from './modules/sj-econ-calc/sj-econ-calc.module';
     SjEconInfoModule,
     SjEconConfigModule,
     SjEconCalcModule,
+    CokeEconInfoModule,
+    CokeEconConfigModule,
+    CokeEconCalcModule,
+    CoalEconInfoModule,
+    CoalEconConfigModule,
+    PelletEconInfoModule,
+    LumpEconInfoModule,
+    FinesHtBasePropModule,
+    LumpMetallurgyPropModule,
+    MineTypIndModule,
+    SjFinesChemTypModule,
+    LumpEconConfigModule,
+    LumpEconCalcModule,
+    PelletEconConfigModule,
+    PelletEconCalcModule,
+    CoalEconCalcModule,
+    MixCoalConfigModule,
+    MixCoalCalcModule
   ],
 })
 export class AppModule {}

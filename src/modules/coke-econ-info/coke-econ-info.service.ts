@@ -1,0 +1,167 @@
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, In } from 'typeorm';
+import * as ExcelJS from 'exceljs';
+import { Express } from 'express';
+
+import { CokeEconInfo } from './entities/coke-econ-info.entity';
+import { CreateCokeEconInfoDto } from './dto/create-coke-econ-info.dto';
+import { UpdateCokeEconInfoDto } from './dto/update-coke-econ-info.dto';
+
+@Injectable()
+export class CokeEconInfoService {
+  constructor(
+    @InjectRepository(CokeEconInfo)
+    private readonly repo: Repository<CokeEconInfo>,
+  ) {}
+
+  async create(dto: CreateCokeEconInfoDto, username: string) {
+    const entity = this.repo.create({
+      ...dto,
+      composition: dto.composition ?? {},
+      modifier: username,
+      enabled: true,
+    });
+    return this.repo.save(entity);
+  }
+
+  async update(id: number, dto: UpdateCokeEconInfoDto, username: string) {
+    const entity = await this.repo.findOne({ where: { id } });
+    if (!entity) throw new NotFoundException(`ID ${id} 不存在`);
+
+    Object.assign(entity, dto, {
+      composition: dto.composition ?? entity.composition,
+      modifier: username,
+    });
+
+    return this.repo.save(entity);
+  }
+
+  async query(options: { page: number; pageSize: number; name?: string }) {
+    const { page, pageSize, name } = options;
+
+    const qb = this.repo
+      .createQueryBuilder('c')
+      .orderBy('c.id', 'ASC');
+
+    if (name) {
+      qb.andWhere('c.name LIKE :name', { name: `%${name}%` });
+    }
+
+    const [records, total] = await qb
+      .skip((page - 1) * pageSize)
+      .take(pageSize)
+      .getManyAndCount();
+
+    return {
+      data: records,
+      total,
+      page,
+      pageSize,
+      totalPages: Math.ceil(total / pageSize),
+    };
+  }
+
+  async remove(ids: number[]) {
+    if (!ids?.length) throw new Error('未提供删除 ID');
+
+    const list = await this.repo.findBy({ id: In(ids) });
+    if (!list.length) {
+      throw new NotFoundException(`ID ${ids.join(',')} 不存在`);
+    }
+    return this.repo.remove(list);
+  }
+
+  async removeAll(username: string) {
+    const list = await this.repo.find();
+    if (!list.length) {
+      return { status: 'error', message: '焦炭经济性库为空' };
+    }
+
+    list.forEach(i => (i.modifier = username));
+    await this.repo.remove(list);
+
+    return {
+      status: 'success',
+      message: `成功删除 ${list.length} 条记录`,
+    };
+  }
+
+  /** Excel 导出（动态 composition） */
+async exportExcel(): Promise<Buffer> {
+  const list = await this.repo.find();
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet('焦炭经济性');
+
+  /** 1️⃣ 收集动态字段（排除“物料类别”） */
+  const dynamicKeys = new Set<string>();
+  list.forEach(i => {
+    Object.keys(i.composition ?? {}).forEach(k => {
+      if (k && k !== '物料类别') {
+        dynamicKeys.add(k);
+      }
+    });
+  });
+
+  /** 2️⃣ 表头：名称 + 物料类别 + 其他动态字段 */
+  const headers = ['焦炭名称', '物料类别', ...Array.from(dynamicKeys)];
+  sheet.addRow(headers);
+
+  /** 3️⃣ 数据行 */
+  list.forEach(i => {
+    sheet.addRow([
+      i.name,
+      i.composition?.['物料类别'] ?? null,
+      ...Array.from(dynamicKeys).map(k => i.composition?.[k] ?? null),
+    ]);
+  });
+
+  return Buffer.from(await workbook.xlsx.writeBuffer());
+}
+
+
+  /** Excel 导入 */
+  async importExcel(file: Express.Multer.File, username: string) {
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(file.buffer as any);
+    const sheet = workbook.worksheets[0];
+
+    const headers: string[] = [];
+    sheet.getRow(1).eachCell(cell =>
+      headers.push(String(cell.value ?? '').trim()),
+    );
+
+    const nameIndex = headers.indexOf('焦炭名称') + 1;
+    if (!nameIndex) return { status: 'error', message: '缺少【名称】列' };
+
+    const dynamicCols = headers
+      .map((h, i) => ({ key: h, idx: i + 1 }))
+      .filter(c => c.idx !== nameIndex && c.key);
+
+    const toSave: CokeEconInfo[] = [];
+
+    sheet.eachRow((row, rowNum) => {
+      if (rowNum === 1) return;
+
+      const name = String(row.getCell(nameIndex).value ?? '').trim();
+      if (!name) return;
+
+      const composition: Record<string, any> = {};
+      dynamicCols.forEach(c => {
+        composition[c.key] = row.getCell(c.idx).value;
+      });
+
+      toSave.push(
+        this.repo.create({
+          name,
+          composition,
+          modifier: username,
+          enabled: true,
+        }),
+      );
+    });
+
+    await this.repo.save(toSave);
+    return { status: 'success', message: `成功导入 ${toSave.length} 条` };
+  }
+}

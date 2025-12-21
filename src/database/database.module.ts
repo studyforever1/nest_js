@@ -19,6 +19,14 @@ import { Menu } from 'src/modules/menu/entity/menu.entity';
 import { GlMaterialInfo } from 'src/modules/gl-material-info/entities/gl-material-info.entity';
 import { GlFuelInfo } from 'src/modules/gl-fuel-info/entities/gl-fuel-info.entity';
 import { SjEconInfo } from 'src/modules/sj-econ-info/entities/sj-econ-info.entity';
+import { CokeEconInfo } from 'src/modules/coke-econ-info/entities/coke-econ-info.entity';
+import {CoalEconInfo} from 'src/modules/coal-econ-info/entities/coal-econ-info.entity';
+import {PelletEconInfo} from 'src/modules/pellet-econ-info/entities/pellet-econ-info.entity';
+import {LumpEconInfo} from 'src/modules/lump-econ-info/entities/lump-econ-info.entity';
+import {FinesHtBaseProp} from 'src/modules/fines-ht-base-prop/entities/fines-ht-base-prop.entity';
+import {LumpMetallurgyProp} from 'src/modules/lump-metallurgy-prop/entities/lump-metallurgy-prop.entity';
+import {MineTypInd} from 'src/modules/mine-typ-ind/entities/mine-typ-ind.entity';
+import {SjFinesChemTyp} from 'src/modules/sj-fines-chem-typ/entities/sj-fines-chem-typ.entity';
 // 数据库配置
 
 export const databaseConfig: TypeOrmModuleOptions = {
@@ -47,7 +55,15 @@ export const databaseConfig: TypeOrmModuleOptions = {
     Menu,
     GlMaterialInfo,
     GlFuelInfo,
-    SjEconInfo
+    SjEconInfo,
+    CokeEconInfo,
+    CoalEconInfo,
+    PelletEconInfo,
+    LumpEconInfo,
+    FinesHtBaseProp,
+    LumpMetallurgyProp,
+    MineTypInd,
+    SjFinesChemTyp
   ],
   synchronize: true, // 开发环境可用，生产环境建议 false 并使用 migration
   migrations: ['src/migrations/*{.ts,.js}'],

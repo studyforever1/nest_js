@@ -1,5 +1,5 @@
 git add .
-git commit -m "12.07"
+git commit -m "12.21"
 git push
 
 npm run start
@@ -36,9 +36,9 @@ mv src/calc/dto src/modules/calc/
 http://localhost:3000/api-docs 
 
 
-nest g module modules/sj-econ-calc
-nest g service modules/sj-econ-calc
-nest g controller modules/sj-econ-calc
+nest g module modules/mix-coal-calc
+nest g service modules/mix-coal-calc
+nest g controller modules/mix-coal-calc
 
 # 打包
 npm run build
