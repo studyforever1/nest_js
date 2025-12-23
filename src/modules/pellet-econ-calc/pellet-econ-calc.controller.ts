@@ -9,7 +9,7 @@ import { PelletEconCalcService } from './pellet-econ-calc.service';
 import { StartPelletEconCalcDto, StopPelletEconCalcDto, PelletEconPaginationDto } from './dto/pellet-econ-calc.dto';
 
 @ApiBearerAuth('JWT')
-@ApiTags('球团-经济性评价')
+@ApiTags('外购球团经济性评价-计算')
 @UseGuards(AuthGuard('jwt'), PermissionsGuard)
 @Controller('pellet-econ-calc')
 export class PelletEconCalcController {

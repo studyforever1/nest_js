@@ -20,7 +20,7 @@ import {
   CokeEconPaginationDto,
 } from './dto/coke-econ-config.dto';
 
-@ApiTags('焦炭经济性评价接口')
+@ApiTags('焦炭经济性评价-参数配置')
 @ApiBearerAuth('JWT')
 @UseGuards(AuthGuard('jwt'), PermissionsGuard)
 @Controller('coke-econ-config')

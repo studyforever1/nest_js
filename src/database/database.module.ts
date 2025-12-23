@@ -27,6 +27,8 @@ import {FinesHtBaseProp} from 'src/modules/fines-ht-base-prop/entities/fines-ht-
 import {LumpMetallurgyProp} from 'src/modules/lump-metallurgy-prop/entities/lump-metallurgy-prop.entity';
 import {MineTypInd} from 'src/modules/mine-typ-ind/entities/mine-typ-ind.entity';
 import {SjFinesChemTyp} from 'src/modules/sj-fines-chem-typ/entities/sj-fines-chem-typ.entity';
+import { SystemLatestScheme } from 'src/modules/system-latest-scheme/entities/system-latest-scheme.entity';
+import { Notification } from 'src/modules/notification/entities/notification.entity';
 // 数据库配置
 
 export const databaseConfig: TypeOrmModuleOptions = {
@@ -63,7 +65,9 @@ export const databaseConfig: TypeOrmModuleOptions = {
     FinesHtBaseProp,
     LumpMetallurgyProp,
     MineTypInd,
-    SjFinesChemTyp
+    SjFinesChemTyp,
+    SystemLatestScheme,
+    Notification
   ],
   synchronize: true, // 开发环境可用，生产环境建议 false 并使用 migration
   migrations: ['src/migrations/*{.ts,.js}'],

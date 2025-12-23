@@ -40,7 +40,7 @@ async update(id: number, dto: UpdateGlFuelInfoDto, username: string) {
   const { id, category, name, composition, remark, inventory } = raw; // 加上 inventory
   if (!composition) return { id, category, name, remark, inventory };
 
-  const { TFe = null, H2O = null,返矿率=null,干基价格=null,返矿价格=null, ...otherComposition } = composition as Record<string, any>;
+  const { TFe = null, H2O = null,返焦率=null,干基价格=null,返焦价格=null, ...otherComposition } = composition as Record<string, any>;
 
   return {
     id,
@@ -49,8 +49,8 @@ async update(id: number, dto: UpdateGlFuelInfoDto, username: string) {
     TFe,
     ...otherComposition,
     H2O,
-    返矿率,
-    返矿价格,
+    返焦率,
+    返焦价格,
     干基价格,
     inventory,
     remark,
@@ -138,7 +138,7 @@ async update(id: number, dto: UpdateGlFuelInfoDto, username: string) {
   raws.forEach(raw => {
     if (raw.composition) {
       Object.keys(raw.composition).forEach(key => {
-        if (!['TFe', 'H2O', '返矿率', '返矿价格','干基价格'].includes(key) && key.trim()) {
+        if (!['TFe', 'H2O', '返焦率', '返焦价格','干基价格'].includes(key) && key.trim()) {
           dynamicKeys.add(key);
         }
       });
@@ -150,8 +150,8 @@ async update(id: number, dto: UpdateGlFuelInfoDto, username: string) {
     ...fixedHeaders,
     ...Array.from(dynamicKeys).sort(),
     'H2O',
-    '返矿率',
-    '返矿价格',
+    '返焦率',
+    '返焦价格',
     '干基价格',
     '库存',
     '备注'
@@ -170,8 +170,8 @@ async update(id: number, dto: UpdateGlFuelInfoDto, username: string) {
     });
 
     row.push(raw.composition?.['H2O'] ?? null);
-    row.push(raw.composition?.['返矿率'] ?? null);
-    row.push(raw.composition?.['返矿价格'] ?? null);
+    row.push(raw.composition?.['返焦率'] ?? null);
+    row.push(raw.composition?.['返焦价格'] ?? null);
     row.push(raw.composition?.['干基价格'] ?? null);
     row.push(raw.inventory ?? 0);
     row.push(raw.remark ?? '');
@@ -215,15 +215,15 @@ async update(id: number, dto: UpdateGlFuelInfoDto, username: string) {
     const remarkIndex = getIndex('备注');
     const TFeIndex = getIndex('TFe');
     const H2OIndex = getIndex('H2O');
-    const 返矿率Index = getIndex('返矿率');
-    const 返矿价格Index = getIndex('返矿价格');
+    const 返焦率Index = getIndex('返焦率');
+    const 返焦价格Index = getIndex('返焦价格');
     const 干基价格Index = getIndex('干基价格');
 
     // 动态字段（除固定列外）
     const dynamicFieldIndices: { idx: number; key: string }[] = [];
     headers.forEach((h, i) => {
       const col = i + 1;
-      if ([categoryIndex, nameIndex, inventoryIndex, remarkIndex, TFeIndex, H2OIndex, 返矿率Index, 返矿价格Index, 干基价格Index].includes(col)) return;
+      if ([categoryIndex, nameIndex, inventoryIndex, remarkIndex, TFeIndex, H2OIndex, 返焦率Index, 返焦价格Index, 干基价格Index].includes(col)) return;
       if (h && h.trim()) dynamicFieldIndices.push({ idx: col, key: h });
     });
 
@@ -252,8 +252,8 @@ async update(id: number, dto: UpdateGlFuelInfoDto, username: string) {
       // 固定字段，只加入 Excel 中存在的列
       if (TFeIndex > 0) composition['TFe'] = parseFloat(String(row.getCell(TFeIndex).value ?? 0)) || 0;
       if (H2OIndex > 0) composition['H2O'] = parseFloat(String(row.getCell(H2OIndex).value ?? 0)) || 0;
-      if (返矿率Index > 0) composition['返矿率'] = parseFloat(String(row.getCell(返矿率Index).value ?? 0)) || 0;
-      if (返矿价格Index > 0) composition['返矿价格'] = parseFloat(String(row.getCell(返矿价格Index).value ?? 0)) || 0;
+      if (返焦率Index > 0) composition['返焦率'] = parseFloat(String(row.getCell(返焦率Index).value ?? 0)) || 0;
+      if (返焦价格Index > 0) composition['返焦价格'] = parseFloat(String(row.getCell(返焦价格Index).value ?? 0)) || 0;
       if (干基价格Index > 0) composition['干基价格'] = parseFloat(String(row.getCell(干基价格Index).value ?? 0)) || 0;
 
       rawsToSave.push(this.rawRepo.create({

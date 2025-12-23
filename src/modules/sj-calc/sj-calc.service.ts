@@ -8,7 +8,7 @@ import { User } from '../user/entities/user.entity';
 import { ApiResponse } from '../../common/response/response.dto';
 import { SjconfigService } from '../sj-config/sj-config.service';
 import { SjRawMaterial } from '../sj-raw-material/entities/sj-raw-material.entity';
-
+import { v4 as uuidv4 } from 'uuid';
 
 /** 分页参数 DTO */
 export interface PaginationDto {
@@ -46,17 +46,27 @@ export class CalcService {
 
   /** 启动计算任务 */
   /** 启动计算任务（支持 taskUuid 未及时返回 → 初始化中） */
-async startTask(moduleName: string, user: User): Promise<ApiResponse<{ taskUuid?: string; resultMap: Record<string, any>; status: string }>> {
+
+
+async startTask(
+  moduleName: string,
+  user: User,
+): Promise<ApiResponse<{ taskUuid: string; status: string }>> {
   try {
     this.logger.debug(`准备启动任务，userId=${user.user_id}, module=${moduleName}`);
 
-    // 获取最新配置
+    /** 1️⃣ NestJS 生成 taskUuid（核心） */
+    const taskUuid = uuidv4();
+
+    // ================= 原有参数准备逻辑（几乎不动） =================
+
     const config = await this.sjconfigService.getLatestConfigByName(user, moduleName);
     if (!config) throw new Error(`未找到模块 ${moduleName} 的配置`);
 
-    // 获取原料参数
     const ingredientIds = config.ingredientParams || [];
-    const raws = await this.sjRawMaterialRepo.find({ where: { id: In(ingredientIds), enabled: true } });
+    const raws = await this.sjRawMaterialRepo.find({
+      where: { id: In(ingredientIds), enabled: true },
+    });
 
     const ingredientParams: Record<number, any> = {};
     raws.forEach(raw => {
@@ -69,7 +79,6 @@ async startTask(moduleName: string, user: User): Promise<ApiResponse<{ taskUuid?
       };
     });
 
-    // 清理原料上下限
     const ingredientLimitsClean: Record<string, any> = {};
     Object.keys(config.ingredientLimits || {}).forEach(id => {
       const { name, ...limits } = config.ingredientLimits[id];
@@ -84,61 +93,61 @@ async startTask(moduleName: string, user: User): Promise<ApiResponse<{ taskUuid?
       otherSettings: config.otherSettings || {},
     };
 
-    this.logger.debug('=== fullParams JSON ===');
-    this.logger.debug(JSON.stringify(fullParams, null, 2));
+    // ================= 2️⃣ 先保存任务（INITIALIZING） =================
 
-    let taskUuid: string | undefined;
-    let resultsById: Record<string, any> | undefined;
+    const task = this.taskRepo.create({
+      task_uuid: taskUuid,
+      module_type: moduleName,
+      status: TaskStatus.INITIALIZING,
+      parameters: fullParams,
+      user,
+    });
+    await this.taskRepo.save(task);
 
-    try {
-      // 调用 FastAPI 启动任务
-      const res = await this.apiPost('/sj/start/', fullParams);
-      taskUuid = res.data?.data?.taskUuid;
-      resultsById = res.data?.data?.results;
-    } catch (err) {
-      // FastAPI 可能未及时返回 taskUuid → 初始化中
-      this.logger.warn(`启动 FastAPI 任务未返回 taskUuid: ${(err as any)?.message || err}`);
-    }
+    // 初始化内存缓存
+    this.taskCache.set(taskUuid, { results: [], lastUpdated: Date.now() });
 
-    // 保存 Task（仅当 taskUuid 可用）
-    if (taskUuid) {
-      const task = this.taskRepo.create({
-        task_uuid: taskUuid,
-        module_type: moduleName,
-        status: TaskStatus.RUNNING,
-        parameters: fullParams,
-        user,
+    // ================= 3️⃣ 后台启动 FastAPI（不 await） =================
+
+    this.startFastApiTask(taskUuid, fullParams)
+      .catch(err => {
+        this.logger.error(`FastAPI 启动失败 task=${taskUuid}: ${err.message}`);
       });
-      await this.taskRepo.save(task);
 
-      // 初始化内存缓存
-      this.taskCache.set(taskUuid, { results: [], lastUpdated: Date.now() });
-    }
-
-    // ID → Name 映射
-    const idNameMap: Record<number, string> = {};
-    raws.forEach(raw => idNameMap[raw.id] = raw.name);
-
-    const resultMap: Record<string, any> = {};
-    if (resultsById) {
-      Object.keys(resultsById).forEach(idStr => {
-        const id = Number(idStr);
-        const name = idNameMap[id];
-        if (name) resultMap[name] = resultsById[id];
-      });
-    }
+    // ================= 4️⃣ 立即返回给前端 =================
 
     return ApiResponse.success(
       {
         taskUuid,
-        resultMap,
-        status: taskUuid ? 'RUNNING' : 'INITIALIZING', // taskUuid 未返回 → 初始化中
+        status: 'INITIALIZING',
       },
-      taskUuid ? '任务启动成功 (ID → Name 映射)' : '任务初始化中'
+      '任务已创建，正在启动中',
     );
 
   } catch (err: unknown) {
     return this.handleError(err, '启动任务失败');
+  }
+}
+
+private async startFastApiTask(taskUuid: string, fullParams: any) {
+  try {
+    await this.apiPost('/sj/start/', {
+      taskUuid,          // ⭐ FastAPI 必须接收这个
+      ...fullParams,
+    });
+
+    // 启动成功 → RUNNING
+    await this.taskRepo.update(
+      { task_uuid: taskUuid },
+      { status: TaskStatus.RUNNING },
+    );
+  } catch (err) {
+    // 启动失败 → FAILED
+    await this.taskRepo.update(
+      { task_uuid: taskUuid },
+      { status: TaskStatus.FAILED },
+    );
+    throw err;
   }
 }
 
@@ -378,8 +387,9 @@ private applyPaginationAndSort(results: any[], pagination?: PaginationDto) {
   }
 
   // 检查 index 是否越界
-  const scheme = allResults[index];
-  if (!scheme) return null;
+const scheme = allResults.find(item => item['方案序号'] === index);
+if (!scheme) return null;
+
 
   // 原料上下限信息
   const ingredientLimits: Record<string, { low_limit?: number; top_limit?: number; name?: string }> =

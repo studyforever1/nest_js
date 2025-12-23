@@ -36,9 +36,9 @@ mv src/calc/dto src/modules/calc/
 http://localhost:3000/api-docs 
 
 
-nest g module modules/mix-coal-calc
-nest g service modules/mix-coal-calc
-nest g controller modules/mix-coal-calc
+nest g module modules/message
+nest g service modules/message
+nest g controller modules/message
 
 # 打包
 npm run build

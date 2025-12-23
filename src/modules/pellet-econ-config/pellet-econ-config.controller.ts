@@ -12,7 +12,7 @@ import {
   PelletEconPaginationDto,
 } from './dto/pellet-econ-config.dto';
 
-@ApiTags('球团经济性参数配置')
+@ApiTags('外购球团经济性评价-参数配置')
 @ApiBearerAuth('JWT')
 @UseGuards(AuthGuard('jwt'), PermissionsGuard)
 @Controller('pellet-econ-config')

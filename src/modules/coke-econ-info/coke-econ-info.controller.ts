@@ -33,7 +33,7 @@ import { UpdateCokeEconInfoDto } from './dto/update-coke-econ-info.dto';
 import { RemoveCokeEconInfoDto } from './dto/remove-coke-econ-info.dto';
 import { PaginationDto } from './dto/pagination.dto';
 
-@ApiTags('经济性评价-焦炭信息库')
+@ApiTags('焦炭经济性评价-焦炭信息库')
 @ApiBearerAuth('JWT')
 @UseGuards(AuthGuard('jwt'), PermissionsGuard)
 @Controller('coke-econ-info')

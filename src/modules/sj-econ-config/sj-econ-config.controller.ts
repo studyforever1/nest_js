@@ -12,7 +12,7 @@ import {
   SjEconPaginationDto,
 } from './dto/sj-econ-config.dto';
 
-@ApiTags('烧结原料经济性评价接口')
+@ApiTags('烧结原料经济性评价-参数配置')
 @ApiBearerAuth('JWT')
 @UseGuards(AuthGuard('jwt'), PermissionsGuard)
 @Controller('sj-econ-config')

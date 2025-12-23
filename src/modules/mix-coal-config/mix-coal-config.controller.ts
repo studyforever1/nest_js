@@ -7,7 +7,7 @@ import { User } from '../user/entities/user.entity';
 import { MixCoalConfigService } from './mix-coal-config.service';
 import { SaveMixCoalConfigDto, SaveMixCoalParamsDto, DeleteMixCoalParamsDto, MixCoalPaginationDto } from './dto/mix-coal-config.dto';
 
-@ApiTags('混合煤性价比计算接口')
+@ApiTags('混合煤性价比计算-参数配置')
 @ApiBearerAuth('JWT')
 @UseGuards(AuthGuard('jwt'), PermissionsGuard)
 @Controller('mix-coal-config')

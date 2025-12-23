@@ -9,7 +9,7 @@ import { LumpEconCalcService } from './lump-econ-calc.service';
 import { StartLumpEconCalcDto, StopLumpEconCalcDto, LumpEconPaginationDto } from './dto/lump-econ-calc.dto';
 
 @ApiBearerAuth('JWT')
-@ApiTags('块矿-经济性评价')
+@ApiTags('外购块矿经济性评价-计算')
 @UseGuards(AuthGuard('jwt'), PermissionsGuard)
 @Controller('lump-econ-calc')
 export class LumpEconCalcController {

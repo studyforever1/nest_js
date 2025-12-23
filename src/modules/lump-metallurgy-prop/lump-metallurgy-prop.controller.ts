@@ -13,7 +13,7 @@ import { UpdateLumpMetallurgyPropDto } from './dto/update-lump-metallurgy-prop.d
 import { RemoveLumpMetallurgyPropDto } from './dto/remove-lump-metallurgy-prop.dto';
 import { PaginationDto } from './dto/pagination.dto';
 
-@ApiTags('块矿-冶金性能数据库')
+@ApiTags('块矿冶金性能数据库')
 @ApiBearerAuth('JWT')
 @UseGuards(AuthGuard('jwt'), PermissionsGuard)
 @Controller('lump-metallurgy-prop')

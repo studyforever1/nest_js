@@ -24,7 +24,7 @@ import { CreateCoalEconInfoDto } from './dto/create-coal-econ-info.dto';
 import { UpdateCoalEconInfoDto } from './dto/update-coal-econ-info.dto';
 import { PaginationDto } from './dto/pagination.dto';
 
-@ApiTags('经济性评价-煤炭信息库')
+@ApiTags('喷吹煤经济性评价-喷吹煤信息库')
 @ApiBearerAuth('JWT')
 @UseGuards(AuthGuard('jwt'), PermissionsGuard)
 @Controller('coal-econ-info')

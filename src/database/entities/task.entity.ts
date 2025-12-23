@@ -21,6 +21,7 @@ export enum TaskStatus {
   FINISHED = 'finished',
   FAILED = 'failed',
   STOPPED = 'stopped',
+  INITIALIZING = 'initializing'
 }
 
 @Entity('task')

@@ -13,7 +13,7 @@ import {
 } from './dto/coal-econ-calc.dto';
 
 @ApiBearerAuth('JWT')
-@ApiTags('喷吹煤-经济性评价')
+@ApiTags('喷吹煤经济性评价-计算')
 @UseGuards(AuthGuard('jwt'), PermissionsGuard)
 @Controller('coal-econ-calc')
 export class CoalEconCalcController {

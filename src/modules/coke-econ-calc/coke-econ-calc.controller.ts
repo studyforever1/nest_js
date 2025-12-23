@@ -11,7 +11,7 @@ import { StopEconCalcDto } from './dto/stop-coke-econ-calc.dto';
 import { SJEconPaginationDto } from './dto/coke-econ-pagination.dto';
 
 @ApiBearerAuth('JWT')
-@ApiTags('焦炭-经济性评价')
+@ApiTags('焦炭经济性评价-计算')
 @UseGuards(AuthGuard('jwt'), PermissionsGuard)
 @Controller('coke-econ-calc')
 export class CokeEconCalcController {

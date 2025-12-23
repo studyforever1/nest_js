@@ -33,7 +33,7 @@ import { UpdateLumpEconInfoDto } from './dto/update-lump-econ-info.dto';
 import { RemoveLumpEconInfoDto } from './dto/remove-lump-econ-info.dto';
 import { PaginationDto } from './dto/pagination.dto';
 
-@ApiTags('经济性评价-块矿信息库')
+@ApiTags('外购块矿经济性评价-块矿信息库')
 @ApiBearerAuth('JWT')
 @UseGuards(AuthGuard('jwt'), PermissionsGuard)
 @Controller('lump-econ-info')

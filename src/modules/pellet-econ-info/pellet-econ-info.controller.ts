@@ -33,7 +33,7 @@ import { UpdatePelletEconInfoDto } from './dto/update-pellet-econ-info.dto';
 import { RemovePelletEconInfoDto } from './dto/remove-pellet-econ-info.dto';
 import { PaginationDto } from './dto/pagination.dto';
 
-@ApiTags('经济性评价-球团信息库')
+@ApiTags('外购球团经济性评价-球团信息库')
 @ApiBearerAuth('JWT')
 @UseGuards(AuthGuard('jwt'), PermissionsGuard)
 @Controller('pellet-econ-info')

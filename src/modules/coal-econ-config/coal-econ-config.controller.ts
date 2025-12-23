@@ -7,7 +7,7 @@ import { User } from '../user/entities/user.entity';
 import { CoalEconConfigService } from './coal-econ-config.service';
 import { SaveCoalEconConfigDto, SaveCoalParamsDto, DeleteCoalParamsDto, CoalEconPaginationDto } from './dto/coal-econ-config.dto';
 
-@ApiTags('喷吹煤经济性评价评价接口')
+@ApiTags('喷吹煤经济性评价-参数配置')
 @ApiBearerAuth('JWT')
 @UseGuards(AuthGuard('jwt'), PermissionsGuard)
 @Controller('coal-econ-config')

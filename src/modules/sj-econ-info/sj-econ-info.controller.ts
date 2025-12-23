@@ -32,7 +32,7 @@ import type { Response } from 'express';
 import * as multer from 'multer';
 import { PaginationDto } from './dto/pagination.dto';
 
-@ApiTags('经济性评价-烧结原料信息库')
+@ApiTags('烧结原料经济性评价-烧结原料信息库')
 @ApiBearerAuth('JWT')
 @UseGuards(AuthGuard('jwt'), PermissionsGuard)
 @Controller('sj-econ-info')

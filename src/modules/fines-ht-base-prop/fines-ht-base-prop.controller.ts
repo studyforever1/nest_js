@@ -33,7 +33,7 @@ import { UpdateFinesHtBasePropDto } from './dto/update-fines-ht-base-prop.dto';
 import { RemoveFinesHtBasePropDto } from './dto/remove-fines-ht-base-prop.dto';
 import { PaginationDto } from './dto/pagination.dto';
 
-@ApiTags('铁矿粉-高温基础特性数据库')
+@ApiTags('铁矿粉高温基础特性数据库')
 @ApiBearerAuth('JWT')
 @UseGuards(AuthGuard('jwt'), PermissionsGuard)
 @Controller('fines-ht-base-prop')

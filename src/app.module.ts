@@ -42,6 +42,9 @@ import { PelletEconCalcModule } from './modules/pellet-econ-calc/pellet-econ-cal
 import { CoalEconCalcModule } from './modules/coal-econ-calc/coal-econ-calc.module';
 import { MixCoalConfigModule } from './modules/mix-coal-config/mix-coal-config.module';
 import { MixCoalCalcModule } from './modules/mix-coal-calc/mix-coal-calc.module';
+import { SystemLatestSchemeModule } from './modules/system-latest-scheme/system-latest-scheme.module';
+import { NotificationModule } from './modules/notification/notification.module';
+
 
 
 @Module({
@@ -53,20 +56,20 @@ import { MixCoalCalcModule } from './modules/mix-coal-calc/mix-coal-calc.module'
     MenuModule,
     CalcModule,
     AuthModule,
-    // UserModule,
-    // RoleModule,
+    UserModule,
+    RoleModule,
     SjconfigModule,
     SjRawMaterialModule,
-    // ChatModule,
-    // HistoryModule,
-    // SjCandidateModule,
-    // SharedDataModule,
-    // GlMaterialInfoModule,
-    // GlFuelInfoModule,
+    ChatModule,
+    HistoryModule,
+    SjCandidateModule,
+    SharedDataModule,
+    GlMaterialInfoModule,
+    GlFuelInfoModule,
     GlConfigModule,
-    // GlCalcModule,
-    // TqythCalcModule,
-    // LlythCalcModule,
+    GlCalcModule,
+    TqythCalcModule,
+    LlythCalcModule,
     PriceProfitCalcModule,
     SjEconInfoModule,
     SjEconConfigModule,
@@ -88,7 +91,9 @@ import { MixCoalCalcModule } from './modules/mix-coal-calc/mix-coal-calc.module'
     PelletEconCalcModule,
     CoalEconCalcModule,
     MixCoalConfigModule,
-    MixCoalCalcModule
+    MixCoalCalcModule,
+    SystemLatestSchemeModule,
+    NotificationModule
   ],
 })
 export class AppModule {}

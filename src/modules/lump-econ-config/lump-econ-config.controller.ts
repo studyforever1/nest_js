@@ -7,7 +7,7 @@ import { User } from '../user/entities/user.entity';
 import { LumpEconConfigService } from './lump-econ-config.service';
 import { SaveLumpEconConfigDto, SaveLumpParamsDto, DeleteLumpParamsDto, LumpEconPaginationDto } from './dto/lump-econ-config.dto';
 
-@ApiTags('块矿经济性评价接口')
+@ApiTags('外购块矿经济性评价-参数配置')
 @ApiBearerAuth('JWT')
 @UseGuards(AuthGuard('jwt'), PermissionsGuard)
 @Controller('lump-econ-config')

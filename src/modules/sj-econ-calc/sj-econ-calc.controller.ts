@@ -12,7 +12,7 @@ import { Param } from '@nestjs/common';
 import { SJEconPaginationDto } from './dto/sj-econ-pagination.dto';
 
 @ApiBearerAuth('JWT')
-@ApiTags('烧结-经济性综合评价')
+@ApiTags('烧结原料经济性评价-计算')
 @UseGuards(AuthGuard('jwt'), PermissionsGuard)
 @Controller('sj/econ')
 export class SjEconCalcController {
