@@ -12,6 +12,10 @@ import { GLSaveFuelDto } from './dto/gl-save-fuel.dto';
 import { GLDeleteIngredientDto } from './dto/gl-delete-ingredient.dto';
 import { GLDeleteFuelDto } from './dto/gl-delete-fuel.dto';
 import { GLPaginationDto } from './dto/gl-pagination.dto';
+import { GLAddProcessCostDto } from './dto/gl-add-process-cost.dto'; 
+import { GLDeleteProcessCostDto } from './dto/gl-delete-process-cost.dto';
+import { GLUpdateProcessCostDto } from './dto/gl-update-process-cost.dto';
+import { GLListProcessCostDto } from './dto/gl-list-process-cost.dto';
 
 @ApiTags('高炉参数配置接口')
 @ApiBearerAuth('JWT')
@@ -140,4 +144,63 @@ async getSelectedFuels(@CurrentUser() user: User, @Query() dto: GLPaginationDto)
     type: dto.type,
   });
 }
+
+// =====================================================
+// 🔥 高炉工序成本（GLProcessCost）
+// =====================================================
+// =====================================================
+// 🔥 高炉工序成本（完全参考烧结）
+// =====================================================
+
+@Post('gl-process-cost/add')
+@ApiOperation({ summary: '新增 / 批量新增高炉工序成本' })
+async addGLProcessCost(
+  @CurrentUser() user: User,
+  @Body() body: GLAddProcessCostDto,
+) {
+  return this.glConfigService.addGLProcessCost(
+    user,
+    body.items,
+  );
+}
+
+@Post('gl-process-cost/delete')
+@ApiOperation({ summary: '批量删除高炉工序成本' })
+async deleteGLProcessCost(
+  @CurrentUser() user: User,
+  @Body() body: GLDeleteProcessCostDto,
+) {
+  return this.glConfigService.deleteGLProcessCost(
+    user,
+    body.keys,
+  );
+}
+
+@Post('gl-process-cost/update')
+@ApiOperation({ summary: '更新单个高炉工序成本（自动重算）' })
+async updateGLProcessCost(
+  @CurrentUser() user: User,
+  @Body() body: GLUpdateProcessCostDto,
+) {
+  return this.glConfigService.updateGLProcessCost(
+    user,
+    body.key,
+    body.payload,
+  );
+}
+
+@Get('gl-process-cost/list')
+@ApiOperation({ summary: '分页获取高炉工序成本列表' })
+async getGLProcessCostList(
+  @CurrentUser() user: User,
+  @Query() query: GLListProcessCostDto,
+) {
+  return this.glConfigService.getGLProcessCostList(
+    user,
+    query.page,
+    query.pageSize,
+    query.keyword,
+  );
+}
+
 }

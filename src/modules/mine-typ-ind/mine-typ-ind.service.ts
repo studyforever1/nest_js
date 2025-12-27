@@ -89,7 +89,7 @@ export class MineTypIndService {
     const keys = new Set<string>();
     list.forEach(i => Object.keys(i.indicators ?? {}).forEach(k => k && keys.add(k)));
 
-    ws.addRow(['矿山名称', ...Array.from(keys)]);
+    ws.addRow(['矿粉名称', ...Array.from(keys)]);
     list.forEach(i => ws.addRow([i.name, ...Array.from(keys).map(k => i.indicators?.[k] ?? null)]));
 
     return Buffer.from(await wb.xlsx.writeBuffer());

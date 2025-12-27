@@ -11,7 +11,7 @@ export class FinesHtBaseProp {
   @PrimaryGeneratedColumn({ comment: '主键ID' })
   id: number;
 
-  @Column({ comment: '铁矿粉名称' })
+  @Column({ comment: '矿粉名称' })
   name: string;
 
   @Column('json', {

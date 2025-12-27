@@ -33,9 +33,12 @@ export class MixCoalCalcController {
 
   /** 查询任务进度 */
   @Get('progress/:task_id')
-  @Permissions('mix-coal:calc')
-  @ApiOperation({ summary: '查询混合煤性价比计算任务进度（分页）' })
-  async progress(@Param('task_id') taskId: string, @Query() pagination: MixCoalPaginationDto) {
-    return this.service.fetchProgress(taskId, pagination);
-  }
+@Permissions('mix-coal:calc')
+@ApiOperation({ summary: '查询混合煤性价比计算任务进度' })
+async progress(
+  @Param('task_id') taskId: string,
+) {
+  return this.service.fetchProgress(taskId);
+}
+
 }

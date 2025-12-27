@@ -113,7 +113,7 @@ export class FinesHtBasePropService {
       Object.keys(i.properties ?? {}).forEach(k => k && keys.add(k)),
     );
 
-    ws.addRow(['铁矿粉名称', ...Array.from(keys)]);
+    ws.addRow(['矿粉名称', ...Array.from(keys)]);
 
     list.forEach(i => {
       ws.addRow([

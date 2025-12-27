@@ -111,33 +111,65 @@ export class MixCoalCalcService {
     }
 
     /** 查询任务进度 */
-    async fetchProgress(taskUuid: string, pagination?: MixCoalPaginationDto) {
-        try {
-            const res: AxiosResponse<any> = await axios.get(`${this.fastApiUrl}${this.TASK_ENDPOINTS.progress}`, {
-                params: { taskUuid },
-            });
-            const data = res.data?.data || { results: [], status: 'RUNNING' };
+async fetchProgress(taskUuid: string) {
+  try {
+    const res: AxiosResponse<any> = await axios.get(
+      `${this.fastApiUrl}${this.TASK_ENDPOINTS.progress}`,
+      { params: { taskUuid } },
+    );
 
-            const page = Number(pagination?.page ?? 1);
-            const pageSize = Number(pagination?.pageSize ?? 10);
-            const start = (page - 1) * pageSize;
-            const pagedResults = (data.results || []).slice(start, start + pageSize);
+    const data = res.data?.data || { results: [], status: 'RUNNING' };
+    const results = data.results || [];
 
-            return ApiResponse.success({
-                taskUuid,
-                status: data.status,
-                progress: data.progress ?? 0,
-                total: data.total ?? pagedResults.length,
-                results: pagedResults,
-                page,
-                pageSize,
-                totalResults: data.results?.length ?? 0,
-                totalPages: Math.ceil((data.results?.length ?? 0) / pageSize),
-            });
-        } catch (err) {
-            return this.handleError(err, '查询任务进度失败');
-        }
+    /** 👇 给喷吹煤配比补 name */
+    await this.appendCoalNameToResults(results);
+
+    return ApiResponse.success({
+      taskUuid,
+      status: data.status,
+      progress: data.progress ?? 0,
+      total: data.total ?? results.length,
+      results,
+    });
+  } catch (err) {
+    return this.handleError(err, '查询任务进度失败');
+  }
+}
+
+private async appendCoalNameToResults(results: any[]) {
+  // 收集所有煤 ID
+  const coalIdSet = new Set<number>();
+
+  results.forEach((item) => {
+    const coalRatio = item['喷吹煤配比'];
+    if (coalRatio && typeof coalRatio === 'object') {
+      Object.keys(coalRatio).forEach((id) => coalIdSet.add(Number(id)));
     }
+  });
+
+  const coalIds = Array.from(coalIdSet);
+  if (!coalIds.length) return;
+
+  // 查询煤信息
+  const coals = await this.coalRepo.findByIds(coalIds);
+  const coalMap = new Map<number, string>();
+  coals.forEach((c) => coalMap.set(c.id, c.name));
+
+  // 回填 name
+  results.forEach((item) => {
+    const coalRatio = item['喷吹煤配比'];
+    if (!coalRatio) return;
+
+    Object.keys(coalRatio).forEach((id) => {
+      const coalId = Number(id);
+      coalRatio[id] = {
+        name: coalMap.get(coalId) || '',
+        ...coalRatio[id],
+      };
+    });
+  });
+}
+
 
     private handleError(err: unknown, prefix = '操作失败') {
         const message = err instanceof Error ? err.message : String(err);

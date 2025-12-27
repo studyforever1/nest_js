@@ -127,75 +127,120 @@ async startTask(
   }
 
   /** 查询进度 + ID 转名称 + 分页 */
-  async fetchAndSaveProgress(
-    taskUuid: string,
-    pagination?: CoalEconPaginationDto,
-  ): Promise<ApiResponse<any>> {
-    try {
-      const task = await this.taskRepo.findOne({ where: { task_uuid: taskUuid } });
-      if (!task) return ApiResponse.error('任务不存在');
+/** 查询进度 + 名称映射 + 排序 + 分页 */
+async fetchAndSaveProgress(
+  taskUuid: string,
+  pagination?: CoalEconPaginationDto,
+): Promise<ApiResponse<any>> {
+  try {
+    const task = await this.taskRepo.findOne({ where: { task_uuid: taskUuid } });
+    if (!task) return ApiResponse.error('任务不存在');
 
-      const res = await this.apiGet(this.ECON_TASK.progressUrl, { taskUuid });
-      const data = res.data?.data;
-      if (!data) return ApiResponse.success({ status: 'RUNNING', results: [] });
+    const res = await this.apiGet(this.ECON_TASK.progressUrl, { taskUuid });
+    const data = res.data?.data;
+    if (!data) return ApiResponse.success({ status: 'RUNNING', results: [] });
 
-      /** ---------- 提取喷吹煤标识 ---------- */
-      const identifiers = new Set<string>();
-      (data.results || []).forEach(item => {
-        const idOrName = item['喷吹煤名称'];
-        if (idOrName) identifiers.add(String(idOrName));
-      });
+    /** ---------- 提取喷吹煤标识 ---------- */
+    const identifiers = new Set<string>();
+    (data.results || []).forEach(item => {
+      const idOrName = item['喷吹煤名称'];
+      if (idOrName) identifiers.add(String(idOrName));
+    });
 
-      /** ---------- 查询数据库 ---------- */
-      let coals: CoalEconInfo[] = [];
-      if (identifiers.size) {
-        const numericIds = [...identifiers].map(v => Number(v)).filter(v => !isNaN(v));
-        if (numericIds.length) {
-          coals = await this.coalRepo.find({ where: { id: In(numericIds) } });
-        }
+    /** ---------- 查询数据库 ---------- */
+    let coals: CoalEconInfo[] = [];
+    if (identifiers.size) {
+      const numericIds = [...identifiers]
+        .map(v => Number(v))
+        .filter(v => !isNaN(v));
 
-        const nameStrings = [...identifiers].filter(v => isNaN(Number(v)));
-        if (nameStrings.length) {
-          const byName = await this.coalRepo.find({ where: { name: In(nameStrings) } });
-          coals = coals.concat(byName);
-        }
+      if (numericIds.length) {
+        coals = await this.coalRepo.find({ where: { id: In(numericIds) } });
       }
 
-      /** ---------- 构建映射 ---------- */
-      const nameMap: Record<string, string> = {};
-      coals.forEach(c => {
-        nameMap[c.id] = c.name;
-        nameMap[c.name] = c.name;
-      });
-
-      /** ---------- 映射结果 ---------- */
-      const mappedResults = (data.results || []).map(item => ({
-        ...item,
-        喷吹煤名称: nameMap[item['喷吹煤名称']] || item['喷吹煤名称'],
-      }));
-
-      /** ---------- 分页 ---------- */
-      const page = Number(pagination?.page ?? 1);
-      const pageSize = Number(pagination?.pageSize ?? 10);
-      const start = (page - 1) * pageSize;
-
-      const pagedResults = mappedResults.slice(start, start + pageSize);
-
-      return ApiResponse.success({
-        taskUuid,
-        status: data.status,
-        progress: data.progress ?? 0,
-        total: data.total ?? mappedResults.length,
-        results: pagedResults,
-        page,
-        pageSize,
-        totalResults: mappedResults.length,
-        totalPages: Math.ceil(mappedResults.length / pageSize),
-      });
-    } catch (err) {
-      return this.handleError(err, '获取任务进度失败');
+      const nameStrings = [...identifiers].filter(v => isNaN(Number(v)));
+      if (nameStrings.length) {
+        const byName = await this.coalRepo.find({
+          where: { name: In(nameStrings) },
+        });
+        coals = coals.concat(byName);
+      }
     }
+
+    /** ---------- 构建映射 ---------- */
+    const nameMap: Record<string, string> = {};
+    coals.forEach(c => {
+      nameMap[c.id] = c.name;
+      nameMap[c.name] = c.name;
+    });
+
+    /** ---------- 映射结果 ---------- */
+    const mappedResults = (data.results || []).map(item => ({
+      ...item,
+      喷吹煤名称: nameMap[item['喷吹煤名称']] || item['喷吹煤名称'],
+    }));
+
+    /** ---------- 排序 + 分页（关键新增） ---------- */
+    const {
+      pagedResults,
+      totalResults,
+      totalPages,
+    } = this.applyPaginationAndSort(mappedResults, pagination);
+
+    return ApiResponse.success({
+      taskUuid,
+      status: data.status,
+      progress: data.progress ?? 0,
+      total: data.total ?? totalResults,
+      results: pagedResults,
+      page: Number(pagination?.page ?? 1),
+      pageSize: Number(pagination?.pageSize ?? 10),
+      totalResults,
+      totalPages,
+    });
+  } catch (err) {
+    return this.handleError(err, '获取任务进度失败');
   }
+}
+/** 排序 + 分页 */
+private applyPaginationAndSort(
+  results: any[],
+  pagination?: CoalEconPaginationDto,
+) {
+  let sortedResults = results;
+
+  if (pagination?.sort) {
+    const fieldPath = pagination.sort;
+    const order = pagination.order === 'desc' ? -1 : 1;
+
+    sortedResults = [...results].sort((a, b) => {
+      const va = this.getNestedValue(a, fieldPath);
+      const vb = this.getNestedValue(b, fieldPath);
+
+      const na = Number(va);
+      const nb = Number(vb);
+
+      if (!isNaN(na) && !isNaN(nb)) {
+        return na > nb ? order : na < nb ? -order : 0;
+      }
+      return va > vb ? order : va < vb ? -order : 0;
+    });
+  }
+
+  const page = Number(pagination?.page ?? 1);
+  const pageSize = Number(pagination?.pageSize ?? 10);
+  const start = (page - 1) * pageSize;
+
+  const pagedResults = sortedResults.slice(start, start + pageSize);
+  const totalResults = sortedResults.length;
+  const totalPages = Math.ceil(totalResults / pageSize);
+
+  return { pagedResults, totalResults, totalPages };
+}
+
+private getNestedValue(obj: any, path: string): any {
+  return path.split('.').reduce((o, key) => (o ? o[key] : undefined), obj);
+}
 
   private async apiPost(path: string, data: any) {
     return axios.post(`${this.fastApiUrl}${path}`, data);

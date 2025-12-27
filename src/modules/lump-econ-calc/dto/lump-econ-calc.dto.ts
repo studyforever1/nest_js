@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsOptional } from 'class-validator';
+import { IsOptional, IsInt, Min, IsIn, IsString } from 'class-validator';
+import { Type } from 'class-transformer';
 
 /** 启动任务 */
 export class StartLumpEconCalcDto {
@@ -16,14 +17,44 @@ export class StopLumpEconCalcDto {
 }
 
 /** 分页查询 */
+// dto/lump-econ-calc.dto.ts（或 coal-econ-calc.dto.ts）
 export class LumpEconPaginationDto {
-  @ApiPropertyOptional({ default: 1, description: '当前页' })
+  @ApiPropertyOptional({
+    description: '页码',
+    default: 1,
+    example: 1,
+  })
   @IsOptional()
-  @IsString()
-  page?: number;
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number = 1;
 
-  @ApiPropertyOptional({ default: 10, description: '每页数量' })
+  @ApiPropertyOptional({
+    description: '每页条数',
+    default: 10,
+    example: 10,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  pageSize?: number = 10;
+
+  @ApiPropertyOptional({
+    description: '排序字段（结果中的字段名）',
+    example: '单品价格',
+  })
   @IsOptional()
   @IsString()
-  pageSize?: number;
+  sort?: string;
+
+  @ApiPropertyOptional({
+    description: '排序方式',
+    enum: ['asc', 'desc'],
+    default: 'desc',
+  })
+  @IsOptional()
+  @IsIn(['asc', 'desc'])
+  order?: 'asc' | 'desc' = 'asc';
 }

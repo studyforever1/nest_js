@@ -36,4 +36,26 @@ export class SJSaveConfigDto {
   @IsOptional()
   @IsObject()
   otherSettings?: Record<string, any>;
+
+  @ApiProperty({
+    required: false,
+    example: {
+        "其它": {
+          "价格": "--",
+          "单位": "元",
+          "单位成本": 22.15,
+          "单位用量": "--",
+          "项目分类": "制造费用"
+        },
+        "氧气": {
+          "价格": 0.18,
+          "单位": "M3",
+          "单位成本": "--",
+          "单位用量": 1.2141,
+          "项目分类": "动力费用"
+        }},
+  })
+  @IsOptional()
+  @IsObject()
+  SJProcessCost?: Record<string, any>;
 }

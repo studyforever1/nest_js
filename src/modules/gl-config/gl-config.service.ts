@@ -771,7 +771,146 @@ async saveFullConfig(
 
   return group;
 }
+private toNumber(val: any): number {
+  const num = Number(val);
+  return isNaN(num) ? 0 : num;
+}
 
+private calcUnitCost(item: any) {
+  if (item?.项目分类 === '动力费用') {
+    const price = this.toNumber(item.价格);
+    const usage = this.toNumber(item.单位用量);
+    return {
+      ...item,
+      单位成本: +(price * usage).toFixed(4),
+    };
+  }
+  return item;
+}
 
+private calcTotalCost(map: Record<string, any>) {
+  return +Object.values(map)
+    .reduce((sum, item: any) => sum + this.toNumber(item?.单位成本), 0)
+    .toFixed(4);
+}
+
+private toTableArray(map: Record<string, any>) {
+  return Object.entries(map).map(([name, val]) => ({
+    name,
+    ...val,
+  }));
+}
+
+async addGLProcessCost(
+  user: User,
+  items: Record<string, any>,
+) {
+  const baseModule = '单独高炉配料计算';
+  const group = await this.getOrCreateUserGroup(user, baseModule);
+
+  const origin = group.config_data?.GLProcessCost || {};
+  const newItems: Record<string, any> = {};
+
+  for (const key of Object.keys(items)) {
+    if (origin[key]) {
+      throw new Error(`项目【${key}】已存在`);
+    }
+    newItems[key] = this.calcUnitCost(items[key]);
+  }
+
+  const merged = { ...origin, ...newItems };
+  return this.syncGLProcessCost(user, merged, '新增成功');
+}
+async updateGLProcessCost(
+  user: User,
+  key: string,
+  payload: Record<string, any>,
+) {
+  const baseModule = '单独高炉配料计算';
+  const group = await this.getOrCreateUserGroup(user, baseModule);
+
+  const map = group.config_data?.GLProcessCost || {};
+  if (!map[key]) {
+    throw new Error(`项目【${key}】不存在`);
+  }
+
+  map[key] = this.calcUnitCost({ ...map[key], ...payload });
+  return this.syncGLProcessCost(user, map, '更新成功');
+}
+async deleteGLProcessCost(
+  user: User,
+  keys: string[],
+) {
+  const baseModule = '单独高炉配料计算';
+  const group = await this.getOrCreateUserGroup(user, baseModule);
+
+  const map = { ...(group.config_data?.GLProcessCost || {}) };
+  keys.forEach(k => delete map[k]);
+
+  return this.syncGLProcessCost(user, map, '删除成功', keys);
+}
+
+async getGLProcessCostList(
+  user: User,
+  page = 1,
+  pageSize = 10,
+  keyword?: string,
+) {
+  const group = await this.getOrCreateUserGroup(user, '单独高炉配料计算');
+  const map = group.config_data?.GLProcessCost || {};
+
+  let list = this.toTableArray(map);
+  if (keyword) list = list.filter(i => i.name.includes(keyword));
+
+  const total = list.length;
+  return {
+    data: list.slice((page - 1) * pageSize, page * pageSize),
+    total,
+    page,
+    pageSize,
+    totalPages: Math.ceil(total / pageSize),
+  };
+}
+private async syncGLProcessCost(
+  user: User,
+  glProcessCost: Record<string, any>,
+  message: string,
+  deleted: string[] = [],
+) {
+  const totalCost = this.calcTotalCost(glProcessCost);
+
+  const modules = [
+    '单独高炉配料计算',
+    '铁前一体化配料计算I',
+    '铁前一体化配料计算II',
+    '利润一体化配料计算',
+  ];
+
+  for (const moduleName of modules) {
+    const group = await this.getOrCreateUserGroup(user, moduleName);
+    const data = _.cloneDeep(group.config_data || {});
+
+    if (!data.otherSettings) data.otherSettings = {};
+    data.otherSettings['其他费用'] = totalCost;
+
+    group.config_data = {
+      ...data,
+      GLProcessCost: glProcessCost,
+      otherSettings: data.otherSettings,
+    };
+
+    await this.configRepo.save(group);
+  }
+
+  return {
+    success: true,
+    message: `高炉工序成本${message}`,
+    ...(deleted.length ? { deleted } : {}),
+    data: {
+      list: this.toTableArray(glProcessCost),
+      totalCost,
+    },
+  };
+}
 
 }
