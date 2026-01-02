@@ -62,7 +62,7 @@ async startTask(
 
     const config = await this.sjconfigService.getLatestConfigByName(user, moduleName);
     if (!config) throw new Error(`未找到模块 ${moduleName} 的配置`);
-
+    console.log('获取到的配置:', config);
     const ingredientIds = config.ingredientParams || [];
     const raws = await this.sjRawMaterialRepo.find({
       where: { id: In(ingredientIds), enabled: true },
@@ -92,7 +92,7 @@ async startTask(
       chemicalLimits: config.chemicalLimits || {},
       otherSettings: config.otherSettings || {},
     };
-
+    console.log('启动任务参数:', fullParams);
     // ================= 2️⃣ 先保存任务（INITIALIZING） =================
 
     const task = this.taskRepo.create({
@@ -491,7 +491,7 @@ async exportSchemeExcel(taskUuid: string, index: number) {
     干基总残存: mainParams['干基总残存'] ?? 0,
     品位: chemical?.TFe?.value ?? 0,
   };
-  console.log(ingredientParams,finalOtherSettings)
+  console.log("导出参数", finalOtherSettings);
   return {
     ingredientParams,
     otherSettings: finalOtherSettings,

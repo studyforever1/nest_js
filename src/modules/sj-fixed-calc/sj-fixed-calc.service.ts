@@ -1,0 +1,216 @@
+// ============================
+// SjFixedCalcService
+// ============================
+import { Injectable, Logger } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, In } from 'typeorm';
+import axios, { AxiosResponse } from 'axios';
+import { Task, TaskStatus } from '../../database/entities/task.entity';
+import { Result } from '../../database/entities/result.entity';
+import { User } from '../user/entities/user.entity';
+import { ApiResponse } from '../../common/response/response.dto';
+import { SjconfigService } from '../sj-config/sj-config.service';
+import { SjRawMaterial } from '../sj-raw-material/entities/sj-raw-material.entity';
+
+@Injectable()
+export class SjFixedCalcService {
+    private readonly logger = new Logger(SjFixedCalcService.name);
+
+    private readonly fastApiUrl = (process.env.FASTAPI_URL || 'http://127.0.0.1:8000').replace(/\/?$/, '/');
+
+    constructor(
+        @InjectRepository(Task) private readonly taskRepo: Repository<Task>,
+        @InjectRepository(Result) private readonly resultRepo: Repository<Result>,
+        @InjectRepository(User) private readonly userRepo: Repository<User>,
+        @InjectRepository(SjRawMaterial) private readonly sjRawMaterialRepo: Repository<SjRawMaterial>,
+        private readonly sjconfigService: SjconfigService,
+    ) { }
+
+    // ============================
+    // 启动任务
+    // ============================
+    async startTask(user: User, calculateType: string): Promise<ApiResponse<{ taskUuid: string; status: string }>> {
+        try {
+            if (!user) throw new Error('无法获取当前用户');
+
+            const config = await this.sjconfigService.getLatestConfigByName(user, calculateType);
+            if (!config) throw new Error(`未找到模块 ${calculateType} 的配置`);
+
+            const safeNumber = (v: any, d = 0) => (v != null && !isNaN(Number(v)) ? Number(v) : d);
+
+            const ingredientIds = config.ingredientParams || [];
+            const raws = await this.sjRawMaterialRepo.find({ where: { id: In(ingredientIds), enabled: true } });
+
+            const ingredientParams: Record<string, any> = {};
+            raws.forEach(raw => {
+                const comp = raw.composition || {};
+                ingredientParams[raw.id] = {
+                    ...comp,
+                    TFe: comp.TFe ?? 0,
+                    烧损: comp['烧损'] ?? 0,
+                    价格: comp['价格'] ?? 0,
+                    库存: raw.inventory ?? 0,
+                };
+            });
+
+            const ingredientLimitsClean: Record<string, any> = {};
+            Object.keys(config.ingredientLimits || {}).forEach(id => {
+                const { name, ...limits } = config.ingredientLimits[id];
+                ingredientLimitsClean[id] = {
+                    low_limit: safeNumber(limits.low_limit),
+                    top_limit: safeNumber(limits.top_limit),
+                    lose_index: safeNumber(limits.lose_index)
+                };
+            });
+
+            const ingredientResultsConverted = this.buildIngredientResults(config.ingredientResults);
+
+            const fullParams = {
+                calculateType,
+                ingredientParams,
+                ingredientLimits: ingredientLimitsClean,
+                ingredientResults: ingredientResultsConverted,
+                otherSettings: config.otherSettings || {},
+            };
+
+            this.logger.debug('=== Full Params for FastAPI ===');
+            this.logger.debug(JSON.stringify(fullParams, null, 2));
+
+            const res = await axios.post(`${this.fastApiUrl}sj-fixed/start/`, fullParams);
+            const taskUuid = res.data?.data?.taskUuid;
+            if (!taskUuid) throw new Error(res.data?.message || 'FastAPI 未返回 taskUuid');
+
+            const task = this.taskRepo.create({
+                task_uuid: taskUuid,
+                module_type: calculateType,
+                status: TaskStatus.RUNNING,
+                parameters: fullParams,
+                user,
+            });
+            await this.taskRepo.save(task);
+
+            return ApiResponse.success({ taskUuid, status: 'START' }, '任务已创建，正在启动中');
+
+        } catch (err: any) {
+            return this.handleError(err, '启动任务失败');
+        }
+    }
+
+    // ============================
+    // 查询进度 / 结果（最终版）
+    async getProgress(taskUuid: string): Promise<ApiResponse<any>> {
+        try {
+            const task = await this.taskRepo.findOne({ where: { task_uuid: taskUuid } });
+            if (!task) return ApiResponse.error('任务不存在');
+
+            let results: any[] = [];
+
+            if (task.status !== TaskStatus.FINISHED) {
+                // 调用 FastAPI 查询进度
+                const res: AxiosResponse = await axios.post(
+                    `${this.fastApiUrl}sj-fixed/progress/`,
+                    {},
+                    { params: { taskUuid }, headers: { 'Content-Type': 'application/json' } }
+                );
+
+                const data = res.data?.data;
+                const fastApiResults = data?.results || [];
+
+                // 更新任务状态和进度
+                task.status = data?.status === 'finished' ? TaskStatus.FINISHED : TaskStatus.RUNNING;
+                task.progress = Number(data?.progress ?? 0);
+                await this.taskRepo.save(task);
+
+                if (fastApiResults.length) {
+                    const rawResult = { ...fastApiResults[0] };
+
+                    // 原料配比处理
+                    if (rawResult['原料配比']) {
+                        const rawIds = Object.keys(rawResult['原料配比']).map(id => Number(id));
+                        const raws = await this.sjRawMaterialRepo.findBy({ id: In(rawIds) });
+                        const idToName: Record<string, string> = {};
+                        raws.forEach(r => {
+                            idToName[r.id.toString()] = r.name || r.id.toString();
+                        });
+
+                        const finalRaw: Record<string, any> = {};
+                        Object.entries(rawResult['原料配比']).forEach(([id, val]: [string, any]) => {
+                            finalRaw[id] = {
+                                ...val,
+                                name: idToName[id] || id,
+                                配比: Number(val.配比 ?? 0) * 100 // 乘100
+                            };
+                        });
+
+                        rawResult['原料配比'] = finalRaw;
+                    }
+
+
+
+                    results.push({
+                        ...rawResult,
+                        方案序号: rawResult['方案序号'] ?? 1
+                    });
+
+                    // 如果任务已完成，保存最终结果到数据库
+                    if (task.status === TaskStatus.FINISHED) {
+                        await this.saveResults(task, results);
+                    }
+                }
+            } else {
+                // 已完成，从数据库读取
+                const resultEntity = await this.resultRepo.findOne({ where: { task: { task_uuid: taskUuid } } });
+                if (resultEntity?.output_data?.length) results = resultEntity.output_data;
+            }
+
+            return ApiResponse.success({
+                taskUuid,
+                status: task.status,
+                progress: task.progress,
+                total: results.length,
+                results,
+            });
+        } catch (err: any) {
+            return this.handleError(err, '获取任务结果失败');
+        }
+    }
+
+    // ============================
+    // 保存结果到数据库
+    // ============================
+    private async saveResults(task: Task, results: any[]): Promise<void> {
+        if (!results || !results.length) return;
+        await this.resultRepo.save(
+            this.resultRepo.create({
+                task,
+                output_data: results,
+                is_shared: false,
+                finished_at: new Date(),
+            })
+        );
+    }
+
+
+
+    // ============================
+    // ingredientResults 转换函数
+    // ============================
+    private buildIngredientResults(ingredientResults: Record<string, { name?: string; value: number }>): Record<string, number> {
+        const result: Record<string, number> = {};
+        Object.entries(ingredientResults || {}).forEach(([key, item]) => {
+            if (item?.value === undefined || item?.value === null) return;
+            const fieldName = key.replace(/_$/, '');
+            result[fieldName] = Number(item.value);
+        });
+        return result;
+    }
+
+    // ============================
+    // 统一错误处理
+    // ============================
+    private handleError(err: unknown, prefix = '操作失败'): ApiResponse<any> {
+        const message = err instanceof Error ? err.message : String(err);
+        this.logger.error(`${prefix}: ${message}`, (err as any)?.stack);
+        return ApiResponse.error(message);
+    }
+}

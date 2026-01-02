@@ -27,7 +27,15 @@ import { SJAddProcessCostDto } from './dto/sj-add-process-cost.dto';
 import { SJDeleteProcessCostDto } from './dto/sj-delete-process-cost.dto';
 import { SJUpdateProcessCostDto } from './dto/sj-update-process-cost.dto';
 import { SJListProcessCostDto } from './dto/sj-list-process-cost.dto';
-
+import { SJLatestConfigDto } from './dto/sj-latest-config.dto';
+import { SaveFixedModuleConfigDto } from './dto/save-fixed-module-config.dto';
+import { AddOtherSExpDto } from './dto/sulfur/other-exp-add.dto';
+import { UpdateOtherSExpDto } from './dto/sulfur/other-exp-update.dto';
+import { DeleteOtherSExpDto } from './dto/sulfur/other-exp-delete.dto';
+import { AddExtMaterialDto } from './dto/sulfur/ext-material-add.dto';
+import { UpdateExtMaterialDto } from './dto/sulfur/ext-material-update.dto';
+import { DeleteExtMaterialDto } from './dto/sulfur/ext-material-delete.dto';
+import { SulfurPaginationDto } from './dto/sulfur/sulfur-pagination.dto';
 
 @ApiTags('烧结参数配置接口')
 @ApiBearerAuth('JWT')
@@ -43,21 +51,23 @@ export class SjconfigController {
   // =====================================================
 
   @Get('latest')
-  @ApiOperation({
-    summary: '获取最新参数组',
-    description:
-      '获取当前用户最新保存的烧结配料计算参数组信息',
-  })
-  async latest(@CurrentUser() user: User) {
-    return this.sjconfigService.getLatestConfigByName(
-      user,
-      this.MODULE_NAME,
-    );
-  }
+@ApiOperation({
+  summary: '获取最新参数组',
+  description:
+    '获取当前用户最新保存的指定模块的参数组信息，默认烧结配料计算',
+})
+async latest(
+  @CurrentUser() user: User,
+  @Query() query: SJLatestConfigDto,
+) {
+  // 如果前端没传 module，则使用默认模块
+  const moduleName = query.module || this.MODULE_NAME;
+  return this.sjconfigService.getLatestConfigByName(user, moduleName);
+}
 
   @Put('save')
   @ApiOperation({
-    summary: '保存参数组（原料 / 化学 / 其他参数）',
+    summary: '保存烧结配料计算参数组（原料 / 化学 / 其他参数）',
   })
   async save(
     @CurrentUser() user: User,
@@ -178,5 +188,131 @@ async getSJProcessCostList(
   );
 }
 
+@Post('save-fixed-module')
+@ApiOperation({
+  summary: '保存固定配料 / 硫平衡模块参数',
+  description: `
+用于【烧结固定配料计算】和【硫平衡计算】模块，
+保存 otherSettings 与 ingredientResults（覆盖式保存）
+`,
+})
+@ApiBody({
+  type: SaveFixedModuleConfigDto,
+})
+@ApiBearerAuth()
+async saveFixedModuleConfig(
+  @CurrentUser() user: User,
+  @Body() dto: SaveFixedModuleConfigDto,
+) {
+  const { moduleName, otherSettings, ingredientResults } = dto;
 
+  return this.sjconfigService.saveFixedModuleSettings(user, moduleName, {
+    otherSettings,
+    ingredientResults,
+  });
 }
+
+// =====================================================
+// 🔥 硫平衡 - 支出信息 otherSExp
+// =====================================================
+
+@Post('sulfur/other-exp/add')
+@ApiOperation({ summary: '新增 / 批量新增硫支出信息' })
+async addOtherSExp(
+  @CurrentUser() user: User,
+  @Body() body: AddOtherSExpDto,
+) {
+  return this.sjconfigService.addOtherSExp(user, body.items);
+}
+
+@Post('sulfur/other-exp/update')
+@ApiOperation({ summary: '更新单条硫支出信息（PUT 语义）' })
+async updateOtherSExp(
+  @CurrentUser() user: User,
+  @Body() body: UpdateOtherSExpDto,
+) {
+  return this.sjconfigService.updateOtherSExp(
+    user,
+    body.key,
+    body,
+  );
+}
+
+@Post('sulfur/other-exp/delete')
+@ApiOperation({ summary: '批量删除硫支出信息' })
+async deleteOtherSExp(
+  @CurrentUser() user: User,
+  @Body() body: DeleteOtherSExpDto,
+) {
+  return this.sjconfigService.deleteOtherSExp(user, body.keys);
+}
+
+// =====================================================
+// 🔥 硫平衡 - 外配信息 extMaterial
+// =====================================================
+
+@Post('sulfur/ext-material/add')
+@ApiOperation({ summary: '新增 / 批量新增外配信息' })
+async addExtMaterial(
+  @CurrentUser() user: User,
+  @Body() body: AddExtMaterialDto,
+) {
+  return this.sjconfigService.addExtMaterial(user, body.items);
+}
+
+@Post('sulfur/ext-material/update')
+@ApiOperation({ summary: '更新单条外配信息（PUT 语义）' })
+async updateExtMaterial(
+  @CurrentUser() user: User,
+  @Body() body: UpdateExtMaterialDto,
+) {
+  return this.sjconfigService.updateExtMaterial(
+    user,
+    body.key,
+    body,
+  );
+}
+
+@Post('sulfur/ext-material/delete')
+@ApiOperation({ summary: '批量删除外配信息' })
+async deleteExtMaterial(
+  @CurrentUser() user: User,
+  @Body() body: DeleteExtMaterialDto,
+) {
+  return this.sjconfigService.deleteExtMaterial(user, body.keys);
+}
+
+@Get('sulfur/other-exp/list')
+  @ApiOperation({ summary: '分页获取硫支出信息' })
+  async listOtherSExp(
+    @CurrentUser() user: User,
+    @Query() query: SulfurPaginationDto,
+  ) {
+    return this.sjconfigService.getOtherSExpList(
+      user,
+      query.page,
+      query.pageSize,
+      query.keyword,
+    );
+  }
+
+  // ===============================
+  // 🔥 外配信息 extMaterial
+  // ===============================
+
+  @Get('sulfur/ext-material/list')
+  @ApiOperation({ summary: '分页获取外配信息' })
+  async listExtMaterial(
+    @CurrentUser() user: User,
+    @Query() query: SulfurPaginationDto,
+  ) {
+    return this.sjconfigService.getExtMaterialList(
+      user,
+      query.page,
+      query.pageSize,
+      query.keyword,
+    );
+  }
+}
+
+

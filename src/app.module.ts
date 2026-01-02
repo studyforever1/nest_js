@@ -44,6 +44,8 @@ import { MixCoalConfigModule } from './modules/mix-coal-config/mix-coal-config.m
 import { MixCoalCalcModule } from './modules/mix-coal-calc/mix-coal-calc.module';
 import { SystemLatestSchemeModule } from './modules/system-latest-scheme/system-latest-scheme.module';
 import { NotificationModule } from './modules/notification/notification.module';
+import { SjFixedCalcModule } from './modules/sj-fixed-calc/sj-fixed-calc.module';
+import { SBalanceCalcModule } from './modules/s-balance-calc/s-balance-calc.module';
 
 
 
@@ -93,7 +95,9 @@ import { NotificationModule } from './modules/notification/notification.module';
     MixCoalConfigModule,
     MixCoalCalcModule,
     SystemLatestSchemeModule,
-    NotificationModule
+    NotificationModule,
+    SjFixedCalcModule,
+    SBalanceCalcModule
   ],
 })
 export class AppModule {}
