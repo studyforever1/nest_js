@@ -668,41 +668,15 @@ async saveFullConfig(
   const group = await this.getOrCreateUserGroup(user, moduleName);
   const existingData = _.cloneDeep(group.config_data || {});
 
-  /** ------------------------------------
-   * 0️⃣ 定义：各模块允许同步的 otherSettings 字段
-   * ------------------------------------ */
+  // 每个模块允许同步的 otherSettings 字段
   const OTHER_SETTING_WHITELIST: Record<string, string[]> = {
-    '单独高炉配料计算': [
-      '固定配比',
-      '煤比选择',
-      '焦丁比选择',
-    ],
-
-    '铁前一体化配料计算I': [
-      '固定配比',
-      '煤比选择',
-      '焦丁比选择',
-      '变量选择',
-    ],
-
-    '铁前一体化配料计算II': [
-      '固定配比',
-      '煤比选择',
-      '焦丁比选择',
-      '变量选择',
-    ],
-
-    '利润一体化配料计算': [
-      '固定配比',
-      '煤比选择',
-      '焦丁比选择',
-      '变量选择',
-    ],
+    '单独高炉配料计算': ['固定配比', '煤比选择', '焦丁比选择'],
+    '铁前一体化配料计算I': ['固定配比', '煤比选择', '焦丁比选择', '变量选择'],
+    '铁前一体化配料计算II': ['固定配比', '煤比选择', '焦丁比选择', '变量选择'],
+    '利润一体化配料计算': ['固定配比', '煤比选择', '焦丁比选择', '变量选择']
   };
-
-  /** ------------------------------------
-   * 1️⃣ 公共同步字段（和模块无关）
-   * ------------------------------------ */
+                                     
+  // 公共同步字段
   const syncCommonData: Record<string, any> = {};
   if (ingredientLimits) syncCommonData.ingredientLimits = ingredientLimits;
   if (fuelLimits) syncCommonData.fuelLimits = fuelLimits;
@@ -711,17 +685,12 @@ async saveFullConfig(
   if (loadTopLimits) syncCommonData.loadTopLimits = loadTopLimits;
   if (ironWaterTopLimits) syncCommonData.ironWaterTopLimits = ironWaterTopLimits;
 
-  /** ------------------------------------
-   * 2️⃣ 当前模块：按自身白名单保存 otherSettings
-   * ------------------------------------ */
+  // 当前模块保存自己全部 otherSettings（非同步字段也保留）
   const currentWhitelist = OTHER_SETTING_WHITELIST[moduleName] || [];
   const currentOtherSettings: Record<string, any> = {};
-
   if (otherSettings) {
-    for (const key of currentWhitelist) {
-      if (key in otherSettings) {
-        currentOtherSettings[key] = otherSettings[key]; // 空数组也允许
-      }
+    for (const key of Object.keys(otherSettings)) {
+      currentOtherSettings[key] = otherSettings[key]; // 当前模块全保存
     }
   }
 
@@ -736,22 +705,20 @@ async saveFullConfig(
 
   await this.configRepo.save(group);
 
-  /** ------------------------------------
-   * 3️⃣ 同步到其他模块（按“目标模块白名单”裁剪）
-   * ------------------------------------ */
+  // 跨模块同步，只同步字段在目标模块白名单里的字段
   const allModules = Object.keys(OTHER_SETTING_WHITELIST);
   const otherModules = allModules.filter(m => m !== moduleName);
 
   for (const other of otherModules) {
     const otherGroup = await this.getOrCreateUserGroup(user, other);
     const otherData = _.cloneDeep(otherGroup.config_data || {});
-
     const targetWhitelist = OTHER_SETTING_WHITELIST[other] || [];
-    const syncedOtherSettings: Record<string, any> = {};
 
+    const syncedOtherSettings: Record<string, any> = {};
     if (otherSettings) {
-      for (const key of targetWhitelist) {
-        if (key in otherSettings) {
+      for (const key of Object.keys(otherSettings)) {
+        // 仅同步目标模块白名单里的字段
+        if (targetWhitelist.includes(key)) {
           syncedOtherSettings[key] = otherSettings[key];
         }
       }
@@ -771,6 +738,8 @@ async saveFullConfig(
 
   return group;
 }
+
+
 private toNumber(val: any): number {
   const num = Number(val);
   return isNaN(num) ? 0 : num;

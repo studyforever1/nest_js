@@ -3,7 +3,7 @@ import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { User } from '../user/entities/user.entity';
 import { SjFixedCalcService } from './sj-fixed-calc.service';
-import { StartTask1Dto } from './dto/start-task.dto';
+import { StartTask2Dto } from './dto/start-task.dto';
 import { ProgressDto } from './dto/progress.dto';
 import { AuthGuard } from '@nestjs/passport';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
@@ -23,12 +23,12 @@ export class SjFixedCalcController {
   @Post('start')
   @Permissions('sj-fixed:calc')
   @ApiOperation({ summary: '启动烧结固定配料计算任务' })
-  @ApiOkResponseData(StartTask1Dto)
+  @ApiOkResponseData(StartTask2Dto)
   @ApiErrorResponse()
   @UsePipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }))
   async start(
     @CurrentUser() user: User,
-    @Body() dto: StartTask1Dto,
+    @Body() dto: StartTask2Dto,
   ) {
     return this.service.startTask(user, dto.calculateType);
   }

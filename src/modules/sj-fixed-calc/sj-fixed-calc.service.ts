@@ -70,6 +70,7 @@ export class SjFixedCalcService {
                 ingredientParams,
                 ingredientLimits: ingredientLimitsClean,
                 ingredientResults: ingredientResultsConverted,
+                chemicalLimits: config.chemicalLimits || {},
                 otherSettings: config.otherSettings || {},
             };
 
