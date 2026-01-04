@@ -46,6 +46,7 @@ import { SystemLatestSchemeModule } from './modules/system-latest-scheme/system-
 import { NotificationModule } from './modules/notification/notification.module';
 import { SjFixedCalcModule } from './modules/sj-fixed-calc/sj-fixed-calc.module';
 import { SBalanceCalcModule } from './modules/s-balance-calc/s-balance-calc.module';
+import { GlFixedCalcModule } from './modules/gl-fixed-calc/gl-fixed-calc.module';
 
 
 
@@ -97,7 +98,8 @@ import { SBalanceCalcModule } from './modules/s-balance-calc/s-balance-calc.modu
     SystemLatestSchemeModule,
     NotificationModule,
     SjFixedCalcModule,
-    SBalanceCalcModule
+    SBalanceCalcModule,
+    GlFixedCalcModule
   ],
 })
 export class AppModule {}

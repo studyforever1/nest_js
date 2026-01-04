@@ -36,9 +36,9 @@ mv src/calc/dto src/modules/calc/
 http://localhost:3000/api-docs 
 
 
-nest g module modules/s-balance-calc
-nest g service modules/s-balance-calc
-nest g controller modules/s-balance-calc
+nest g module modules/gl-fixed-calc
+nest g service modules/gl-fixed-calc
+nest g controller modules/gl-fixed-calc
 
 # 打包
 npm run build

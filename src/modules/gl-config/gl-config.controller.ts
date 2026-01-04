@@ -38,6 +38,7 @@ export class GlConfigController {
     '铁前一体化配料计算I',
     '铁前一体化配料计算II',
     '利润一体化配料计算',
+    '生铁固定配料计算'
   ],
 })
 async latest(
@@ -61,6 +62,7 @@ async latest(
     '铁前一体化配料计算I',
     '铁前一体化配料计算II',
     '利润一体化配料计算',
+    '生铁固定配料计算'
   ],
 })
 async save(
