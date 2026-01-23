@@ -9,11 +9,12 @@ import { PelletEconInfo } from '../pellet-econ-info/entities/pellet-econ-info.en
 import { ConfigGroup } from '../../database/entities/config-group.entity';
 import { ApiResponse } from '../../common/response/response.dto';
 import { PelletEconPaginationDto } from './dto/pellet-econ-calc.dto';
+import { appConfig } from 'src/config/app.config';
 
 @Injectable()
 export class PelletEconCalcService {
   private readonly logger = new Logger(PelletEconCalcService.name);
-  private readonly fastApiUrl = process.env.FASTAPI_URL;
+  private readonly fastApiUrl = appConfig.api.fastApiUrl;
 
   private readonly ECON_TASK = {
     name: '球团经济性评价',

@@ -42,11 +42,11 @@ export function getMachineFingerprint(): string {
   // 去掉所有空格
   const raw = `${cpu}-${disk}-${board}`.replace(/\s+/g, '');
 
-  console.log('🧩 Node.js 获取硬件信息：');
-  console.log('CPU   :', cpu);
-  console.log('Disk  :', disk);
-  console.log('Board :', board);
-  console.log('Raw   :', raw);
+  // console.log('🧩 Node.js 获取硬件信息：');
+  // console.log('CPU   :', cpu);
+  // console.log('Disk  :', disk);
+  // console.log('Board :', board);
+  // console.log('Raw   :', raw);
 
   // 返回 SHA256 指纹
   return crypto.createHash('sha256').update(raw).digest('hex');

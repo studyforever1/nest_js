@@ -9,6 +9,8 @@ import { ApiResponse } from '../../common/response/response.dto';
 import { SjconfigService } from '../sj-config/sj-config.service';
 import { SjRawMaterial } from '../sj-raw-material/entities/sj-raw-material.entity';
 import { v4 as uuidv4 } from 'uuid';
+import { appConfig } from '../../config/app.config';
+
 
 /** 分页参数 DTO */
 export interface PaginationDto {
@@ -31,7 +33,7 @@ function getNestedValue(obj: any, path: string): any {
 @Injectable()
 export class CalcService {
   private readonly logger = new Logger(CalcService.name);
-  private readonly fastApiUrl = process.env.FASTAPI_URL;
+  private readonly fastApiUrl = appConfig.api.fastApiUrl;
 
   /** 内存缓存：taskUuid -> TaskCache */
   private taskCache: Map<string, TaskCache> = new Map();

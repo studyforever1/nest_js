@@ -5,11 +5,13 @@ import { Role } from '../role/entities/role.entity'; // ✅ 导入 Role 实体
 import { UserService } from './user.service';
 import { UserController } from './user.controller';
 import { RoleModule } from '../role/role.module';
+import { ImModule } from '../im/im.module'; // ✅ 导入 ImModule
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([User, Role]), // ✅ 一定要同时注册 User 和 Role
     RoleModule, // 注入 RoleService
+    ImModule
   ],
   providers: [UserService],
   controllers: [UserController],

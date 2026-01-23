@@ -10,11 +10,12 @@ import { ConfigGroup } from '../../database/entities/config-group.entity';
 import { BizModule } from '../../database/entities/biz-module.entity';
 import { ApiResponse } from '../../common/response/response.dto';
 import { SJEconPaginationDto } from './dto/coke-econ-pagination.dto';
+import { appConfig } from '../../config/app.config';
 
 @Injectable()
 export class CokeEconCalcService {
     private readonly logger = new Logger(CokeEconCalcService.name);
-    private readonly fastApiUrl = process.env.FASTAPI_URL;
+    private readonly fastApiUrl = appConfig.api.fastApiUrl;
 
     private readonly ECON_TASKS = [
         {

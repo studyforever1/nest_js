@@ -4,6 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from './entities/user.entity';
 import { Role } from '../role/entities/role.entity';
+import { ImService } from '../im/im.service'; // ✅ 引入 IM 服务
 
 interface QueryUsersOptions {
   page: number;
@@ -18,12 +19,28 @@ export class UserService {
     private readonly userRepo: Repository<User>,
     @InjectRepository(Role)
     private readonly roleRepo: Repository<Role>,
+    private readonly imService: ImService, // ✅ 注入 IM 服务
   ) {}
 
   /** 创建用户 */
   async create(data: Partial<User>) {
+    // 1️⃣ 创建数据库用户
     const user = this.userRepo.create(data);
-    return this.userRepo.save(user);
+    const savedUser = await this.userRepo.save(user);
+
+    // 2️⃣ 创建 IM 用户
+    try {
+      await this.imService.createImUser(savedUser);
+    } catch (err) {
+      console.error('IM 用户创建失败:', err);
+      // 可选择：
+      // 1. 回滚数据库保存（事务） -> 高级方案
+      // 2. 只记录日志，不阻止用户创建
+      // 这里演示阻止创建失败：
+      throw new Error('IM 用户创建失败，请联系管理员');
+    }
+
+    return savedUser;
   }
 
   /** 分页 + 搜索用户 */

@@ -9,11 +9,12 @@ import { ConfigGroup } from '../../database/entities/config-group.entity';
 import { ApiResponse } from '../../common/response/response.dto';
 import { MixCoalPaginationDto } from './dto/mix-coal-calc.dto';
 import { CoalEconInfo } from '../coal-econ-info/entities/coal-econ-info.entity';
+import { appConfig } from 'src/config/app.config';
 
 @Injectable()
 export class MixCoalCalcService {
     private readonly logger = new Logger(MixCoalCalcService.name);
-    private readonly fastApiUrl = process.env.FASTAPI_URL;
+    private readonly fastApiUrl = appConfig.api.fastApiUrl;
 
     private readonly TASK_ENDPOINTS = {
         start: '/coalEcon2/start/',

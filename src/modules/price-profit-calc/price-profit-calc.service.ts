@@ -7,13 +7,18 @@ import { ApiResponse } from '../../common/response/response.dto';
 import { ConfigGroup } from '../../database/entities/config-group.entity';
 import { BizModule } from '../../database/entities/biz-module.entity';
 import { User } from '../user/entities/user.entity';
+import { appConfig } from 'src/config/app.config';
 
 @Injectable()
 export class PriceProfitCalcService {
   private readonly logger = new Logger(PriceProfitCalcService.name);
 
   /** FastAPI 地址，可根据环境配置 */
-  private readonly fastApiUrl = 'http://127.0.0.1:8000/currentPrice/start/';
+  private readonly fastApiBaseUrl = appConfig.api.fastApiUrl;
+
+  private readonly fastApiUrl =
+    `${this.fastApiBaseUrl.replace(/\/$/, '')}/currentPrice/start/`;
+
 
   constructor(
     @InjectRepository(ConfigGroup)

@@ -10,6 +10,7 @@ import { GlMaterialInfo } from '../gl-material-info/entities/gl-material-info.en
 import { GlConfigService } from '../gl-config/gl-config.service'; // 可复用配置服务
 import { GlFuelInfo } from '../gl-fuel-info/entities/gl-fuel-info.entity'; // 燃料表，可复用
 import { SjCandidate } from '../sj-candidate/entities/sj-candidate.entity';
+import { appConfig } from 'src/config/app.config';
 
 export interface PaginationDto {
   page?: number;
@@ -30,7 +31,7 @@ function getNestedValue(obj: any, path: string): any {
 @Injectable()
 export class TqythCalcService {
   private readonly logger = new Logger(TqythCalcService.name);
-  private readonly fastApiUrl = process.env.FASTAPI_URL;
+  private readonly fastApiUrl= appConfig.api.fastApiUrl;
   private taskCache: Map<string, TaskCache> = new Map();
 
   constructor(

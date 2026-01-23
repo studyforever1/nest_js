@@ -7,6 +7,10 @@ import { verifyLicense } from './common/license/license-check';
 import * as dotenv from 'dotenv';
 import * as fs from 'fs';
 import * as path from 'path';
+import { appConfig } from './config/app.config';
+
+// 启动前验证授权
+// verifyLicense();
 
 // 1️⃣ 动态获取 .env 路径（pkg 打包后在 snapshot 内）
 // pkg 打包后 snapshot 内无法直接访问 fs.readFileSync('.env')
@@ -37,7 +41,7 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   // 启用 CORS
-  app.enableCors({
+  app.enableCors(appConfig.server.cors || {
     origin: ['http://127.0.0.1:5501', 'http://localhost:5501'],
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
@@ -84,10 +88,11 @@ async function bootstrap() {
   // =====================================================
   // 启动监听端口
   // =====================================================
-  const port = 3000;
-  await app.listen(port);
+  // 使用外部配置的端口
+  await app.listen(appConfig.server.port);
+  console.log(`🚀 应用已启动: http://localhost:${appConfig.server.port}`);
 
-  const url = `http://localhost:${port}/api-docs`;
+  const url = `http://localhost:${appConfig.server.port}/api-docs`;
   console.log(`✅ 系统已启动！Swagger 文档地址：${url}`);
 
   // =====================================================

@@ -9,11 +9,12 @@ import { CoalEconInfo } from '../coal-econ-info/entities/coal-econ-info.entity';
 import { ConfigGroup } from '../../database/entities/config-group.entity';
 import { ApiResponse } from '../../common/response/response.dto';
 import { CoalEconPaginationDto } from './dto/coal-econ-calc.dto';
+import { appConfig } from '../../config/app.config';
 
 @Injectable()
 export class CoalEconCalcService {
   private readonly logger = new Logger(CoalEconCalcService.name);
-  private readonly fastApiUrl = process.env.FASTAPI_URL;
+  private readonly fastApiUrl = appConfig.api.fastApiUrl;
 
   private readonly ECON_TASK = {
     name: '喷吹煤经济性评价',

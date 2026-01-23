@@ -10,6 +10,7 @@ import { GlMaterialInfo } from '../gl-material-info/entities/gl-material-info.en
 import { GlFuelInfo } from '../gl-fuel-info/entities/gl-fuel-info.entity';
 import { GlConfigService } from '../gl-config/gl-config.service';
 import { SjCandidate } from '../sj-candidate/entities/sj-candidate.entity';
+import { appConfig } from '../../config/app.config';
 
 export interface PaginationDto {
   page?: number;
@@ -30,7 +31,7 @@ function getNestedValue(obj: any, path: string): any {
 @Injectable()
 export class LlythCalcService {
   private readonly logger = new Logger(LlythCalcService.name);
-  private readonly fastApiUrl = process.env.FASTAPI_URL;
+  private readonly fastApiUrl = appConfig.api.fastApiUrl;
   private taskCache: Map<string, TaskCache> = new Map();
 
   constructor(

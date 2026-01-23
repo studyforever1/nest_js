@@ -9,11 +9,12 @@ import { ApiResponse } from '../../common/response/response.dto';
 import { GlConfigService } from '../gl-config/gl-config.service';
 import { GlMaterialInfo } from '../gl-material-info/entities/gl-material-info.entity';
 import { GlFuelInfo } from '../gl-fuel-info/entities/gl-fuel-info.entity';
+import { appConfig } from '../../config/app.config';
 
 @Injectable()
 export class GlFixedCalcService {
   private readonly logger = new Logger(GlFixedCalcService.name);
-  private readonly fastApiUrl = (process.env.FASTAPI_URL || 'http://127.0.0.1:8000').replace(/\/$/, ''); // 去掉尾 /
+  private readonly fastApiUrl = appConfig.api.fastApiUrl;
 
   constructor(
     @InjectRepository(Task) private readonly taskRepo: Repository<Task>,

@@ -30,14 +30,17 @@ import {SjFinesChemTyp} from 'src/modules/sj-fines-chem-typ/entities/sj-fines-ch
 import { SystemLatestScheme } from 'src/modules/system-latest-scheme/entities/system-latest-scheme.entity';
 import { Notification } from 'src/modules/notification/entities/notification.entity';
 // 数据库配置
+// 导入配置
+import { appConfig } from '../config/app.config';
+
 
 export const databaseConfig: TypeOrmModuleOptions = {
   type: 'mysql',
-  host: process.env.DB_HOST || 'localhost',
-  port: parseInt(process.env.DB_PORT || '3306', 10),
-  username: process.env.DB_USER || 'root',
-  password: process.env.DB_PASS || '123456',
-  database: process.env.DB_NAME || 'iron_cost_system1101',
+  host: appConfig.database.host,
+  port: appConfig.database.port,
+  username: appConfig.database.username,
+  password: appConfig.database.password,
+  database: appConfig.database.database,
   driver:require('mysql2'),
   entities: [
     User,

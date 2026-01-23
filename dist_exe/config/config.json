@@ -1,0 +1,32 @@
+{
+  "database": {
+    "host": "localhost",
+    "port": 3306,
+    "username": "root",
+    "password": "123456",
+    "database": "iron_cost_system1101"
+  },
+  "api": {
+    "fastApiUrl": "http://localhost:8000"
+  },
+  "jwt": {
+    "secret": "your_secret_key123123"
+  },
+  "im": {
+    "sdkAppId": 1600123207,
+    "secretKey": "1f7559e6c886a7e72f49207de9fa4c41cbccc6e09475deb220b554eac84f801d",
+    "adminIdentifier": "administrator",
+    "userSigExpire": 86400
+  },
+  "server": {
+    "port": 3000,
+    "cors": {
+      "origin": [
+        "http://127.0.0.1:5501",
+        "http://localhost:5501"
+      ],
+      "methods": "GET,HEAD,PUT,PATCH,POST,DELETE",
+      "credentials": true
+    }
+  }
+}

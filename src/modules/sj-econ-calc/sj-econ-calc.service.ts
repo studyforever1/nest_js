@@ -10,11 +10,12 @@ import { ConfigGroup } from '../../database/entities/config-group.entity';
 import { BizModule } from '../../database/entities/biz-module.entity';
 import { ApiResponse } from '../../common/response/response.dto';
 import { SJEconPaginationDto } from './dto/sj-econ-pagination.dto';
+import { appConfig } from '../../config/app.config';
 
 @Injectable()
 export class SjEconCalcService {
     private readonly logger = new Logger(SjEconCalcService.name);
-    private readonly fastApiUrl = process.env.FASTAPI_URL;
+    private readonly fastApiUrl = appConfig.api.fastApiUrl;
 
     private readonly ECON_TASKS = [
         { name: '品位综合评价法', startUrl: '/sjEcon1/start/', progressUrl: '/sjEcon1/progress/', stopUrl: '/sjEcon1/stop/' },
@@ -233,4 +234,126 @@ async startTasks(
         this.logger.error(`${prefix}: ${message}`, (err as any)?.stack);
         return ApiResponse.error(message);
     }
+
+    private readonly ECON_SUMMARY_FIELD_MAP: Record<
+  string,
+  {
+    displayName: string;
+    pickFields: string[];
+  }
+> = {
+  '品位综合评价法': {
+    displayName: '品位综合评价法',
+    pickFields: [
+      '单品位价格折算后',
+      '折算后品位',
+    ],
+  },
+
+  '单烧综合评价法': {
+    displayName: '单烧综合评价法',
+    pickFields: [
+      '烧结矿单品位价折算后',
+      '镁铝比',
+    ],
+  },
+
+  '铁水成本评价法': {
+    displayName: '铁水成本评价法',
+    pickFields: [
+      '生铁成本',
+      '焦比',
+    ],
+  },
+
+  '基准矿粉对比评价法': {
+    displayName: '基准矿粉对比评价法',
+    pickFields: [
+      '与PB粉对比',
+    ],
+  },
+};
+async buildSummaryFromTaskRefs(
+  taskRefs: { taskUuid: string; name: string }[],
+  pagination?: SJEconPaginationDto,
+): Promise<ApiResponse<any>> {
+  try {
+    const summaryMap: Record<string, any> = {};
+
+    for (const { taskUuid, name } of taskRefs) {
+      const task = await this.taskRepo.findOne({ where: { task_uuid: taskUuid } });
+      if (!task) continue;
+
+      const taskDef = this.ECON_TASKS.find(t => t.name === name);
+      if (!taskDef) continue;
+
+      const fieldConfig = this.ECON_SUMMARY_FIELD_MAP[name];
+      if (!fieldConfig) continue;
+
+      const res = await this.apiGet(taskDef.progressUrl, { taskUuid });
+      const results = res.data?.data?.results || [];
+      if (!results.length) continue;
+
+      // 获取原料 ID 并映射名称
+      const rawIdSet = new Set<number>();
+      results.forEach(item => {
+        const rawId = Number(item['原料']);
+        if (!isNaN(rawId)) rawIdSet.add(rawId);
+      });
+
+      const raws = rawIdSet.size ? await this.rawRepo.find({ where: { id: In([...rawIdSet]) } }) : [];
+      const idNameMap: Record<number, string> = {};
+      raws.forEach(raw => (idNameMap[raw.id] = raw.name));
+
+      results.forEach(item => {
+        const rawId = Number(item['原料']);
+        const rawName = idNameMap[rawId] || item['原料'];
+
+        if (!summaryMap[rawName]) summaryMap[rawName] = { 原料: rawName };
+
+        fieldConfig.pickFields.forEach(field => {
+          if (field in item) {
+            summaryMap[rawName][field] = item[field]; // 去掉前缀
+          }
+        });
+      });
+    }
+
+    // 处理排序
+    let summaryList = Object.values(summaryMap);
+    if (pagination?.sort) {
+      const order = pagination.order === 'desc' ? -1 : 1;
+      summaryList = summaryList.sort((a, b) => {
+        const va = a[pagination.sort!];
+        const vb = b[pagination.sort!];
+        const na = Number(va);
+        const nb = Number(vb);
+        if (!isNaN(na) && !isNaN(nb)) return na > nb ? order : na < nb ? -order : 0;
+        return va > vb ? order : va < vb ? -order : 0;
+      });
+    }
+
+    // 分页
+    const page = pagination?.page ?? 1;
+    const pageSize = pagination?.pageSize ?? 10;
+    const start = (page - 1) * pageSize;
+    const pagedResults = summaryList.slice(start, start + pageSize);
+
+    return ApiResponse.success({
+      results: pagedResults,
+      page,
+      pageSize,
+      totalResults: summaryList.length,
+      totalPages: Math.ceil(summaryList.length / pageSize),
+    }, '经济性评价汇总完成');
+  } catch (err) {
+    return this.handleError(err, '经济性评价汇总失败');
+  }
+}
+
+
+
+
+
+
 }

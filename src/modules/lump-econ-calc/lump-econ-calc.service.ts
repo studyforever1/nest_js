@@ -9,11 +9,12 @@ import { LumpEconInfo } from '../lump-econ-info/entities/lump-econ-info.entity';
 import { ConfigGroup } from '../../database/entities/config-group.entity';
 import { ApiResponse } from '../../common/response/response.dto';
 import { LumpEconPaginationDto } from './dto/lump-econ-calc.dto';
+import { appConfig } from '../../config/app.config';
 
 @Injectable()
 export class LumpEconCalcService {
   private readonly logger = new Logger(LumpEconCalcService.name);
-  private readonly fastApiUrl = process.env.FASTAPI_URL;
+  private readonly fastApiUrl = appConfig.api.fastApiUrl;
 
   private readonly ECON_TASK = {
     name: '外购块矿经济性评价',

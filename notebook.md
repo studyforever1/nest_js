@@ -36,9 +36,9 @@ mv src/calc/dto src/modules/calc/
 http://localhost:3000/api-docs 
 
 
-nest g module modules/gl-fixed-calc
-nest g service modules/gl-fixed-calc
-nest g controller modules/gl-fixed-calc
+nest g module modules/im
+nest g service modules/im
+nest g controller modules/im
 
 # 打包
 npm run build
@@ -80,3 +80,7 @@ git add .
 git commit -m "12.07"
 git push
 
+
+
+# 生成license
+npm run license:generate 2025-12-31
