@@ -48,6 +48,8 @@ import { SjFixedCalcModule } from './modules/sj-fixed-calc/sj-fixed-calc.module'
 import { SBalanceCalcModule } from './modules/s-balance-calc/s-balance-calc.module';
 import { GlFixedCalcModule } from './modules/gl-fixed-calc/gl-fixed-calc.module';
 import { ImModule } from './modules/im/im.module';
+import { PortIronOreInfoModule } from './modules/port-iron-ore-info/port-iron-ore-info.module';
+import { PortPelletLumpInfoModule } from './modules/port-pellet-lump-info/port-pellet-lump-info.module';
 
 
 
@@ -101,7 +103,9 @@ import { ImModule } from './modules/im/im.module';
     SjFixedCalcModule,
     SBalanceCalcModule,
     GlFixedCalcModule,
-    ImModule
+    ImModule,
+    PortIronOreInfoModule,
+    PortPelletLumpInfoModule
   ],
 })
 export class AppModule {}

@@ -30,7 +30,7 @@ import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { Response } from 'express';
 import * as multer from 'multer';
-import { PaginationDto } from './dto/pagination.dto';
+import { RawPaginationDto } from './dto/pagination.dto';
 
 @ApiTags('物料信息-烧结物料信息')
 @ApiBearerAuth('JWT')
@@ -52,23 +52,20 @@ export class SjRawMaterialController {
    * 保留原来 /sj-raw-material (分页)
    * 原来的 /search 和 /search-by-type 仍可使用（兼容前端），但建议统一请求到这里。
    */
-  @Get()
-  @ApiOperation({ summary: '查询原料（支持分页、名称模糊、类型筛选）' ,
-    description: '对应烧结物料信息中的查询、刷新、外购含铁料、循环含铁料、溶剂、燃料按钮，外购含铁料分类编号为T，\
-    循环含铁料分类编号为X，溶剂分类编号为R，燃料分类编号为F' })
-  @ApiQuery({ name: 'page', required: false })
-  @ApiQuery({ name: 'pageSize', required: false })
-  @ApiQuery({ name: 'name', required: false })
-  @ApiQuery({ name: 'type', required: false })
-  findAll(@Query() pagination: PaginationDto, @Query('name') name?: string, @Query('type') type?: string) {
-    // PaginationDto 仍然生效，向下兼容前端对 page/pageSize 的传参
-    return this.rawService.query({
-      page: pagination.page ?? 1,
-      pageSize: pagination.pageSize ?? 10,
-      name,
-      type,
-    });
-  }
+@Get()
+@ApiOperation({
+  summary: '查询原料（支持分页、名称模糊、类型筛选、排序）',
+  description: `
+  对应烧结物料信息中的查询、刷新、外购含铁料、循环含铁料、溶剂、燃料按钮  
+  外购含铁料：T  
+  循环含铁料：X  
+  溶剂：R  
+  燃料：F
+  `,
+})
+findAll(@Query() query: RawPaginationDto) {
+  return this.rawService.query(query);
+}
 
   /** 更新原料 */
   @Put(':id')

@@ -36,9 +36,9 @@ mv src/calc/dto src/modules/calc/
 http://localhost:3000/api-docs 
 
 
-nest g module modules/im
-nest g service modules/im
-nest g controller modules/im
+nest g module modules/port-pellet-lump-info
+nest g service modules/port-pellet-lump-info
+nest g controller modules/port-pellet-lump-info
 
 # 打包
 npm run build

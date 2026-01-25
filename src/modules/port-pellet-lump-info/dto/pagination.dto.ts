@@ -2,7 +2,7 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsInt, Min, Max, IsOptional, IsString, IsIn } from 'class-validator';
 
-export class RawPaginationDto {
+export class PortPelletLumpPaginationDto {
   @ApiPropertyOptional({ description: '页码（默认1）' })
   @Type(() => Number)
   @IsInt()
@@ -16,25 +16,19 @@ export class RawPaginationDto {
   @Max(100)
   pageSize: number = 10;
 
-  @ApiPropertyOptional({ description: '原料名称模糊查询' })
+  @ApiPropertyOptional({ description: '名称模糊查询' })
   @IsOptional()
   @IsString()
   name?: string;
 
-  @ApiPropertyOptional({ description: '分类编号 T/X/R/F' })
-  @IsOptional()
-  @IsString()
-  type?: string;
-
   @ApiPropertyOptional({
-    description: '排序字段，如 name、inventory、composition.TFe、composition.成本',
-    example: 'composition.TFe',
+    description: '排序字段，如 name、inventory、composition.TFe',
   })
   @IsOptional()
   @IsString()
   sort?: string;
 
-  @ApiPropertyOptional({ description: '排序方式 asc/desc', example: 'asc' })
+  @ApiPropertyOptional({ description: 'asc / desc' })
   @IsOptional()
   @IsIn(['asc', 'desc'])
   order?: 'asc' | 'desc';

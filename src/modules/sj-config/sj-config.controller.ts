@@ -36,6 +36,10 @@ import { AddExtMaterialDto } from './dto/sulfur/ext-material-add.dto';
 import { UpdateExtMaterialDto } from './dto/sulfur/ext-material-update.dto';
 import { DeleteExtMaterialDto } from './dto/sulfur/ext-material-delete.dto';
 import { SulfurPaginationDto } from './dto/sulfur/sulfur-pagination.dto';
+import { BuiltinPowderAddDto } from './dto/builtin-powder-add.dto';
+import { BuiltinPowderUpdateDto } from './dto/builtin-powder-update.dto';
+import { BuiltinPowderDeleteDto } from './dto/builtin-powder-delete.dto';
+import { BuiltinPowderListDto } from './dto/builtin-powder-list.dto';
 
 @ApiTags('烧结参数配置接口')
 @ApiBearerAuth('JWT')
@@ -307,6 +311,61 @@ async deleteExtMaterial(
     @Query() query: SulfurPaginationDto,
   ) {
     return this.sjconfigService.getExtMaterialList(
+      user,
+      query.page,
+      query.pageSize,
+      query.keyword,
+    );
+  }
+
+    // =====================================================
+  // 🔥 内置矿粉配比（dic）
+  // =====================================================
+  // 说明：内置矿粉配比用于存储烧结矿的默认上下限配置
+  // 当选择烧结矿时，如果物料名称在内置矿粉配比中，会自动设置对应的上下限
+
+  @Post('builtin-powder/add')
+  @ApiOperation({ summary: '新增/批量新增内置矿粉配比', description: '支持批量添加多个物料的内置矿粉配比，物料名称不能重复' })
+  async addBuiltinPowder(
+    @CurrentUser() user: User,
+    @Body() body: BuiltinPowderAddDto,
+  ) {
+    return this.sjconfigService.addBuiltinPowder(user, body.items);
+  }
+
+  @Post('builtin-powder/update')
+  @ApiOperation({ summary: '更新单个内置矿粉配比', description: '可以更新物料名称、上限、下限，如果更新名称则不能与已有名称重复' })
+  async updateBuiltinPowder(
+    @CurrentUser() user: User,
+    @Body() body: BuiltinPowderUpdateDto,
+  ) {
+    return this.sjconfigService.updateBuiltinPowder(
+      user,
+      body.key,
+      {
+        name: body.name,
+        top_limit: body.top_limit,
+        low_limit: body.low_limit,
+      },
+    );
+  }
+
+  @Post('builtin-powder/delete')
+  @ApiOperation({ summary: '批量删除内置矿粉配比', description: '支持批量删除多个物料的内置矿粉配比' })
+  async deleteBuiltinPowder(
+    @CurrentUser() user: User,
+    @Body() body: BuiltinPowderDeleteDto,
+  ) {
+    return this.sjconfigService.deleteBuiltinPowder(user, body.keys);
+  }
+
+  @Get('builtin-powder/list')
+  @ApiOperation({ summary: '分页获取内置矿粉配比列表', description: '支持按物料名称关键字搜索，支持分页查询' })
+  async getBuiltinPowderList(
+    @CurrentUser() user: User,
+    @Query() query: BuiltinPowderListDto,
+  ) {
+    return this.sjconfigService.getBuiltinPowderList(
       user,
       query.page,
       query.pageSize,

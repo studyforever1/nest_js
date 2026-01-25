@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository, In, Like } from 'typeorm';
 import axios, { AxiosResponse } from 'axios';
 import _ from 'lodash';
 import { Task, TaskStatus } from '../../database/entities/task.entity';
@@ -11,6 +11,8 @@ import { BizModule } from '../../database/entities/biz-module.entity';
 import { ApiResponse } from '../../common/response/response.dto';
 import { SJEconPaginationDto } from './dto/sj-econ-pagination.dto';
 import { appConfig } from '../../config/app.config';
+import { SjRawMaterial } from '../sj-raw-material/entities/sj-raw-material.entity';
+import { PortIronOreInfo } from '../port-iron-ore-info/entities/port-iron-ore-info.entity';
 
 @Injectable()
 export class SjEconCalcService {
@@ -29,85 +31,291 @@ export class SjEconCalcService {
         @InjectRepository(SjEconInfo) private readonly rawRepo: Repository<SjEconInfo>,
         @InjectRepository(ConfigGroup) private readonly configRepo: Repository<ConfigGroup>,
         @InjectRepository(BizModule) private readonly moduleRepo: Repository<BizModule>,
-    ) {}
+        @InjectRepository(SjRawMaterial) private readonly sjRawRepo: Repository<SjRawMaterial>,
+        @InjectRepository(PortIronOreInfo) private readonly portIronRepo: Repository<PortIronOreInfo>,
+    ) { }
 
-async startTasks(
-    user: User,
-    moduleName: string
-): Promise<ApiResponse<{ tasks: { taskUuid: string; name: string }[]; status: string }>> {
-    try {
-        const group = await this.configRepo.findOne({
-            where: { user: { user_id: user.user_id }, module: { name: moduleName }, is_latest: true },
-        });
-        if (!group) throw new Error(`模块 "${moduleName}" 没有参数组`);
+    async startTasks(
+        user: User,
+        moduleName: string
+    ): Promise<ApiResponse<{ tasks: { taskUuid: string; name: string }[]; status: string }>> {
+        try {
+            const group = await this.configRepo.findOne({
+                where: { user: { user_id: user.user_id }, module: { name: moduleName }, is_latest: true },
+            });
+            if (!group) throw new Error(`模块 "${moduleName}" 没有参数组`);
 
-        const configData = _.cloneDeep(group.config_data);
+            const configData = _.cloneDeep(group.config_data);
 
-        const ingredientIds: number[] = configData.ingredientParams || [];
-        const raws = ingredientIds.length ? await this.rawRepo.findByIds(ingredientIds) : [];
+            const ingredientIds: number[] = configData.ingredientParams || [];
+            const raws = ingredientIds.length ? await this.rawRepo.findByIds(ingredientIds) : [];
 
-        const ingredientParams: Record<number, any> = {};
-        raws.forEach(raw => {
-            ingredientParams[raw.id] = {
-                Al2O3: raw.composition?.Al2O3 ?? 0,
-                As: raw.composition?.As ?? 0,
-                CaO: raw.composition?.CaO ?? 0,
-                Cr: raw.composition?.Cr ?? 0,
-                Cu: raw.composition?.Cu ?? 0,
-                K2O: raw.composition?.K2O ?? 0,
-                MgO: raw.composition?.MgO ?? 0,
-                MnO: raw.composition?.MnO ?? 0,
-                Na2O: raw.composition?.Na2O ?? 0,
-                P: raw.composition?.P ?? 0,
-                Pb: raw.composition?.Pb ?? 0,
-                S: raw.composition?.S ?? 0,
-                SiO2: raw.composition?.SiO2 ?? 0,
-                TFe: raw.composition?.TFe ?? 0,
-                TiO2: raw.composition?.TiO2 ?? 0,
-                V: raw.composition?.V ?? 0,
-                Zn: raw.composition?.Zn ?? 0,
-                价格: raw.composition?.['价格'] ?? 0,
-                烧损: raw.composition?.['烧损'] ?? 0,
+            const ingredientParams: Record<number, any> = {};
+            raws.forEach(raw => {
+                ingredientParams[raw.id] = {
+                    Al2O3: raw.composition?.Al2O3 ?? 0,
+                    As: raw.composition?.As ?? 0,
+                    CaO: raw.composition?.CaO ?? 0,
+                    Cr: raw.composition?.Cr ?? 0,
+                    Cu: raw.composition?.Cu ?? 0,
+                    K2O: raw.composition?.K2O ?? 0,
+                    MgO: raw.composition?.MgO ?? 0,
+                    MnO: raw.composition?.MnO ?? 0,
+                    Na2O: raw.composition?.Na2O ?? 0,
+                    P: raw.composition?.P ?? 0,
+                    Pb: raw.composition?.Pb ?? 0,
+                    S: raw.composition?.S ?? 0,
+                    SiO2: raw.composition?.SiO2 ?? 0,
+                    TFe: raw.composition?.TFe ?? 0,
+                    TiO2: raw.composition?.TiO2 ?? 0,
+                    V: raw.composition?.V ?? 0,
+                    Zn: raw.composition?.Zn ?? 0,
+                    价格: raw.composition?.['价格'] ?? 0,
+                    烧损: raw.composition?.['烧损'] ?? 0,
+                };
+            });
+
+            const ironCostSetProcessed = configData.ironCostSet || {};
+            const singleBurnSetProcessed = configData.singleBurnSet || {};
+
+            const fullParams = {
+                ingredientParams,
+                ironCostSet: ironCostSetProcessed,
+                singleBurnSet: singleBurnSetProcessed,
             };
-        });
 
-        const ironCostSetProcessed = configData.ironCostSet || {};
-        const singleBurnSetProcessed = configData.singleBurnSet || {};
+            console.log('启动经济性评价任务参数:', JSON.stringify(fullParams, null, 2));
 
-        const fullParams = {
-            ingredientParams,
-            ironCostSet: ironCostSetProcessed,
-            singleBurnSet: singleBurnSetProcessed,
-        };
-
-        console.log('启动经济性评价任务参数:', JSON.stringify(fullParams, null, 2));
-
-        const tasks: { taskUuid: string; name: string }[] = [];
-        for (const taskDef of this.ECON_TASKS) {
-            try {
-                const res: AxiosResponse<any> = await this.apiPost(taskDef.startUrl, fullParams);
-                const taskUuid = res.data?.data?.taskUuid;
-                if (taskUuid) {
-                    tasks.push({ taskUuid, name: taskDef.name });
-                    const task = this.taskRepo.create({
-                        task_uuid: taskUuid,
-                        module_type: taskDef.name,
-                        status: TaskStatus.RUNNING,
-                        parameters: fullParams,
-                        user,
-                    });
-                    await this.taskRepo.save(task);
+            const tasks: { taskUuid: string; name: string }[] = [];
+            for (const taskDef of this.ECON_TASKS) {
+                try {
+                    const res: AxiosResponse<any> = await this.apiPost(taskDef.startUrl, fullParams);
+                    const taskUuid = res.data?.data?.taskUuid;
+                    if (taskUuid) {
+                        tasks.push({ taskUuid, name: taskDef.name });
+                        const task = this.taskRepo.create({
+                            task_uuid: taskUuid,
+                            module_type: taskDef.name,
+                            status: TaskStatus.RUNNING,
+                            parameters: fullParams,
+                            user,
+                        });
+                        await this.taskRepo.save(task);
+                    }
+                } catch (err) {
+                    this.logger.warn(`启动 ${taskDef.name} 失败: ${(err as any)?.message || err}`);
                 }
-            } catch (err) {
-                this.logger.warn(`启动 ${taskDef.name} 失败: ${(err as any)?.message || err}`);
             }
-        }
 
-        return ApiResponse.success({ tasks, status: 'RUNNING' }, '四个经济性评价任务已启动');
-    } catch (err: unknown) {
-        return this.handleError(err, '启动任务失败');
+            return ApiResponse.success({ tasks, status: 'RUNNING' }, '四个经济性评价任务已启动');
+        } catch (err: unknown) {
+            return this.handleError(err, '启动任务失败');
+        }
     }
-}
+
+
+    async startMaterialLibraryTasks(
+        user: User,
+        moduleName: string
+    ): Promise<ApiResponse<{ tasks: { taskUuid: string; name: string }[]; status: string }>> {
+        try {
+            const group = await this.configRepo.findOne({
+                where: {
+                    user: { user_id: user.user_id },
+                    module: { name: moduleName },
+                    is_latest: true,
+                },
+            });
+
+            if (!group) {
+                throw new Error(`模块 "${moduleName}" 没有参数组`);
+            }
+
+            const configData = _.cloneDeep(group.config_data);
+
+            // ✅ 直接从烧结物料信息库取数据（分类编号以 T 开头）
+            const raws = await this.sjRawRepo.find({
+                where: {
+                    category: Like('T%'),
+                    enabled: true,
+                },
+            });
+
+            if (!raws.length) {
+                throw new Error('未找到分类编号以 T 开头的烧结物料');
+            }
+
+            // ✅ 构造 ingredientParams
+            const ingredientParams: Record<string, any> = {};
+            raws.forEach(raw => {
+                ingredientParams[raw.id] = {
+                    Al2O3: raw.composition?.Al2O3 ?? 0,
+                    As: raw.composition?.As ?? 0,
+                    CaO: raw.composition?.CaO ?? 0,
+                    Cr: raw.composition?.Cr ?? 0,
+                    Cu: raw.composition?.Cu ?? 0,
+                    K2O: raw.composition?.K2O ?? 0,
+                    MgO: raw.composition?.MgO ?? 0,
+                    MnO: raw.composition?.MnO ?? 0,
+                    Na2O: raw.composition?.Na2O ?? 0,
+                    P: raw.composition?.P ?? 0,
+                    Pb: raw.composition?.Pb ?? 0,
+                    S: raw.composition?.S ?? 0,
+                    SiO2: raw.composition?.SiO2 ?? 0,
+                    TFe: raw.composition?.TFe ?? 0,
+                    TiO2: raw.composition?.TiO2 ?? 0,
+                    V: raw.composition?.V ?? 0,
+                    Zn: raw.composition?.Zn ?? 0,
+                    价格: raw.composition?.['价格'] ?? 0,
+                    烧损: raw.composition?.['烧损'] ?? 0,
+                };
+            });
+
+            const ironCostSetProcessed = configData.ironCostSet || {};
+            const singleBurnSetProcessed = configData.singleBurnSet || {};
+
+            const fullParams = {
+                ingredientParams,
+                ironCostSet: ironCostSetProcessed,
+                singleBurnSet: singleBurnSetProcessed,
+            };
+
+            console.log(
+                '启动烧结物料信息库评价任务参数:',
+                JSON.stringify(fullParams, null, 2),
+            );
+
+            const tasks: { taskUuid: string; name: string }[] = [];
+
+            for (const taskDef of this.ECON_TASKS) {
+                try {
+                    const res: AxiosResponse<any> = await this.apiPost(
+                        taskDef.startUrl,
+                        fullParams,
+                    );
+
+                    const taskUuid = res.data?.data?.taskUuid;
+                    if (taskUuid) {
+                        tasks.push({ taskUuid, name: taskDef.name });
+
+                        const task = this.taskRepo.create({
+                            task_uuid: taskUuid,
+                            module_type: taskDef.name,
+                            status: TaskStatus.RUNNING,
+                            parameters: fullParams,
+                            user,
+                        });
+
+                        await this.taskRepo.save(task);
+                    }
+                } catch (err) {
+                    this.logger.warn(
+                        `启动 ${taskDef.name} 失败: ${(err as any)?.message || err}`,
+                    );
+                }
+            }
+
+            return ApiResponse.success(
+                { tasks, status: 'RUNNING' },
+                '烧结物料信息库评价任务已启动',
+            );
+        } catch (err: unknown) {
+            return this.handleError(err, '启动烧结物料信息库评价任务失败');
+        }
+    }
+
+    async startPortIronOreTasks(
+        user: User,
+        moduleName: string,
+    ): Promise<ApiResponse<{ tasks: { taskUuid: string; name: string }[]; status: string }>> {
+        try {
+            // 1️⃣ 获取参数组
+            const group = await this.configRepo.findOne({
+                where: {
+                    user: { user_id: user.user_id },
+                    module: { name: moduleName },
+                    is_latest: true,
+                },
+            });
+
+            if (!group) throw new Error(`模块 "${moduleName}" 没有参数组`);
+
+            const configData = _.cloneDeep(group.config_data);
+
+            // 2️⃣ 从港口矿粉表获取数据
+            const ores = await this.portIronRepo.find({ where: { enabled: true } });
+            if (!ores.length) throw new Error('未找到可用的港口矿粉');
+
+            // 3️⃣ 构造 ingredientParams
+            const ingredientParams: Record<string, any> = {};
+            ores.forEach(ore => {
+                ingredientParams[ore.id] = {
+                    TFe: ore.composition?.TFe ?? 0,
+                    CaO: ore.composition?.CaO ?? 0,
+                    SiO2: ore.composition?.SiO2 ?? 0,
+                    MgO: ore.composition?.MgO ?? 0,
+                    Al2O3: ore.composition?.Al2O3 ?? 0,
+                    S: ore.composition?.S ?? 0,
+                    P: ore.composition?.P ?? 0,
+                    TiO2: ore.composition?.TiO2 ?? 0,
+                    MnO: ore.composition?.MnO ?? 0,
+                    K2O: ore.composition?.K2O ?? 0,
+                    Na2O: ore.composition?.Na2O ?? 0,
+                    Zn: ore.composition?.Zn ?? 0,
+                    Pb: ore.composition?.Pb ?? 0,
+                    As: ore.composition?.As ?? 0,
+                    Cr: ore.composition?.Cr ?? 0,
+                    V: ore.composition?.V ?? 0,
+                    Cu: ore.composition?.Cu ?? 0,
+                    烧损: ore.composition?.['烧损'] ?? 0,
+                    价格: ore.composition?.['干粉价格'] ?? 0,
+                };
+            });
+
+            const ironCostSetProcessed = configData.ironCostSet || {};
+            const singleBurnSetProcessed = configData.singleBurnSet || {};
+
+            const fullParams = {
+                ingredientParams,
+                ironCostSet: ironCostSetProcessed,
+                singleBurnSet: singleBurnSetProcessed,
+            };
+
+            this.logger.debug('港口矿粉评价任务参数:', JSON.stringify(fullParams, null, 2));
+
+            // 4️⃣ 启动任务
+            const tasks: { taskUuid: string; name: string }[] = [];
+
+            for (const taskDef of this.ECON_TASKS) {
+                try {
+                    const res: AxiosResponse<any> = await this.apiPost(taskDef.startUrl, fullParams);
+                    const taskUuid = res.data?.data?.taskUuid;
+                    if (taskUuid) {
+                        tasks.push({ taskUuid, name: taskDef.name });
+
+                        const task = this.taskRepo.create({
+                            task_uuid: taskUuid,
+                            module_type: taskDef.name,
+                            status: TaskStatus.RUNNING,
+                            parameters: fullParams,
+                            user,
+                        });
+
+                        await this.taskRepo.save(task);
+                    }
+                } catch (err) {
+                    this.logger.warn(`启动 ${taskDef.name} 失败: ${(err as any)?.message || err}`);
+                }
+            }
+
+            return ApiResponse.success(
+                { tasks, status: 'RUNNING' },
+                '港口矿粉资源库评价任务已启动',
+            );
+        } catch (err: unknown) {
+            return this.handleError(err, '启动港口矿粉资源库评价任务失败');
+        }
+    }
 
 
     async stopTasks(taskUuids: string[]): Promise<ApiResponse<{ stopped: string[] }>> {
@@ -187,6 +395,90 @@ async startTasks(
         }
     }
 
+    async fetchMaterialLibraryProgress(
+        taskUuid: string,
+        pagination?: SJEconPaginationDto
+    ): Promise<ApiResponse<any>> {
+        try {
+            const task = await this.taskRepo.findOne({
+                where: { task_uuid: taskUuid },
+            });
+
+            if (!task) {
+                return ApiResponse.error('任务不存在');
+            }
+
+            const taskDef = this.ECON_TASKS.find(
+                t => t.name === task.module_type,
+            );
+
+            if (!taskDef) {
+                return ApiResponse.error('任务定义不存在');
+            }
+
+            // 1️⃣ 调用 FastAPI 查询进度
+            const res = await this.apiGet(taskDef.progressUrl, { taskUuid });
+            const data = res.data?.data;
+
+            if (!data) {
+                return ApiResponse.success({
+                    taskUuid,
+                    status: 'RUNNING',
+                    results: [],
+                });
+            }
+
+            // 2️⃣ 收集原料 ID
+            const idSet = new Set<number>();
+            (data.results || []).forEach(item => {
+                const rawId = Number(item['原料']);
+                if (!isNaN(rawId)) {
+                    idSet.add(rawId);
+                }
+            });
+
+            // 3️⃣ 用 SjRawMaterial 做 ID → name 映射（核心区别）
+            const raws = idSet.size
+                ? await this.sjRawRepo.find({
+                    where: { id: In([...idSet]) },
+                })
+                : [];
+
+            const idNameMap: Record<number, string> = {};
+            raws.forEach(raw => {
+                idNameMap[raw.id] = raw.name;
+            });
+
+            // 4️⃣ 替换结果中的“原料”字段
+            const mappedResults = (data.results || []).map(item => {
+                const rawId = Number(item['原料']);
+                return {
+                    ...item,
+                    原料: idNameMap[rawId] || item['原料'],
+                };
+            });
+
+            // 5️⃣ 分页 + 排序（复用原逻辑）
+            const { pagedResults, totalResults, totalPages } =
+                this.applyPaginationAndSort(mappedResults, pagination);
+
+            return ApiResponse.success({
+                taskUuid,
+                status: data.status,
+                progress: data.progress ?? 0,
+                total: data.total ?? 0,
+                results: pagedResults,
+                page: pagination?.page ?? 1,
+                pageSize: pagination?.pageSize ?? 10,
+                totalResults,
+                totalPages,
+            });
+        } catch (err) {
+            return this.handleError(err, '获取烧结物料信息库评价结果失败');
+        }
+    }
+
+
     private applyPaginationAndSort(results: any[], pagination?: SJEconPaginationDto) {
         let sortedResults = results;
 
@@ -236,120 +528,120 @@ async startTasks(
     }
 
     private readonly ECON_SUMMARY_FIELD_MAP: Record<
-  string,
-  {
-    displayName: string;
-    pickFields: string[];
-  }
-> = {
-  '品位综合评价法': {
-    displayName: '品位综合评价法',
-    pickFields: [
-      '单品位价格折算后',
-      '折算后品位',
-    ],
-  },
+        string,
+        {
+            displayName: string;
+            pickFields: string[];
+        }
+    > = {
+            '品位综合评价法': {
+                displayName: '品位综合评价法',
+                pickFields: [
+                    '单品位价格折算后',
+                    '折算后品位',
+                ],
+            },
 
-  '单烧综合评价法': {
-    displayName: '单烧综合评价法',
-    pickFields: [
-      '烧结矿单品位价折算后',
-      '镁铝比',
-    ],
-  },
+            '单烧综合评价法': {
+                displayName: '单烧综合评价法',
+                pickFields: [
+                    '烧结矿单品位价折算后',
+                    '镁铝比',
+                ],
+            },
 
-  '铁水成本评价法': {
-    displayName: '铁水成本评价法',
-    pickFields: [
-      '生铁成本',
-      '焦比',
-    ],
-  },
+            '铁水成本评价法': {
+                displayName: '铁水成本评价法',
+                pickFields: [
+                    '生铁成本',
+                    '焦比',
+                ],
+            },
 
-  '基准矿粉对比评价法': {
-    displayName: '基准矿粉对比评价法',
-    pickFields: [
-      '与PB粉对比',
-    ],
-  },
-};
-async buildSummaryFromTaskRefs(
-  taskRefs: { taskUuid: string; name: string }[],
-  pagination?: SJEconPaginationDto,
-): Promise<ApiResponse<any>> {
-  try {
-    const summaryMap: Record<string, any> = {};
+            '基准矿粉对比评价法': {
+                displayName: '基准矿粉对比评价法',
+                pickFields: [
+                    '与PB粉对比',
+                ],
+            },
+        };
+    async buildSummaryFromTaskRefs(
+        taskRefs: { taskUuid: string; name: string }[],
+        pagination?: SJEconPaginationDto,
+    ): Promise<ApiResponse<any>> {
+        try {
+            const summaryMap: Record<string, any> = {};
 
-    for (const { taskUuid, name } of taskRefs) {
-      const task = await this.taskRepo.findOne({ where: { task_uuid: taskUuid } });
-      if (!task) continue;
+            for (const { taskUuid, name } of taskRefs) {
+                const task = await this.taskRepo.findOne({ where: { task_uuid: taskUuid } });
+                if (!task) continue;
 
-      const taskDef = this.ECON_TASKS.find(t => t.name === name);
-      if (!taskDef) continue;
+                const taskDef = this.ECON_TASKS.find(t => t.name === name);
+                if (!taskDef) continue;
 
-      const fieldConfig = this.ECON_SUMMARY_FIELD_MAP[name];
-      if (!fieldConfig) continue;
+                const fieldConfig = this.ECON_SUMMARY_FIELD_MAP[name];
+                if (!fieldConfig) continue;
 
-      const res = await this.apiGet(taskDef.progressUrl, { taskUuid });
-      const results = res.data?.data?.results || [];
-      if (!results.length) continue;
+                const res = await this.apiGet(taskDef.progressUrl, { taskUuid });
+                const results = res.data?.data?.results || [];
+                if (!results.length) continue;
 
-      // 获取原料 ID 并映射名称
-      const rawIdSet = new Set<number>();
-      results.forEach(item => {
-        const rawId = Number(item['原料']);
-        if (!isNaN(rawId)) rawIdSet.add(rawId);
-      });
+                // 获取原料 ID 并映射名称
+                const rawIdSet = new Set<number>();
+                results.forEach(item => {
+                    const rawId = Number(item['原料']);
+                    if (!isNaN(rawId)) rawIdSet.add(rawId);
+                });
 
-      const raws = rawIdSet.size ? await this.rawRepo.find({ where: { id: In([...rawIdSet]) } }) : [];
-      const idNameMap: Record<number, string> = {};
-      raws.forEach(raw => (idNameMap[raw.id] = raw.name));
+                const raws = rawIdSet.size ? await this.rawRepo.find({ where: { id: In([...rawIdSet]) } }) : [];
+                const idNameMap: Record<number, string> = {};
+                raws.forEach(raw => (idNameMap[raw.id] = raw.name));
 
-      results.forEach(item => {
-        const rawId = Number(item['原料']);
-        const rawName = idNameMap[rawId] || item['原料'];
+                results.forEach(item => {
+                    const rawId = Number(item['原料']);
+                    const rawName = idNameMap[rawId] || item['原料'];
 
-        if (!summaryMap[rawName]) summaryMap[rawName] = { 原料: rawName };
+                    if (!summaryMap[rawName]) summaryMap[rawName] = { 原料: rawName };
 
-        fieldConfig.pickFields.forEach(field => {
-          if (field in item) {
-            summaryMap[rawName][field] = item[field]; // 去掉前缀
-          }
-        });
-      });
+                    fieldConfig.pickFields.forEach(field => {
+                        if (field in item) {
+                            summaryMap[rawName][field] = item[field]; // 去掉前缀
+                        }
+                    });
+                });
+            }
+
+            // 处理排序
+            let summaryList = Object.values(summaryMap);
+            if (pagination?.sort) {
+                const order = pagination.order === 'desc' ? -1 : 1;
+                summaryList = summaryList.sort((a, b) => {
+                    const va = a[pagination.sort!];
+                    const vb = b[pagination.sort!];
+                    const na = Number(va);
+                    const nb = Number(vb);
+                    if (!isNaN(na) && !isNaN(nb)) return na > nb ? order : na < nb ? -order : 0;
+                    return va > vb ? order : va < vb ? -order : 0;
+                });
+            }
+
+            // 分页
+            const page = pagination?.page ?? 1;
+            const pageSize = pagination?.pageSize ?? 10;
+            const start = (page - 1) * pageSize;
+            const pagedResults = summaryList.slice(start, start + pageSize);
+
+            return ApiResponse.success({
+                results: pagedResults,
+                page,
+                pageSize,
+                totalResults: summaryList.length,
+                totalPages: Math.ceil(summaryList.length / pageSize),
+            }, '经济性评价汇总完成');
+        } catch (err) {
+            return this.handleError(err, '经济性评价汇总失败');
+        }
     }
-
-    // 处理排序
-    let summaryList = Object.values(summaryMap);
-    if (pagination?.sort) {
-      const order = pagination.order === 'desc' ? -1 : 1;
-      summaryList = summaryList.sort((a, b) => {
-        const va = a[pagination.sort!];
-        const vb = b[pagination.sort!];
-        const na = Number(va);
-        const nb = Number(vb);
-        if (!isNaN(na) && !isNaN(nb)) return na > nb ? order : na < nb ? -order : 0;
-        return va > vb ? order : va < vb ? -order : 0;
-      });
-    }
-
-    // 分页
-    const page = pagination?.page ?? 1;
-    const pageSize = pagination?.pageSize ?? 10;
-    const start = (page - 1) * pageSize;
-    const pagedResults = summaryList.slice(start, start + pageSize);
-
-    return ApiResponse.success({
-      results: pagedResults,
-      page,
-      pageSize,
-      totalResults: summaryList.length,
-      totalPages: Math.ceil(summaryList.length / pageSize),
-    }, '经济性评价汇总完成');
-  } catch (err) {
-    return this.handleError(err, '经济性评价汇总失败');
-  }
-}
 
 
 

@@ -29,8 +29,11 @@ import {MineTypInd} from 'src/modules/mine-typ-ind/entities/mine-typ-ind.entity'
 import {SjFinesChemTyp} from 'src/modules/sj-fines-chem-typ/entities/sj-fines-chem-typ.entity';
 import { SystemLatestScheme } from 'src/modules/system-latest-scheme/entities/system-latest-scheme.entity';
 import { Notification } from 'src/modules/notification/entities/notification.entity';
+import {PortIronOreInfo} from 'src/modules/port-iron-ore-info/entities/port-iron-ore-info.entity';
+import {PortPelletLumpInfo} from 'src/modules/port-pellet-lump-info/entities/port-pellet-lump-info.entity';
 // 数据库配置
 // 导入配置
+
 import { appConfig } from '../config/app.config';
 
 
@@ -70,7 +73,9 @@ export const databaseConfig: TypeOrmModuleOptions = {
     MineTypInd,
     SjFinesChemTyp,
     SystemLatestScheme,
-    Notification
+    Notification,
+    PortIronOreInfo,
+    PortPelletLumpInfo
   ],
   synchronize: true, // 开发环境可用，生产环境建议 false 并使用 migration
   migrations: ['src/migrations/*{.ts,.js}'],

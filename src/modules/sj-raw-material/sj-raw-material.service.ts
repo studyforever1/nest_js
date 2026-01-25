@@ -6,6 +6,20 @@ import { CreateSjRawMaterialDto } from './dto/create-sj-raw-material.dto';
 import { UpdateSjRawMaterialDto } from './dto/update-sj-raw-material.dto';
 import * as ExcelJS from 'exceljs';
 import { Express } from 'express';
+import { RawPaginationDto } from './dto/pagination.dto';
+
+const SORT_FIELD_MAP: Record<string, string> = {
+  // 普通字段
+  name: 'raw.name',
+  category: 'raw.category',
+  inventory: 'raw.inventory',
+  created_at: 'raw.created_at',
+
+  // JSON 字段（化学成分 / 主要参数）
+  'composition.TFe': "JSON_EXTRACT(raw.composition, '$.TFe')",
+  'composition.SiO2': "JSON_EXTRACT(raw.composition, '$.SiO2')",
+  'composition.成本': "JSON_EXTRACT(raw.composition, '$.成本')",
+};
 
 @Injectable()
 export class SjRawMaterialService {
@@ -64,35 +78,51 @@ async update(id: number, dto: UpdateSjRawMaterialDto, username: string) {
    * 合并查询接口（返回分页 + 总数 + data）
    * 支持 name 模糊、type 前缀匹配（严格以 type 开头）
    */
-  async query(options: {
-    page?: number;
-    pageSize?: number;
-    name?: string;
-    type?: string;
-  }) {
-    const { page = 1, pageSize = 10, name, type } = options;
+async query(params: RawPaginationDto) {
+  const {
+    page = 1,
+    pageSize = 10,
+    name,
+    type,
+    sort,
+    order,
+  } = params;
 
-    const qb = this.rawRepo.createQueryBuilder('raw').orderBy('raw.id', 'ASC');
+  const qb = this.rawRepo.createQueryBuilder('raw');
 
-    if (name) {
-      qb.andWhere('raw.name LIKE :name', { name: `%${name}%` });
-    }
-
-    if (type) {
-      // 以 type 为前缀（保持原有意图），防止误匹配更复杂字符串
-      qb.andWhere('raw.category LIKE :cat', { cat: `${type}%` });
-    }
-
-    const [records, total] = await qb.skip((page - 1) * pageSize).take(pageSize).getManyAndCount();
-
-    return {
-      data: records.map(this.formatRaw),
-      total,
-      page,
-      pageSize,
-      totalPages: Math.ceil(total / pageSize),
-    };
+  // 名称模糊
+  if (name) {
+    qb.andWhere('raw.name LIKE :name', { name: `%${name}%` });
   }
+
+  // 分类筛选
+  if (type) {
+    qb.andWhere('raw.category LIKE :type', { type: `%${type}%` });
+  }
+
+  // ⭐ 排序逻辑
+  if (sort && SORT_FIELD_MAP[sort]) {
+    qb.orderBy(
+      SORT_FIELD_MAP[sort],
+      order === 'desc' ? 'DESC' : 'ASC',
+    );
+  } else {
+    // 默认顺序（非常重要）
+    qb.orderBy('raw.id', 'ASC');
+  }
+
+  qb.skip((page - 1) * pageSize).take(pageSize);
+
+  const [list, total] = await qb.getManyAndCount();
+
+  return {
+    list,
+    total,
+    page,
+    pageSize,
+  };
+}
+
 
   async findOne(id: number) {
     const raw = await this.rawRepo.findOne({ where: { id } });

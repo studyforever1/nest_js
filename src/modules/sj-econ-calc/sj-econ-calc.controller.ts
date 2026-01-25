@@ -33,6 +33,32 @@ export class SjEconCalcController {
     return this.econService.startTasks(user, dto.calculateType);
   }
 
+@Post('material-library/start')
+@Permissions('sj:calc')
+@ApiOperation({ summary: '启动烧结物料信息库评价' })
+async startMaterialLibraryCalc(
+  @CurrentUser() user: User,
+  @Body() dto: StartEconCalcDto,
+) {
+  return this.econService.startMaterialLibraryTasks(
+    user,
+    dto.calculateType,
+  );
+}
+
+@Post('port-iron-ore/start')
+@Permissions('sj:calc')
+@ApiOperation({ summary: '启动港口矿粉资源库评价' })
+async startPortIronOreCalc(
+  @CurrentUser() user: User,
+  @Body() dto: StartEconCalcDto,
+) {
+  return this.econService.startPortIronOreTasks(
+    user,
+    dto.calculateType,
+  );
+}
+
   /** 停止四个任务 */
   @Post('stop')
   @Permissions('sj:calc')
@@ -52,6 +78,20 @@ export class SjEconCalcController {
   ) {
     return this.econService.fetchAndSaveProgress(task_id, pagination);
   }
+
+  /** 查询烧结物料信息库评价任务进度（分页 + 排序） */
+@Get('material-library/progress/:task_id')
+@Permissions('sj:calc')
+@ApiOperation({
+  summary: '查询烧结物料信息库评价任务进度，支持分页和排序',
+})
+async getMaterialLibraryTaskProgress(
+  @Param('task_id') task_id: string,
+  @Query() pagination: SJEconPaginationDto,
+) {
+  return this.econService.fetchMaterialLibraryProgress(task_id, pagination);
+}
+
 
 @Post('summary')
 @Permissions('sj:calc')
