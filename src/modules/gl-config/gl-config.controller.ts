@@ -16,6 +16,10 @@ import { GLAddProcessCostDto } from './dto/gl-add-process-cost.dto';
 import { GLDeleteProcessCostDto } from './dto/gl-delete-process-cost.dto';
 import { GLUpdateProcessCostDto } from './dto/gl-update-process-cost.dto';
 import { GLListProcessCostDto } from './dto/gl-list-process-cost.dto';
+import { BuiltinPowderAddDto } from '../sj-config/dto/builtin-powder-add.dto';
+import { BuiltinPowderUpdateDto } from '../sj-config/dto/builtin-powder-update.dto';
+import { BuiltinPowderDeleteDto } from '../sj-config/dto/builtin-powder-delete.dto';
+import { BuiltinPowderListDto } from '../sj-config/dto/builtin-powder-list.dto';
 
 @ApiTags('高炉参数配置接口')
 @ApiBearerAuth('JWT')
@@ -204,5 +208,61 @@ async getGLProcessCostList(
     query.keyword,
   );
 }
+
+  // =====================================================
+  // 🔥 内置矿粉配比（BuiltinPowder）
+  // =====================================================
+  // 说明：内置矿粉配比用于存储高炉原料的默认上下限配置
+  // 当选择高炉原料时，如果物料名称在内置矿粉配比中，会自动设置对应的上下限
+  // 注意：高炉的内置矿粉配比数据保存在'单独高炉配料计算'模块中
+
+  @Post('builtin-powder/add')
+  @ApiOperation({ summary: '新增/批量新增内置矿粉配比', description: '支持批量添加多个物料的内置矿粉配比，物料名称不能重复' })
+  async addBuiltinPowder(
+    @CurrentUser() user: User,
+    @Body() body: BuiltinPowderAddDto,
+  ) {
+    return this.glConfigService.addBuiltinPowder(user, body.items);
+  }
+
+  @Post('builtin-powder/update')
+  @ApiOperation({ summary: '更新单个内置矿粉配比', description: '可以更新物料名称、上限、下限，如果更新名称则不能与已有名称重复' })
+  async updateBuiltinPowder(
+    @CurrentUser() user: User,
+    @Body() body: BuiltinPowderUpdateDto,
+  ) {
+    return this.glConfigService.updateBuiltinPowder(
+      user,
+      body.key,
+      {
+        name: body.name,
+        top_limit: body.top_limit,
+        low_limit: body.low_limit,
+      },
+    );
+  }
+
+  @Post('builtin-powder/delete')
+  @ApiOperation({ summary: '批量删除内置矿粉配比', description: '支持批量删除多个物料的内置矿粉配比' })
+  async deleteBuiltinPowder(
+    @CurrentUser() user: User,
+    @Body() body: BuiltinPowderDeleteDto,
+  ) {
+    return this.glConfigService.deleteBuiltinPowder(user, body.keys);
+  }
+
+  @Get('builtin-powder/list')
+  @ApiOperation({ summary: '分页获取内置矿粉配比列表', description: '支持按物料名称关键字搜索，支持分页查询' })
+  async getBuiltinPowderList(
+    @CurrentUser() user: User,
+    @Query() query: BuiltinPowderListDto,
+  ) {
+    return this.glConfigService.getBuiltinPowderList(
+      user,
+      query.page,
+      query.pageSize,
+      query.keyword,
+    );
+  }
 
 }

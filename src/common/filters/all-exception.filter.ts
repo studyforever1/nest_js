@@ -3,27 +3,43 @@ import {
   Catch,
   ArgumentsHost,
   HttpException,
-  HttpStatus,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { ApiResponse } from '../response/response.dto';
 
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
-  catch(exception: unknown, host: ArgumentsHost) {
+  catch(exception: any, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
-    const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
+    const response = ctx.getResponse<Response>();
 
-    let status = HttpStatus.INTERNAL_SERVER_ERROR;
-    let message = 'Internal server error';
+    const url = request.url || '';
 
-    if (exception instanceof HttpException) {
-      status = exception.getStatus();
-      const res = exception.getResponse();
-      message = (res as any).message || exception.message;
+    // 🚫 1️⃣ Swagger / OpenAPI 相关请求，完全交给 Nest 原生处理
+    if (
+      url.startsWith('/api-docs') ||
+      url.includes('swagger')
+    ) {
+      throw exception;
     }
 
-    response.status(status).json(ApiResponse.error(message, status));
+    // ================= 正常业务异常处理 =================
+
+    const status =
+      exception instanceof HttpException
+        ? exception.getStatus()
+        : 500;
+
+    const message =
+      exception instanceof HttpException
+        ? exception.getResponse()
+        : exception?.message || 'Internal Server Error';
+
+    response.status(200).json(
+      ApiResponse.error(
+        typeof message === 'string' ? message : JSON.stringify(message),
+      ),
+    );
   }
 }

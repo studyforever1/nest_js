@@ -50,7 +50,7 @@ import { GlFixedCalcModule } from './modules/gl-fixed-calc/gl-fixed-calc.module'
 import { ImModule } from './modules/im/im.module';
 import { PortIronOreInfoModule } from './modules/port-iron-ore-info/port-iron-ore-info.module';
 import { PortPelletLumpInfoModule } from './modules/port-pellet-lump-info/port-pellet-lump-info.module';
-
+import { DepartmentModule } from './modules/department/department.module';
 
 
 @Module({
@@ -86,13 +86,13 @@ import { PortPelletLumpInfoModule } from './modules/port-pellet-lump-info/port-p
     CoalEconInfoModule,
     CoalEconConfigModule,
     PelletEconInfoModule,
-    LumpEconInfoModule,
+    // LumpEconInfoModule,
     FinesHtBasePropModule,
     LumpMetallurgyPropModule,
     MineTypIndModule,
     SjFinesChemTypModule,
-    LumpEconConfigModule,
-    LumpEconCalcModule,
+    // LumpEconConfigModule,
+    // LumpEconCalcModule,
     PelletEconConfigModule,
     PelletEconCalcModule,
     CoalEconCalcModule,
@@ -105,7 +105,8 @@ import { PortPelletLumpInfoModule } from './modules/port-pellet-lump-info/port-p
     GlFixedCalcModule,
     ImModule,
     PortIronOreInfoModule,
-    PortPelletLumpInfoModule
+    PortPelletLumpInfoModule,
+    DepartmentModule
   ],
 })
 export class AppModule {}

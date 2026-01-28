@@ -216,26 +216,41 @@ async fetchAndSaveProgress(taskUuid: string, pagination?: PaginationDto): Promis
       // 原料上下限信息
       const ingredientLimits: Record<string, any> = task.parameters?.ingredientLimits || {};
 
-      // 增量结果处理
-      results = (data.results || []).map(item => {
-        const mapped = { ...item };
-        if (item["原料配比"]) {
-          const newMix: Record<string, any> = {};
-          Object.entries(item["原料配比"]).forEach(([code, val]) => {
-            const valObj = val as Record<string, any>;
-            const limits = ingredientLimits[code] || {};
-            newMix[code] = {
-              ...valObj,                         // 保留原有字段
-              name: idNameMap[code] || limits.name || code, // 新增 name
-              配比: (valObj.配比 ?? 0) * 100,
-              };
-          });
-          mapped["原料配比"] = newMix;
-        }
-        // 化学成分保持原有结构
-        mapped["化学成分"] = mapped["化学成分"] || {};
-        return mapped;
+      results = (data.results || [])
+  .filter(item =>
+    item &&
+    typeof item === 'object' &&
+    (
+      item['方案序号'] !== undefined ||
+      item['主要参数'] ||
+      item['原料配比']
+    )
+  )
+  .map(item => {
+    const mapped = { ...item };
+
+    if (item["原料配比"]) {
+      const newMix: Record<string, any> = {};
+      Object.entries(item["原料配比"]).forEach(([code, val]) => {
+        const valObj = val as Record<string, any>;
+        const limits = ingredientLimits[code] || {};
+        newMix[code] = {
+          ...valObj,
+          name: idNameMap[code] || limits.name || code,
+          配比: (valObj.配比 ?? 0) * 100,
+        };
       });
+      mapped["原料配比"] = newMix;
+    }
+
+    // ⚠️ 只在原本就有化学成分时才补
+    if (mapped["化学成分"]) {
+      mapped["化学成分"] = mapped["化学成分"];
+    }
+
+    return mapped;
+  });
+
 
       // 更新内存缓存
       const cache = this.taskCache.get(taskUuid) || { results: [], lastUpdated: Date.now() };

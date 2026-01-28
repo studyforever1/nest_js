@@ -31,6 +31,7 @@ import { SystemLatestScheme } from 'src/modules/system-latest-scheme/entities/sy
 import { Notification } from 'src/modules/notification/entities/notification.entity';
 import {PortIronOreInfo} from 'src/modules/port-iron-ore-info/entities/port-iron-ore-info.entity';
 import {PortPelletLumpInfo} from 'src/modules/port-pellet-lump-info/entities/port-pellet-lump-info.entity';
+import {Department} from 'src/modules/department/entities/department.entity';
 // 数据库配置
 // 导入配置
 
@@ -75,7 +76,8 @@ export const databaseConfig: TypeOrmModuleOptions = {
     SystemLatestScheme,
     Notification,
     PortIronOreInfo,
-    PortPelletLumpInfo
+    PortPelletLumpInfo,
+    Department
   ],
   synchronize: true, // 开发环境可用，生产环境建议 false 并使用 migration
   migrations: ['src/migrations/*{.ts,.js}'],

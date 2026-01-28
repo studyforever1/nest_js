@@ -10,6 +10,7 @@ import { ConfigGroup } from '../../database/entities/config-group.entity';
 import { ApiResponse } from '../../common/response/response.dto';
 import { PelletEconPaginationDto } from './dto/pellet-econ-calc.dto';
 import { appConfig } from 'src/config/app.config';
+import { PortPelletLumpInfo } from '../port-pellet-lump-info/entities/port-pellet-lump-info.entity';
 
 @Injectable()
 export class PelletEconCalcService {
@@ -27,6 +28,7 @@ export class PelletEconCalcService {
     @InjectRepository(Task) private readonly taskRepo: Repository<Task>,
     @InjectRepository(PelletEconInfo) private readonly pelletRepo: Repository<PelletEconInfo>,
     @InjectRepository(ConfigGroup) private readonly configRepo: Repository<ConfigGroup>,
+    @InjectRepository(PortPelletLumpInfo)private readonly portPelletLumpRepo: Repository<PortPelletLumpInfo>,
   ) {}
 
   /* ======================= 启动任务 ======================= */
@@ -98,6 +100,98 @@ export class PelletEconCalcService {
     }
   }
 
+async startPortPelletLumpTask(
+  user: User,
+  moduleName: string,
+): Promise<ApiResponse<{ taskUuid: string; status: string }>> {
+  try {
+    /** 0️⃣ 读取最新参数组（可用作其他配置，如 pelletCostSet 或 evaluateSettings） */
+    const group = await this.configRepo.findOne({
+      where: {
+        user: { user_id: user.user_id },
+        module: { name: moduleName },
+        is_latest: true,
+      },
+    });
+
+    if (!group) throw new Error(`模块 "${moduleName}" 没有参数组`);
+
+    const configData = _.cloneDeep(group.config_data);
+
+    /** 1️⃣ 读取港口球团/块矿资源库（全部启用的） */
+    const list: PortPelletLumpInfo[] = await this.portPelletLumpRepo.find({
+      where: { enabled: true },
+    });
+
+    console.log('调试: 查询到的港口球团/块矿资源', list.map(i => i.id));
+
+    if (!list.length) {
+      throw new Error('港口球团/块矿资源库中没有可用资源，请检查启用状态');
+    }
+
+    /** 2️⃣ 构建参数（严格按 entity） */
+    const pelletParams: Record<number, any> = {};
+    list.forEach(item => {
+      const comp = item.composition || {};
+
+      pelletParams[item.id] = {
+        /** 基础信息 */
+        港口: item.port ?? '',
+        TFe: Number(comp.TFe ?? 0),
+        SiO2: Number(comp.SiO2 ?? 0),
+        Al2O3: Number(comp.Al2O3 ?? 0),
+        CaO: Number(comp.CaO ?? 0),
+        MgO: Number(comp.MgO ?? 0),
+        P: Number(comp.P ?? 0),
+        S: Number(comp.S ?? 0),
+        MnO: Number(comp.MnO ?? 0),
+        H2O: Number(comp.H2O ?? 0),
+        粉率: Number(comp.粉率 ?? 0),
+        车板价: Number(comp.车板价 ?? 0),
+        运费: Number(comp.运费 ?? 0),
+        干粉价格: Number(comp.干粉价格 ?? 0),
+      };
+    });
+
+    /** 3️⃣ 汇总参数 */
+    const fullParams = {
+      pelletParams,
+      pelletCostSet: configData.pelletCostSet || {},
+    };
+
+    console.log(
+      '启动【港口球团块矿资源库评价】参数:',
+      JSON.stringify(fullParams, null, 2),
+    );
+
+    /** 4️⃣ 调用 FastAPI */
+    const res = await this.apiPost(this.ECON_TASK.startUrl, fullParams);
+
+    const taskUuid = res.data?.data?.taskUuid;
+    if (!taskUuid) throw new Error('任务启动失败，未返回 taskUuid');
+
+    /** 5️⃣ 保存任务 */
+    const task = this.taskRepo.create({
+      task_uuid: taskUuid,
+      module_type: 'PORT_PELLET_LUMP_EVAL',
+      status: TaskStatus.RUNNING,
+      parameters: fullParams,
+      user,
+    });
+    await this.taskRepo.save(task);
+
+    return ApiResponse.success(
+      { taskUuid, status: 'RUNNING' },
+      '港口球团块矿资源库评价任务已启动',
+    );
+  } catch (err) {
+    return this.handleError(err, '启动港口球团块矿资源库评价任务失败');
+  }
+}
+
+
+
+  
   /* ======================= 停止任务 ======================= */
   async stopTask(taskUuid: string): Promise<ApiResponse<any>> {
     try {
@@ -131,7 +225,7 @@ export class PelletEconCalcService {
       /** ---------- 提取球团标识 ---------- */
       const identifiers = new Set<string>();
       (data.results || []).forEach(item => {
-        const idOrName = item['球团名称'];
+        const idOrName = item['矿粉名称'];
         if (idOrName) identifiers.add(String(idOrName));
       });
 
@@ -160,7 +254,7 @@ export class PelletEconCalcService {
       /** ---------- 映射结果 ---------- */
       const mappedResults = (data.results || []).map(item => ({
         ...item,
-        球团名称: nameMap[item['球团名称']] || item['球团名称'],
+        矿粉名称: nameMap[item['矿粉名称']] || item['矿粉名称'],
       }));
 
       /** ---------- 排序 + 分页 ---------- */
@@ -181,6 +275,74 @@ export class PelletEconCalcService {
       return this.handleError(err, '获取任务进度失败');
     }
   }
+
+async fetchAndSavePortPelletLumpProgress(
+    taskUuid: string,
+    pagination?: PelletEconPaginationDto,
+  ): Promise<ApiResponse<any>> {
+    try {
+      const task = await this.taskRepo.findOne({ where: { task_uuid: taskUuid } });
+      if (!task) return ApiResponse.error('任务不存在');
+
+      const res = await this.apiGet(this.ECON_TASK.progressUrl, { taskUuid });
+      const data = res.data?.data;
+      if (!data) return ApiResponse.success({ status: 'RUNNING', results: [] });
+
+      /** ---------- 提取球团标识 ---------- */
+      const identifiers = new Set<string>();
+      (data.results || []).forEach(item => {
+        const idOrName = item['矿粉名称'];
+        if (idOrName) identifiers.add(String(idOrName));
+      });
+
+      /** ---------- 查询数据库 ---------- */
+      let pellets: PelletEconInfo[] = [];
+      if (identifiers.size) {
+        const numericIds = [...identifiers].map(v => Number(v)).filter(v => !isNaN(v));
+        if (numericIds.length) {
+          pellets = await this.portPelletLumpRepo.find({ where: { id: In(numericIds) } });
+        }
+
+        const nameStrings = [...identifiers].filter(v => isNaN(Number(v)));
+        if (nameStrings.length) {
+          const byName = await this.portPelletLumpRepo.find({ where: { name: In(nameStrings) } });
+          pellets = pellets.concat(byName);
+        }
+      }
+
+      /** ---------- 构建映射 ---------- */
+      const nameMap: Record<string, string> = {};
+      pellets.forEach(p => {
+        nameMap[p.id] = p.name;
+        nameMap[p.name] = p.name;
+      });
+
+      /** ---------- 映射结果 ---------- */
+      const mappedResults = (data.results || []).map(item => ({
+        ...item,
+        矿粉名称: nameMap[item['矿粉名称']] || item['矿粉名称'],
+      }));
+
+      /** ---------- 排序 + 分页 ---------- */
+      const { pagedResults, totalResults, totalPages } = this.applyPaginationAndSort(mappedResults, pagination);
+
+      return ApiResponse.success({
+        taskUuid,
+        status: data.status,
+        progress: data.progress ?? 0,
+        total: data.total ?? totalResults,
+        results: pagedResults,
+        page: Number(pagination?.page ?? 1),
+        pageSize: Number(pagination?.pageSize ?? 10),
+        totalResults,
+        totalPages,
+      });
+    } catch (err) {
+      return this.handleError(err, '获取任务进度失败');
+    }
+  }
+
+
 
   /* ======================= 排序 + 分页工具 ======================= */
   private applyPaginationAndSort(

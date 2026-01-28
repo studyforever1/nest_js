@@ -9,6 +9,7 @@ import { PelletEconInfo } from '../pellet-econ-info/entities/pellet-econ-info.en
 
 import { PelletEconCalcService } from './pellet-econ-calc.service';
 import { PelletEconCalcController } from './pellet-econ-calc.controller';
+import {PortPelletLumpInfo} from "../port-pellet-lump-info/entities/port-pellet-lump-info.entity";
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { PelletEconCalcController } from './pellet-econ-calc.controller';
       ConfigGroup,
       BizModule,
       PelletEconInfo,
+      PortPelletLumpInfo
     ]),
   ],
   providers: [PelletEconCalcService],

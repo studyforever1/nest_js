@@ -7,8 +7,11 @@ import {
   DeleteDateColumn,
   OneToMany,
   ManyToMany,
+  ManyToOne,
+  JoinColumn,
   JoinTable,
 } from 'typeorm';
+import { Department } from '../../department/entities/department.entity';
 import { Task } from '../../../database/entities/task.entity';
 import { Role } from '../../role/entities/role.entity';
 import { ConfigGroup } from '../../../database/entities/config-group.entity';
@@ -22,22 +25,24 @@ export class User {
   @Column({ unique: true })
   username: string;
 
-  // 密码默认不查询，查询时需要 select: true
   @Column({ nullable: true, select: false })
   password: string;
 
   @Column({ nullable: true })
   email: string;
 
-  /** 管理员姓名 */
   @Column({ nullable: true })
   fullName: string;
 
-  /** 用户状态 */
+  @Column({ nullable: true, length: 20 })
+  phone: string;
+
+  @Column({ nullable: true })
+  avatarPath: string;
+
   @Column({ default: true })
   is_active: boolean;
 
-  /** 软删除标记 */
   @Column({ default: false })
   isDeleted: boolean;
 
@@ -49,6 +54,14 @@ export class User {
 
   @DeleteDateColumn({ type: 'timestamp', nullable: true })
   deleted_at: Date;
+
+  /** ✅ 所属部门（关键新增） */
+  @ManyToOne(() => Department, (dept) => dept.users, {
+    nullable: true,
+    onDelete: 'SET NULL',
+  })
+  @JoinColumn({ name: 'department_id' })
+  department?: Department | null;
 
   /** 任务列表 */
   @OneToMany(() => Task, (task) => task.user)

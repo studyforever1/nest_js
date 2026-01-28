@@ -5,12 +5,11 @@ import { Type } from 'class-transformer';
 /** ======================= 启动任务 DTO ======================= */
 export class StartPelletEconCalcDto {
   @ApiProperty({
-    description: '计算类型（固定为外购球团经济性评价）',
-    example: '外购球团经济性评价',
+    description: '计算类型（固定为外购球团块矿经济性评价）',
+    example: '外购球团块矿经济性评价',
   })
   @IsString()
-  @IsIn(['外购球团经济性评价'], { message: '计算类型必须为 "外购球团经济性评价"' })
-  calculateType: string = '外购球团经济性评价';
+  calculateType: string = '外购球团块矿经济性评价';
 }
 
 /** ======================= 停止任务 DTO ======================= */

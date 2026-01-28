@@ -159,8 +159,8 @@ async saveFullConfig(
     return {
       data: records,
       total,
-      page,
-      pageSize,
+      page: Number(page),
+      pageSize: Number(pageSize),
       totalPages: Math.ceil(total / pageSize),
     };
   }

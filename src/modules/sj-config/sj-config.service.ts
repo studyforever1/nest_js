@@ -206,9 +206,38 @@ async saveSelectedIngredients(
     const toAdd = selectedIds.filter(id => !categoryIdsInDB.includes(id));
 
     toRemove.forEach(id => delete newLimits[id]);
+    
+    // ⭐ 获取内置矿粉配比数据（BuiltinPowder），用于在选择烧结矿时自动设置上下限
+    const builtinPowderMap: Record<string, any> = configData.BuiltinPowder || {};
+    
+    // 获取新增原料的详细信息，用于匹配物料名称
+    const rawsToAdd = await this.rawRepo.findByIds(toAdd);
+    const rawNameMap: Record<number, string> = {};
+    rawsToAdd.forEach(raw => {
+      rawNameMap[raw.id] = raw.name;
+    });
+    
     toAdd.forEach(id => {
       if (!newLimits[id]) {
-        newLimits[id] = { low_limit: 0, top_limit: 100, lose_index: 1 };
+        const rawName = rawNameMap[id];
+        // 安全检查：如果原料名称不存在，使用默认值
+        if (!rawName) {
+          newLimits[id] = { low_limit: 0, top_limit: 100, lose_index: 1 };
+          return;
+        }
+        // 检查是否在内置矿粉配比中
+        const builtinPowder = builtinPowderMap[rawName];
+        if (builtinPowder) {
+          // 如果在内置矿粉配比中，使用其上下限
+          newLimits[id] = {
+            low_limit: builtinPowder.low_limit ?? 0,
+            top_limit: builtinPowder.top_limit ?? 100,
+            lose_index: 1,
+          };
+        } else {
+          // 否则使用默认值
+          newLimits[id] = { low_limit: 0, top_limit: 100, lose_index: 1 };
+        }
       }
     });
 
@@ -216,8 +245,8 @@ async saveSelectedIngredients(
       new Set([...oldParams.filter(id => !toRemove.includes(id)), ...toAdd]),
     );
 
-    const raws = await this.rawRepo.findByIds(toAdd);
-    raws.forEach(raw => {
+    // rawsToAdd 已经在上面获取过了，这里不需要重复查询
+    rawsToAdd.forEach(raw => {
       if (raw.category?.startsWith('T1')) {
         configData.otherSettings['精粉'].push(String(raw.id));
       }
@@ -247,15 +276,41 @@ async saveSelectedIngredients(
       }
     });
 
+    // ⭐ 获取内置矿粉配比数据（BuiltinPowder），用于在选择烧结矿时自动设置上下限
+    const builtinPowderMap: Record<string, any> = configData.BuiltinPowder || {};
+    
+    // 获取所有选中原料的详细信息，用于匹配物料名称
+    const raws = await this.rawRepo.findByIds(selectedIds);
+    const rawNameMap: Record<number, string> = {};
+    raws.forEach(raw => {
+      rawNameMap[raw.id] = raw.name;
+    });
+    
     selectedIds.forEach(id => {
       if (!newLimits[id]) {
-        newLimits[id] = { low_limit: 0, top_limit: 100, lose_index: 1 };
+        const rawName = rawNameMap[id];
+        // 安全检查：如果原料名称不存在，使用默认值
+        if (!rawName) {
+          newLimits[id] = { low_limit: 0, top_limit: 100, lose_index: 1 };
+          return;
+        }
+        // 检查是否在内置矿粉配比中
+        const builtinPowder = builtinPowderMap[rawName];
+        if (builtinPowder) {
+          // 如果在内置矿粉配比中，使用其上下限
+          newLimits[id] = {
+            low_limit: builtinPowder.low_limit ?? 0,
+            top_limit: builtinPowder.top_limit ?? 100,
+            lose_index: 1,
+          };
+        } else {
+          // 否则使用默认值
+          newLimits[id] = { low_limit: 0, top_limit: 100, lose_index: 1 };
+        }
       }
     });
 
     newParams = Array.from(new Set(selectedIds));
-
-    const raws = await this.rawRepo.findByIds(selectedIds);
     raws.forEach(raw => {
       if (raw.category?.startsWith('T1')) {
         configData.otherSettings['精粉'].push(String(raw.id));
@@ -845,16 +900,16 @@ async getExtMaterialList(
 }
 
 // ============================================================
-// 🔥 内置矿粉配比（dic）
+// 🔥 内置矿粉配比（BuiltinPowder）
 // ============================================================
-// 说明：内置矿粉配比存储在 config_data.dic 中，用于在选择烧结矿时自动设置上下限
-// 数据结构：{ "dic": { "物料名称": { "name": "物料名称", "top_limit": 80, "low_limit": 0 } } }
+// 说明：内置矿粉配比存储在 config_data.BuiltinPowder 中，用于在选择烧结矿时自动设置上下限
+// 数据结构：{ "BuiltinPowder": { "物料名称": { "name": "物料名称", "top_limit": 80, "low_limit": 0 } } }
 
 /**
  * 新增/批量新增内置矿粉配比
  * @param user 当前用户
  * @param items 要新增的内置矿粉配比项数组，包含物料名称、上限、下限
- * @returns 返回操作结果和完整的dic数据
+ * @returns 返回操作结果和完整的BuiltinPowder数据
  */
 async addBuiltinPowder(
   user: User,
@@ -862,20 +917,16 @@ async addBuiltinPowder(
 ) {
   const group = await this.getOrCreateUserGroup(user, '烧结配料计算');
   const config = group.config_data || {};
-
+  
   if (!config.BuiltinPowder) {
     config.BuiltinPowder = {};
   }
 
-  // 防重复
+  // 1️⃣ 防重复 name
   for (const item of items) {
     if (config.BuiltinPowder[item.name]) {
       throw new BadRequestException(`物料【${item.name}】已存在，不能重复添加`);
     }
-  }
-
-  // 新增
-  for (const item of items) {
     config.BuiltinPowder[item.name] = {
       name: item.name,
       top_limit: item.top_limit,
@@ -892,8 +943,6 @@ async addBuiltinPowder(
     data: config.BuiltinPowder,
   };
 }
-
-
 
 /**
  * 更新单个内置矿粉配比
@@ -915,25 +964,23 @@ async updateBuiltinPowder(
     throw new BadRequestException(`物料【${key}】不存在`);
   }
 
-  let finalKey = key;
-
-  // 改名逻辑
+  // 如果更新了 name，需要检查新 name 是否已存在
+  let finalKey = key; // 最终返回的key
   if (payload.name && payload.name !== key) {
     if (config.BuiltinPowder[payload.name]) {
       throw new BadRequestException(`物料【${payload.name}】已存在，不能重复`);
     }
-
+    // 删除旧的 key，添加新的 name
     const oldData = config.BuiltinPowder[key];
     delete config.BuiltinPowder[key];
-
     config.BuiltinPowder[payload.name] = {
       ...oldData,
       ...payload,
       name: payload.name,
     };
-
-    finalKey = payload.name;
+    finalKey = payload.name; // 更新最终返回的key
   } else {
+    // 更新现有项
     config.BuiltinPowder[key] = {
       ...config.BuiltinPowder[key],
       ...payload,
@@ -949,7 +996,6 @@ async updateBuiltinPowder(
     data: config.BuiltinPowder[finalKey],
   };
 }
-
 
 /**
  * 批量删除内置矿粉配比
@@ -982,7 +1028,6 @@ async deleteBuiltinPowder(
   };
 }
 
-
 /**
  * 分页获取内置矿粉配比列表
  * @param user 当前用户
@@ -998,10 +1043,12 @@ async getBuiltinPowderList(
   keyword?: string,
 ) {
   const group = await this.getOrCreateUserGroup(user, '烧结配料计算');
-  const powderMap: Record<string, any> =
-    group.config_data?.BuiltinPowder || {};
+  const builtinPowderMap: Record<string, any> = group.config_data?.BuiltinPowder || {};
 
-  let list = Object.values(powderMap);
+  let list = Object.entries(builtinPowderMap).map(([name, val]) => ({
+    name,
+    ...val,
+  }));
 
   if (keyword?.trim()) {
     const kw = keyword.trim();
@@ -1020,7 +1067,6 @@ async getBuiltinPowderList(
   };
 }
 
-
 /**
  * 根据物料名称获取内置矿粉配比（用于选择烧结矿时判断）
  * @param user 当前用户
@@ -1032,19 +1078,17 @@ async getBuiltinPowderByName(
   materialName: string,
 ): Promise<{ top_limit: number; low_limit: number } | null> {
   const group = await this.getOrCreateUserGroup(user, '烧结配料计算');
-  const powderMap: Record<string, any> =
-    group.config_data?.BuiltinPowder || {};
+  const builtinPowderMap: Record<string, any> = group.config_data?.BuiltinPowder || {};
 
-  const item = powderMap[materialName];
-  if (!item) {
-    return null;
+  const item = builtinPowderMap[materialName];
+  if (item) {
+    return {
+      top_limit: item.top_limit,
+      low_limit: item.low_limit,
+    };
   }
 
-  return {
-    top_limit: item.top_limit,
-    low_limit: item.low_limit,
-  };
+  return null;
 }
-
 
 }
