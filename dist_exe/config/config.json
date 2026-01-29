@@ -7,7 +7,7 @@
     "database": "iron_cost_system1101"
   },
   "api": {
-    "fastApiUrl": "http://localhost:8000"
+    "fastApiUrl": "http://120.55.249.80:8000"
   },
   "jwt": {
     "secret": "your_secret_key123123"

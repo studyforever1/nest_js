@@ -7,12 +7,11 @@ import { AllExceptionsFilter } from './common/filters/all-exception.filter';
 import { join } from 'path';
 import { appConfig } from './config/app.config';
 import { ValidationPipe } from '@nestjs/common';
-import open from 'open'; // ✅ 新增
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
-  // ================= CORS =================
+  // ========== CORS ==========
   app.enableCors(
     appConfig.server.cors || {
       origin: ['http://127.0.0.1:5501', 'http://localhost:5501'],
@@ -21,7 +20,7 @@ async function bootstrap() {
     },
   );
 
-  // ================= 全局校验 =================
+  // ========== 全局校验 ==========
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -29,16 +28,21 @@ async function bootstrap() {
     }),
   );
 
-  // ================= 全局拦截 & 异常 =================
+  // ========== 全局拦截 & 异常 ==========
   app.useGlobalInterceptors(new TransformInterceptor());
   app.useGlobalFilters(new AllExceptionsFilter());
 
-  // ================= 静态资源 =================
+  // ========== 静态资源 ==========
   app.useStaticAssets(join(process.cwd(), 'uploads'), {
     prefix: '/uploads/',
   });
 
-  // ================= Swagger =================
+  // Swagger 静态资源（本地）
+  app.useStaticAssets(join(process.cwd(), 'public'), {
+    prefix: '/',
+  });
+
+  // ========== Swagger ==========
   const config = new DocumentBuilder()
     .setTitle('API Docs')
     .setDescription('用户管理模块接口文档')
@@ -55,26 +59,16 @@ async function bootstrap() {
     swaggerOptions: {
       persistAuthorization: true,
     },
-    customCssUrl: [
-      'https://unpkg.com/swagger-ui-dist@4.15.5/swagger-ui.css',
-    ],
+    customCssUrl: '/swagger/swagger-ui.css',
     customJs: [
-      'https://unpkg.com/swagger-ui-dist@4.15.5/swagger-ui-bundle.js',
-      'https://unpkg.com/swagger-ui-dist@4.15.5/swagger-ui-standalone-preset.js',
+      '/swagger/swagger-ui-bundle.js',
+      '/swagger/swagger-ui-standalone-preset.js',
     ],
   });
 
-  // ================= 启动服务 =================
+  // ========== 启动 ==========
   const port = appConfig.server.port;
   await app.listen(port);
-
-  // ================= 🚀 自动打开 Swagger =================
-  if (process.env.NODE_ENV !== 'production') {
-    const swaggerUrl = `http://localhost:${port}/api-docs`;
-    setTimeout(() => {
-      open(swaggerUrl);
-    }, 500);
-  }
 }
 
 bootstrap();

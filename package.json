@@ -42,7 +42,7 @@
     "@nestjs/typeorm": "^11.0.0",
     "@nestjs/websockets": "^11.1.6",
     "@types/multer": "^2.0.0",
-    "axios": "^1.13.2",
+    "axios": "^0.27.2",
     "bcryptjs": "^3.0.3",
     "bytenode": "^1.5.7",
     "class-transformer": "^0.5.1",
@@ -57,7 +57,6 @@
     "multer": "^2.0.2",
     "mysql": "^2.18.1",
     "mysql2": "^3.15.3",
-    "open": "^10.2.0",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "reflect-metadata": "^0.2.2",
@@ -113,13 +112,18 @@
   "main": "dist/main.js",
   "pkg": {
     "assets": [
-      "node_modules/axios/**/*",
-      "dist/**/*.js",
-      "public/**/*",
-      "views/**/*",
-      "frontend/**/*",
-      ".env"
-    ],
-    "outputPath": "dist_exe"
+  "public/swagger/**/*",
+  "uploads/**/*",
+  "views/**/*",
+  "frontend/**/*",
+  "node_modules/swagger-ui-dist/**/*",
+  ".env",
+  "config/**/*.json"
+]
+,
+    "outputPath": "dist_exe",
+    "targets": [
+      "node18-win-x64"
+    ]
   }
 }

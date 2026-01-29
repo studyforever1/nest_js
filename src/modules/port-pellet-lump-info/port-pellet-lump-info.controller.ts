@@ -15,7 +15,7 @@ import {
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiConsumes, ApiBody } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { FileInterceptor } from '@nestjs/platform-express';
-import type { Response } from 'express';
+import type { Response, Express } from 'express';
 import * as multer from 'multer';
 
 import { PortPelletLumpInfoService } from './port-pellet-lump-info.service';
@@ -97,7 +97,20 @@ export class PortPelletLumpInfoController {
     @UploadedFile() file: Express.Multer.File,
     @CurrentUser() user: { username: string },
   ) {
+    // 表头校验 + 缺失字段补0等逻辑在 service 内统一处理
     return this.service.importExcel(file, user.username);
+  }
+
+  @Get('template')
+  @ApiOperation({ summary: '下载导入模板（按 FIXED_HEADERS 表头顺序）' })
+  async downloadTemplate(@Res() res: Response) {
+    // 模板文件路径由 service 负责确保存在（不存在会自动生成）
+    const filePath = await this.service.getTemplateFilePath();
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename=port_pellet_lump_template.xlsx',
+    );
+    res.sendFile(filePath, { root: process.cwd() });
   }
 
   /** 删除所有原料 */
