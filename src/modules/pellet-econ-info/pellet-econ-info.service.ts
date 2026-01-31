@@ -1,12 +1,27 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import * as ExcelJS from 'exceljs';
-import { Express } from 'express';
+import * as fs from 'fs';
+import * as path from 'path';
+import type { Express } from 'express';
 
 import { PelletEconInfo } from './entities/pellet-econ-info.entity';
 import { CreatePelletEconInfoDto } from './dto/create-pellet-econ-info.dto';
 import { UpdatePelletEconInfoDto } from './dto/update-pellet-econ-info.dto';
+
+/**
+ * ✅ 固定表头（唯一标准）
+ * - 查询 / 导入 / 导出 / 前端展示 都以此为准
+ * - 根据数据库实际数据提取的composition字段（不包含name、港口等基础字段）
+ */
+export const FIXED_HEADERS = [
+  'P', 'S', 'As', 'Cr', 'Cu', 'Ni', 'Zn', 'CaO', 'H2O', 'K2O', 'MgO', 'MnO',
+  'TFe', 'Na2O', 'SiO2', 'TiO2', 'Al2O3', '港口', '烧损', '粉率',
+  '运费', '车板价', '干粉价格', '干基不含税到厂价',
+];
+
+type FixedHeader = (typeof FIXED_HEADERS)[number];
 
 @Injectable()
 export class PelletEconInfoService {
@@ -15,38 +30,61 @@ export class PelletEconInfoService {
     private readonly repo: Repository<PelletEconInfo>,
   ) {}
 
-  async create(dto: CreatePelletEconInfoDto, username: string) {
-    const entity = this.repo.create({
-      ...dto,
-      composition: dto.composition ?? {},
-      modifier: username,
-      enabled: true,
+  /** =========================
+   *  核心：规范化 composition
+   * 注意：港口字段为字符串类型，其他字段为数字类型
+   * ========================= */
+  private normalizeComposition(
+    composition?: Record<string, any>,
+  ): Record<string, any> {
+    const result: Record<string, any> = {};
+    FIXED_HEADERS.forEach((key) => {
+      if (key === '港口') {
+        result[key] = composition?.[key] ?? '未知港口';
+      } else {
+        result[key] = composition?.[key] ?? 0;
+      }
     });
-    return this.repo.save(entity);
+    return result;
   }
 
+  /** ========================= 创建 ========================= */
+  async create(dto: CreatePelletEconInfoDto, username: string) {
+    return this.repo.save(
+      this.repo.create({
+        ...dto,
+        composition: this.normalizeComposition(dto.composition),
+        modifier: username,
+        enabled: true,
+      }),
+    );
+  }
+
+  /** ========================= 更新 ========================= */
   async update(id: number, dto: UpdatePelletEconInfoDto, username: string) {
     const entity = await this.repo.findOne({ where: { id } });
-    if (!entity) throw new NotFoundException(`ID ${id} 不存在`);
-
+    if (!entity) throw new NotFoundException('数据不存在');
     Object.assign(entity, dto, {
-      composition: dto.composition ?? entity.composition,
+      composition: dto.composition ? this.normalizeComposition(dto.composition) : entity.composition,
       modifier: username,
     });
-
     return this.repo.save(entity);
   }
 
+  /** ========================= 查询（核心修改点） ========================= */
   async query(options: { page: number; pageSize: number; name?: string }) {
     const { page, pageSize, name } = options;
-
     const qb = this.repo.createQueryBuilder('p').orderBy('p.id', 'ASC');
     if (name) qb.andWhere('p.name LIKE :name', { name: `%${name}%` });
-
     const [records, total] = await qb.skip((page - 1) * pageSize).take(pageSize).getManyAndCount();
 
+    const mapped = records.map(item => ({
+      ...item,
+      composition: this.normalizeComposition(item.composition),
+    }));
+
     return {
-      data: records,
+      data: mapped,
       total,
       page,
       pageSize,
@@ -73,54 +111,114 @@ export class PelletEconInfoService {
     return { status: 'success', message: `成功删除 ${list.length} 条记录` };
   }
 
-  /** Excel 导出 */
+  /** ========================= 导出 Excel ========================= */
   async exportExcel(): Promise<Buffer> {
     const list = await this.repo.find();
     const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet('球团经济性');
+    const sheet = workbook.addWorksheet('球团块矿信息库');
 
-    const dynamicKeys = new Set<string>();
-    list.forEach(i => Object.keys(i.composition ?? {}).forEach(k => k && k !== '港口' && dynamicKeys.add(k)));
+    sheet.addRow(['球团名称', ...FIXED_HEADERS]);
 
-    const headers = ['球团名称', '港口', ...Array.from(dynamicKeys)];
-    sheet.addRow(headers);
-
-    list.forEach(i => {
-      sheet.addRow([i.name, i.composition?.['港口'] ?? null, ...Array.from(dynamicKeys).map(k => i.composition?.[k] ?? null)]);
+    list.forEach(item => {
+      const composition = this.normalizeComposition(item.composition);
+      sheet.addRow([
+        item.name,
+        ...FIXED_HEADERS.map(h => composition[h]),
+      ]);
     });
 
     return Buffer.from(await workbook.xlsx.writeBuffer());
   }
 
-  /** Excel 导入 */
+  /** ========================= 导入 Excel ========================= */
   async importExcel(file: Express.Multer.File, username: string) {
+    if (!file?.buffer) throw new BadRequestException('文件为空');
+
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(file.buffer as any);
     const sheet = workbook.worksheets[0];
+    if (!sheet) throw new BadRequestException('Excel 中没有工作表');
 
-    const headers: string[] = [];
-    sheet.getRow(1).eachCell(cell => headers.push(String(cell.value ?? '').trim()));
+    const headerRow = sheet.getRow(1);
+    const headerMap: Record<string, number> = {};
 
-    const nameIndex = headers.indexOf('球团名称') + 1;
-    if (!nameIndex) return { status: 'error', message: '缺少【球团名称】列' };
+    headerRow.eachCell((cell, col) => {
+      const val = String(cell.value ?? '').trim();
+      if (!val) return;
+      if (!FIXED_HEADERS.includes(val as FixedHeader) && val !== '球团名称') {
+        throw new BadRequestException(`非法列名：${val}`);
+      }
+      headerMap[val] = col;
+    });
 
-    const dynamicCols = headers.map((h, i) => ({ key: h, idx: i + 1 })).filter(c => c.idx !== nameIndex && c.key);
+    if (!headerMap['球团名称']) {
+      throw new BadRequestException('缺少必要列：球团名称');
+    }
 
-    const toSave: PelletEconInfo[] = [];
+    const result: PelletEconInfo[] = [];
 
-    sheet.eachRow((row, rowNum) => {
-      if (rowNum === 1) return;
+    sheet.eachRow({ includeEmpty: true }, (row, index) => {
+      if (index === 1) return;
 
-      const name = String(row.getCell(nameIndex).value ?? '').trim();
+      const name = String(row.getCell(headerMap['球团名称'])?.value ?? '').trim();
       if (!name) return;
 
       const composition: Record<string, any> = {};
-      dynamicCols.forEach(c => (composition[c.key] = row.getCell(c.idx).value));
 
-      toSave.push(this.repo.create({ name, composition, modifier: username, enabled: true }));
+      FIXED_HEADERS.forEach(key => {
+        const col = headerMap[key];
+        let val: any = 0;
+        if (col !== undefined && row.getCell(col)) {
+          const cellVal = row.getCell(col).value;
+          if (key === '港口') {
+            // 港口字段为字符串类型，缺失时默认"未知港口"
+            val = cellVal !== null && cellVal !== undefined && cellVal !== '' ? String(cellVal).trim() : '未知港口';
+          } else {
+            // 其他字段为数字类型，缺失时默认0
+            if (cellVal !== null && cellVal !== undefined && cellVal !== '') {
+              const num = parseFloat(String(cellVal).trim());
+              val = Number.isFinite(num) ? num : 0;
+            }
+          }
+        } else {
+          // 列不存在时，港口字段默认"未知港口"，其他字段默认0
+          val = key === '港口' ? '未知港口' : 0;
+        }
+        composition[key] = val;
+      });
+
+      result.push(this.repo.create({
+        name,
+        composition,
+        modifier: username,
+        enabled: true,
+      }));
     });
 
-    await this.repo.save(toSave);
-    return { status: 'success', message: `成功导入 ${toSave.length} 条` };
+    if (!result.length) {
+      return { status: 'error', message: '没有有效数据可导入' };
+    }
+
+    await this.repo.save(result);
+    return { status: 'success', message: `成功导入 ${result.length} 条数据` };
+  }
+
+  /** ========================= 模板 ========================= */
+  private readonly templateDir = process.env.TEMPLATE_PATH || './templates';
+  private readonly templateFilename = 'pellet-econ-info-template.xlsx';
+
+  private async ensureTemplateFileExists(): Promise<string> {
+    await fs.promises.mkdir(this.templateDir, { recursive: true });
+    const filePath = path.join(this.templateDir, this.templateFilename);
+    if (fs.existsSync(filePath)) return filePath;
+
+    const workbook = new ExcelJS.Workbook();
+    workbook.addWorksheet('模板').addRow(['球团名称', ...FIXED_HEADERS]);
+    await workbook.xlsx.writeFile(filePath);
+    return filePath;
+  }
+
+  async getTemplateFilePath(): Promise<string> {
+    return this.ensureTemplateFileExists();
   }
 }

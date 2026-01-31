@@ -125,6 +125,17 @@ export class SjEconInfoController {
     return this.econService.importExcel(file, user.username);
   }
 
+  @Get('template')
+  @ApiOperation({ summary: '下载导入模板（按 FIXED_HEADERS 表头顺序）' })
+  async downloadTemplate(@Res() res: Response) {
+    const filePath = await this.econService.getTemplateFilePath();
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename=sj_econ_info_template.xlsx',
+    );
+    res.sendFile(filePath, { root: process.cwd() });
+  }
+
   /** 删除全部 */
   @Delete('del_all')
   @ApiOperation({ summary: '清空经济指标库' })

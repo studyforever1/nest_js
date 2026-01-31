@@ -1,11 +1,25 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, Like } from 'typeorm';
 import { GlMaterialInfo } from './entities/gl-material-info.entity';
 import { CreateGlMaterialInfoDto } from './dto/create-gl-material-info.dto';
 import { UpdateGlMaterialInfoDto } from './dto/update-gl-material-info.dto';
 import * as ExcelJS from 'exceljs';
-import { Express } from 'express';
+import * as fs from 'fs';
+import * as path from 'path';
+import type { Express } from 'express';
+
+/**
+ * ✅ 固定表头（唯一标准）
+ * - 查询 / 导入 / 导出 / 前端展示 都以此为准
+ * - 根据数据库实际数据提取的composition字段（不包含category、name、origin、inventory、remark等基础字段）
+ */
+export const FIXED_HEADERS = [
+  'P', 'S', 'Cr', 'Ni', 'Pb', 'Zn', 'CaO', 'H2O', 'K2O', 'MgO', 'MnO',
+  'TFe', 'Na2O', 'SiO2', 'TiO2', 'V2O5', 'Al2O3', '返矿率', '干基价格', '返矿价格',
+];
+
+type FixedHeader = (typeof FIXED_HEADERS)[number];
 
 @Injectable()
 export class GlMaterialInfoService {
@@ -14,49 +28,67 @@ export class GlMaterialInfoService {
     private readonly rawRepo: Repository<GlMaterialInfo>,
   ) {}
 
-  async create(dto: CreateGlMaterialInfoDto, username: string) {
-  const raw = this.rawRepo.create({
-    ...dto,
-    inventory: dto.inventory ?? 0,
-    modifier: username,
-    remark: dto.remark ?? '',  // 新增 remark
-  });
-  return await this.rawRepo.save(raw);
-}
+  /** =========================
+   *  核心：规范化 composition
+   * ========================= */
+  private normalizeComposition(
+    composition?: Record<string, number>,
+  ): Record<string, number> {
+    const result: Record<string, number> = {};
+    FIXED_HEADERS.forEach((key) => {
+      result[key] = composition?.[key] ?? 0;
+    });
+    return result;
+  }
 
-async update(id: number, dto: UpdateGlMaterialInfoDto, username: string) {
-  const raw = await this.rawRepo.findOne({ where: { id } });
-  if (!raw) throw new NotFoundException(`原料ID ${id} 不存在`);
-  Object.assign(raw, dto, {
-    inventory: dto.inventory ?? raw.inventory,
-    modifier: username,
-    remark: dto.remark ?? raw.remark,  // 更新 remark
-  });
-  return await this.rawRepo.save(raw);
-}
+  /** ========================= 创建 ========================= */
+  async create(dto: CreateGlMaterialInfoDto, username: string) {
+    const raw = this.rawRepo.create({
+      ...dto,
+      composition: this.normalizeComposition(dto.composition),
+      inventory: dto.inventory ?? 0,
+      modifier: username,
+      remark: dto.remark ?? '',
+    });
+    return await this.rawRepo.save(raw);
+  }
+
+  /** ========================= 更新 ========================= */
+  async update(id: number, dto: UpdateGlMaterialInfoDto, username: string) {
+    const raw = await this.rawRepo.findOne({ where: { id } });
+    if (!raw) throw new NotFoundException('数据不存在');
+    Object.assign(raw, dto, {
+      composition: dto.composition ? this.normalizeComposition(dto.composition) : raw.composition,
+      inventory: dto.inventory ?? raw.inventory,
+      modifier: username,
+      remark: dto.remark ?? raw.remark,
+    });
+    return await this.rawRepo.save(raw);
+  }
 
   /** 格式化原料数据（输出到前端） */
   private formatRaw(raw: GlMaterialInfo) {
-  const { id, category, name, composition, remark, inventory } = raw; // 加上 inventory
-  if (!composition) return { id, category, name, remark, inventory };
+    const { id, category, name, origin, composition, remark, inventory } = raw;
+    if (!composition) return { id, category, name, origin, remark, inventory };
 
-  const { TFe = null, H2O = null,返矿率=null,干基价格=null,返矿价格=null, ...otherComposition } = composition as Record<string, any>;
+    const normalized = this.normalizeComposition(composition);
+    const { TFe = null, H2O = null, 返矿率 = null, 干基价格 = null, 返矿价格 = null, ...otherComposition } = normalized;
 
-  return {
-    id,
-    category,
-    name,
-    TFe,
-    ...otherComposition,
-    H2O,
-    返矿率,
-    返矿价格,
-    干基价格,
-    inventory,
-    remark,
-     // 输出库存
-  };
-}
+    return {
+      id,
+      category,
+      name,
+      TFe,
+      ...otherComposition,
+      H2O,
+      返矿率,
+      返矿价格,
+      干基价格,
+      inventory,
+      origin,
+      remark,
+    };
+  }
 
 
 
@@ -85,13 +117,19 @@ async update(id: number, dto: UpdateGlMaterialInfoDto, username: string) {
 
     const [records, total] = await qb.skip((page - 1) * pageSize).take(pageSize).getManyAndCount();
 
+    const mapped = records.map(item => ({
+      ...item,
+      composition: this.normalizeComposition(item.composition),
+    }));
+
     return {
-      data: records.map(this.formatRaw),
-      total,
-      page,
-      pageSize,
-      totalPages: Math.ceil(total / pageSize),
-    };
+  data: mapped.map(item => this.formatRaw(item)),
+  total,
+  page,
+  pageSize,
+  totalPages: Math.ceil(total / pageSize),
+};
+
   }
 
   async findOne(id: number) {
@@ -122,165 +160,113 @@ async update(id: number, dto: UpdateGlMaterialInfoDto, username: string) {
     return { status: 'success', message: `成功删除 ${raws.length} 条原料数据` };
   }
 
-  /**
-   * 导出 Excel（智能列头：固定 + 动态成分）
-   */
+  /** ========================= 导出 Excel ========================= */
   async exportExcel(): Promise<Buffer> {
-  const raws = await this.rawRepo.find();
-  const workbook = new ExcelJS.Workbook();
-  const sheet = workbook.addWorksheet('原料数据');
+    const raws = await this.rawRepo.find();
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('高炉原料信息库');
 
-  // 固定列头
-  const fixedHeaders = ['分类编号', '原料', 'TFe'];
+    sheet.addRow(['分类编号', '原料', ...FIXED_HEADERS, '库存', '产地', '备注']);
 
-  // 收集动态成分键（排除常用字段）
-  const dynamicKeys = new Set<string>();
-  raws.forEach(raw => {
-    if (raw.composition) {
-      Object.keys(raw.composition).forEach(key => {
-        if (!['TFe', 'H2O', '返矿率', '返矿价格','干基价格'].includes(key) && key.trim()) {
-          dynamicKeys.add(key);
-        }
-      });
-    }
-  });
-
-  // 最终列顺序
-  const headers = [
-    ...fixedHeaders,
-    ...Array.from(dynamicKeys).sort(),
-    'H2O',
-    '返矿率',
-    '返矿价格',
-    '干基价格',
-    '库存',
-    '产地',
-    '备注'
-  ];
-  sheet.addRow(headers);
-
-  // 填充数据
-  raws.forEach(raw => {
-    const row: any[] = [];
-    row.push(raw.category ?? '');
-    row.push(raw.name ?? '');
-    row.push(raw.composition?.['TFe'] ?? null);
-
-    Array.from(dynamicKeys).forEach(key => {
-      row.push(raw.composition?.[key] ?? null);
+    raws.forEach(raw => {
+      const composition = this.normalizeComposition(raw.composition);
+      sheet.addRow([
+        raw.category ?? '',
+        raw.name ?? '',
+        ...FIXED_HEADERS.map(h => composition[h]),
+        raw.inventory ?? 0,
+        raw.origin ?? '',
+        raw.remark ?? '',
+      ]);
     });
 
-    row.push(raw.composition?.['H2O'] ?? null);
-    row.push(raw.composition?.['返矿率'] ?? null);
-    row.push(raw.composition?.['返矿价格'] ?? null);
-    row.push(raw.composition?.['干基价格'] ?? null);
-    row.push(raw.inventory ?? 0);
-    row.push(raw.origin ?? '');
-    row.push(raw.remark ?? '');
+    return Buffer.from(await workbook.xlsx.writeBuffer());
+  }
 
-    sheet.addRow(row);
-  });
-
-  const buffer = await workbook.xlsx.writeBuffer();
-  return Buffer.from(buffer);
-}
-
-  /**
-   * 导入 Excel（健壮解析、自动跳过空列、按行创建）
-   * 返回导入结果（成功条数等）
-   */
+  /** ========================= 导入 Excel ========================= */
   async importExcel(file: Express.Multer.File, username: string) {
-  try {
-    if (!file?.buffer) return { status: 'error', message: '文件为空' };
+    if (!file?.buffer) throw new BadRequestException('文件为空');
 
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(file.buffer as any);
-
     const sheet = workbook.worksheets[0];
-    if (!sheet) throw new Error('Excel 中没有工作表');
+    if (!sheet) throw new BadRequestException('Excel 中没有工作表');
 
-    // 读取表头
-    const headers: string[] = [];
-    sheet.getRow(1).eachCell({ includeEmpty: true }, (cell) => {
-      headers.push(cell.value ? String(cell.value).trim() : '');
+    const headerRow = sheet.getRow(1);
+    const headerMap: Record<string, number> = {};
+
+    headerRow.eachCell((cell, col) => {
+      const val = String(cell.value ?? '').trim();
+      if (!val) return;
+      const allowedHeaders = ['分类编号', '原料', '库存', '产地', '备注', ...FIXED_HEADERS];
+      if (!allowedHeaders.includes(val)) {
+        throw new BadRequestException(`非法列名：${val}`);
+      }
+      headerMap[val] = col;
     });
 
-    // 获取列索引（从1开始）
-    const getIndex = (name: string) => {
-      const idx = headers.findIndex(h => h === name);
-      return idx >= 0 ? idx + 1 : -1;
-    };
+    if (!headerMap['原料']) {
+      throw new BadRequestException('缺少必要列：原料');
+    }
 
-    const categoryIndex = getIndex('分类编号');
-    const nameIndex = getIndex('原料');
-    const originIndex = getIndex('产地');
-    const inventoryIndex = getIndex('库存');
-    const remarkIndex = getIndex('备注');
-    const TFeIndex = getIndex('TFe');
-    const H2OIndex = getIndex('H2O');
-    const 返矿率Index = getIndex('返矿率');
-    const 返矿价格Index = getIndex('返矿价格');
-    const 干基价格Index = getIndex('干基价格');
+    const result: GlMaterialInfo[] = [];
 
-    // 动态字段（排除固定列）
-    const dynamicFieldIndices: { idx: number; key: string }[] = [];
-    headers.forEach((h, i) => {
-      const col = i + 1;
-      if ([categoryIndex, nameIndex, originIndex, inventoryIndex, remarkIndex, TFeIndex, H2OIndex, 返矿率Index, 返矿价格Index, 干基价格Index].includes(col)) return;
-      if (h && h.trim()) dynamicFieldIndices.push({ idx: col, key: h });
-    });
+    sheet.eachRow({ includeEmpty: true }, (row, index) => {
+      if (index === 1) return;
 
-    const rawsToSave: GlMaterialInfo[] = [];
+      const name = String(row.getCell(headerMap['原料'])?.value ?? '').trim();
+      if (!name) return;
 
-    sheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
-      if (rowNumber === 1) return; // 跳过表头
+      const category = headerMap['分类编号'] ? String(row.getCell(headerMap['分类编号'])?.value ?? '').trim() : '';
+      const origin = headerMap['产地'] ? String(row.getCell(headerMap['产地'])?.value ?? '').trim() : '其他粉矿';
+      const inventory = headerMap['库存'] ? parseFloat(String(row.getCell(headerMap['库存'])?.value ?? 0)) || 0 : 0;
+      const remark = headerMap['备注'] ? String(row.getCell(headerMap['备注'])?.value ?? '').trim() : '';
 
-      const category = categoryIndex > 0 ? String(row.getCell(categoryIndex).value ?? '').trim() : '';
-      const name = nameIndex > 0 ? String(row.getCell(nameIndex).value ?? '').trim() : '';
-      const origin = originIndex > 0 ? String(row.getCell(originIndex).value ?? '').trim() : '其他粉矿';
-      const inventory = inventoryIndex > 0 ? parseFloat(String(row.getCell(inventoryIndex).value ?? 0)) || 0 : 0;
-      const remark = remarkIndex > 0 ? String(row.getCell(remarkIndex).value ?? '').trim() : '';
+      const composition: Record<string, number> = {};
 
-      if (!name) return; // 跳过关键字段为空的行
-
-      // 构建 composition
-      const composition: Record<string, any> = {};
-
-      // 动态字段
-      dynamicFieldIndices.forEach(({ idx, key }) => {
-        const val = row.getCell(idx).value;
-        const num = val === null || val === undefined || val === '' ? null : parseFloat(String(val).trim());
-        composition[key] = (num !== null && !Number.isNaN(num)) ? num : val;
+      FIXED_HEADERS.forEach(key => {
+        const col = headerMap[key];
+        const val = col ? parseFloat(String(row.getCell(col)?.value ?? '')) : 0;
+        composition[key] = Number.isFinite(val) ? val : 0;
       });
 
-      // 固定字段，只处理 Excel 中存在的列
-      if (TFeIndex > 0) composition['TFe'] = parseFloat(String(row.getCell(TFeIndex).value ?? 0)) || 0;
-      if (H2OIndex > 0) composition['H2O'] = parseFloat(String(row.getCell(H2OIndex).value ?? 0)) || 0;
-      if (返矿率Index > 0) composition['返矿率'] = parseFloat(String(row.getCell(返矿率Index).value ?? 0)) || 0;
-      if (返矿价格Index > 0) composition['返矿价格'] = parseFloat(String(row.getCell(返矿价格Index).value ?? 0)) || 0;
-      if (干基价格Index > 0) composition['干基价格'] = parseFloat(String(row.getCell(干基价格Index).value ?? 0)) || 0;
-
-      rawsToSave.push(this.rawRepo.create({
+      result.push(this.rawRepo.create({
         category,
         name,
         origin,
+        composition,
         inventory,
         remark,
-        composition,
         modifier: username,
       }));
     });
 
-    if (!rawsToSave.length) return { status: 'error', message: '没有有效数据可导入' };
+    if (!result.length) {
+      return { status: 'error', message: '没有有效数据可导入' };
+    }
 
-    await this.rawRepo.save(rawsToSave);
-    return { status: 'success', message: `成功导入 ${rawsToSave.length} 条数据` };
-
-  } catch (error) {
-    console.error('importExcel error:', error);
-    return { status: 'error', message: '导入失败，文件格式可能有误' };
+    await this.rawRepo.save(result);
+    return { status: 'success', message: `成功导入 ${result.length} 条数据` };
   }
-}
+
+  /** ========================= 模板 ========================= */
+  private readonly templateDir = process.env.TEMPLATE_PATH || './templates';
+  private readonly templateFilename = 'gl-material-info-template.xlsx';
+
+  private async ensureTemplateFileExists(): Promise<string> {
+    await fs.promises.mkdir(this.templateDir, { recursive: true });
+    const filePath = path.join(this.templateDir, this.templateFilename);
+    if (fs.existsSync(filePath)) return filePath;
+
+    const workbook = new ExcelJS.Workbook();
+    workbook.addWorksheet('模板').addRow(['分类编号', '原料', ...FIXED_HEADERS, '库存', '产地', '备注']);
+    await workbook.xlsx.writeFile(filePath);
+    return filePath;
+  }
+
+  async getTemplateFilePath(): Promise<string> {
+    return this.ensureTemplateFileExists();
+  }
 
 
 }

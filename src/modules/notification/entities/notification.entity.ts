@@ -1,13 +1,6 @@
-import {
-  Entity,
-  PrimaryGeneratedColumn,
-  Column,
-  ManyToOne,
-  CreateDateColumn,
-  UpdateDateColumn,
-  Index,
-} from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, CreateDateColumn, UpdateDateColumn, OneToMany } from 'typeorm';
 import { User } from '../../user/entities/user.entity';
+import { NotificationUser } from './notification-user.entity';
 
 export enum NotificationType {
   SYSTEM = '消息通知',
@@ -24,7 +17,6 @@ export enum NotificationPriority {
 }
 
 @Entity('notifications')
-@Index(['created_at'])
 export class Notification {
   @PrimaryGeneratedColumn()
   id: number;
@@ -35,14 +27,17 @@ export class Notification {
   @Column({ type: 'enum', enum: NotificationPriority, default: NotificationPriority.MEDIUM })
   priority: NotificationPriority;
 
-  @Column({ comment: '通知标题' })
+  @Column()
   title: string;
 
-  @Column('text', { comment: '通知内容' })
+  @Column('text')
   content: string;
 
   @ManyToOne(() => User, { nullable: false })
-  creator: User; // 发布者
+  creator: User;
+
+  @OneToMany(() => NotificationUser, (nu) => nu.notification, { cascade: true })
+  userStatus: NotificationUser[];
 
   @CreateDateColumn()
   created_at: Date;

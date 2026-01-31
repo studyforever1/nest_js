@@ -545,8 +545,10 @@ export class SjEconCalcService {
             '单烧综合评价法': {
                 displayName: '单烧综合评价法',
                 pickFields: [
-                    '烧结矿单品位价折算后',
-                    '镁铝比',
+                    '烧结矿总成本',
+                    '烧结矿单品位价',
+                    '单烧后折算品位',
+                    '烧结矿单品位价折算后'
                 ],
             },
 
@@ -554,7 +556,8 @@ export class SjEconCalcService {
                 displayName: '铁水成本评价法',
                 pickFields: [
                     '生铁成本',
-                    '焦比',
+                    '入炉品位',
+                    '矿耗',
                 ],
             },
 

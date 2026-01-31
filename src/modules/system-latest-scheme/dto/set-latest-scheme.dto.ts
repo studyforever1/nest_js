@@ -1,5 +1,7 @@
+// src/system-latest-scheme/dto/set-latest-scheme.dto.ts
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsInt, Min } from 'class-validator';
+import { IsString, IsInt, Min, IsEnum } from 'class-validator';
+import { ModuleTypeEnum } from '../../../common/enums/module-type.enum';
 
 export class SetLatestSchemeDto {
   @ApiProperty({
@@ -18,9 +20,10 @@ export class SetLatestSchemeDto {
   schemeIndex: number;
 
   @ApiProperty({
-    example: '烧结配料计算',
-    description: '模块类型',
+    example: ModuleTypeEnum.SINTER_BLEND,
+    enum: ModuleTypeEnum,
+    description: '模块类型（枚举）',
   })
-  @IsString()
-  module_type: string;
+  @IsEnum(ModuleTypeEnum)
+  module_type: ModuleTypeEnum;
 }

@@ -16,6 +16,8 @@ import { Task } from '../../../database/entities/task.entity';
 import { Role } from '../../role/entities/role.entity';
 import { ConfigGroup } from '../../../database/entities/config-group.entity';
 import { ChatMessage } from '../../chat/entities/chat-message.entity';
+import { NotificationUser } from '../../notification/entities/notification-user.entity';
+
 
 @Entity('user')
 export class User {
@@ -83,4 +85,7 @@ export class User {
   /** 发送的聊天消息 */
   @OneToMany(() => ChatMessage, (msg) => msg.sender)
   sentMessages: ChatMessage[];
+
+  @OneToMany(() => NotificationUser, (nu) => nu.user)
+notifications?: NotificationUser[];
 }

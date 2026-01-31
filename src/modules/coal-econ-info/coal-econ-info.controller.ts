@@ -81,4 +81,15 @@ export class CoalEconInfoController {
   importExcel(@UploadedFile() file: Express.Multer.File, @CurrentUser() user: { username: string }) {
     return this.service.importExcel(file, user.username);
   }
+
+  @Get('template')
+  @ApiOperation({ summary: '下载导入模板（按 FIXED_HEADERS 表头顺序）' })
+  async downloadTemplate(@Res() res: Response) {
+    const filePath = await this.service.getTemplateFilePath();
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename=coal_econ_info_template.xlsx',
+    );
+    res.sendFile(filePath, { root: process.cwd() });
+  }
 }

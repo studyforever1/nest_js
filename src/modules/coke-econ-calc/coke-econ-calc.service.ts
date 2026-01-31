@@ -19,13 +19,13 @@ export class CokeEconCalcService {
 
     private readonly ECON_TASKS = [
         {
-            name: '焦炭性价比评价法',
+            name: '焦炭成本性价比评价法',
             startUrl: '/cokeEcon1/start/',
             progressUrl: '/cokeEcon1/progress/',
             stopUrl: '/cokeEcon1/stop/',
         },
         {
-            name: '单烧综合评价法',
+            name: '焦炭质量评分法',
             startUrl: '/cokeEcon2/start/',
             progressUrl: '/cokeEcon2/progress/',
             stopUrl: '/cokeEcon2/stop/',
@@ -213,4 +213,119 @@ export class CokeEconCalcService {
         this.logger.error(`${prefix}: ${message}`, (err as any)?.stack);
         return ApiResponse.error(message);
     }
+    private readonly COKE_ECON_SUMMARY_FIELD_MAP: Record<
+    string,
+    {
+        displayName: string;
+        pickFields: string[];
+    }
+    > = {
+    '焦炭成本性价比评价法': {
+        displayName: '焦炭成本性价比评价法',
+        pickFields: [
+        '性价比指数',
+        ],
+    },
+    '焦炭质量评分法': {
+        displayName: '焦炭质量评分法',
+        pickFields: [
+        '质量评分'
+        ],
+    },
+    };
+
+async buildSummaryFromTaskRefs(
+  taskRefs: { taskUuid: string; name: string }[],
+  pagination?: SJEconPaginationDto,
+): Promise<ApiResponse<any>> {
+  try {
+    const summaryMap: Record<string, any> = {};
+
+    for (const { taskUuid, name } of taskRefs) {
+      const task = await this.taskRepo.findOne({
+        where: { task_uuid: taskUuid },
+      });
+      if (!task) continue;
+
+      const taskDef = this.ECON_TASKS.find(t => t.name === name);
+      if (!taskDef) continue;
+
+      const fieldConfig = this.COKE_ECON_SUMMARY_FIELD_MAP[name];
+      if (!fieldConfig) continue;
+
+      // 1️⃣ 拉 FastAPI 结果
+      const res = await this.apiGet(taskDef.progressUrl, { taskUuid });
+      const results = res.data?.data?.results || [];
+      if (!results.length) continue;
+
+      // 2️⃣ 焦炭 ID → 名称
+      const idSet = new Set<number>();
+      results.forEach(item => {
+        const id = Number(item['焦炭名称']);
+        if (!isNaN(id)) idSet.add(id);
+      });
+
+      const raws = idSet.size
+        ? await this.rawRepo.find({ where: { id: In([...idSet]) } })
+        : [];
+
+      const idNameMap: Record<number, string> = {};
+      raws.forEach(raw => (idNameMap[raw.id] = raw.name));
+
+      // 3️⃣ 汇总字段
+      results.forEach(item => {
+        const id = Number(item['焦炭名称']);
+        const nameKey = idNameMap[id] || item['焦炭名称'];
+
+        if (!summaryMap[nameKey]) {
+          summaryMap[nameKey] = { 焦炭名称: nameKey };
+        }
+
+        fieldConfig.pickFields.forEach(field => {
+          if (field in item) {
+            summaryMap[nameKey][field] = item[field];
+          }
+        });
+      });
+    }
+
+    // 4️⃣ 排序
+    let summaryList = Object.values(summaryMap);
+    if (pagination?.sort) {
+      const order = pagination.order === 'desc' ? -1 : 1;
+      summaryList = summaryList.sort((a, b) => {
+        const va = a[pagination.sort!];
+        const vb = b[pagination.sort!];
+        const na = Number(va);
+        const nb = Number(vb);
+        if (!isNaN(na) && !isNaN(nb)) {
+          return na > nb ? order : na < nb ? -order : 0;
+        }
+        return va > vb ? order : va < vb ? -order : 0;
+      });
+    }
+
+    // 5️⃣ 分页
+    const page = pagination?.page ?? 1;
+    const pageSize = pagination?.pageSize ?? 10;
+    const start = (page - 1) * pageSize;
+    const pagedResults = summaryList.slice(start, start + pageSize);
+
+    return ApiResponse.success(
+      {
+        results: pagedResults,
+        page,
+        pageSize,
+        totalResults: summaryList.length,
+        totalPages: Math.ceil(summaryList.length / pageSize),
+      },
+      '焦炭经济性评价汇总完成',
+    );
+  } catch (err) {
+    return this.handleError(err, '焦炭经济性评价汇总失败');
+  }
+}
+
+
+
 }

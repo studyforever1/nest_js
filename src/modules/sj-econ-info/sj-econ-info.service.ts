@@ -1,11 +1,25 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { SjEconInfo } from './entities/sj-econ-info.entity';
 import { CreateSjEconInfoDto } from './dto/create-sj-econ-info.dto';
 import { UpdateSjEconInfoDto } from './dto/update-sj-econ-info.dto';
 import * as ExcelJS from 'exceljs';
-import { Express } from 'express';
+import * as fs from 'fs';
+import * as path from 'path';
+import type { Express } from 'express';
+
+/**
+ * ✅ 固定表头（唯一标准）
+ * - 查询 / 导入 / 导出 / 前端展示 都以此为准
+ * - 根据数据库实际数据提取的composition字段
+ */
+export const FIXED_HEADERS = [
+  'TFe', 'CaO', 'SiO2', 'MgO', 'Al2O3', 'S', 'P', 'TiO2', 'K2O', 'Na2O','Zn',
+  'As', 'Pb', 'V2O5', 'H2O', '烧损', '价格',
+];
+
+type FixedHeader = (typeof FIXED_HEADERS)[number];
 
 @Injectable()
 export class SjEconInfoService {
@@ -14,7 +28,20 @@ export class SjEconInfoService {
     private readonly econRepo: Repository<SjEconInfo>,
   ) {}
 
-  /** 新增 */
+  /** =========================
+   *  核心：规范化 composition
+   * ========================= */
+  private normalizeComposition(
+    composition?: Record<string, number>,
+  ): Record<string, number> {
+    const result: Record<string, number> = {};
+    FIXED_HEADERS.forEach((key) => {
+      result[key] = composition?.[key] ?? 0;
+    });
+    return result;
+  }
+
+  /** ========================= 创建 ========================= */
   async create(dto: CreateSjEconInfoDto, username: string) {
     const econ = this.econRepo.create({
       ...dto,
@@ -96,100 +123,98 @@ export class SjEconInfoService {
     };
   }
 
-  /** 导出 Excel（动态 composition 列，不包含是否启用） */
-async exportExcel(): Promise<Buffer> {
-  const list = await this.econRepo.find();
-  const workbook = new ExcelJS.Workbook();
-  const sheet = workbook.addWorksheet('经济指标');
+  /** ========================= 导出 Excel ========================= */
+  async exportExcel(): Promise<Buffer> {
+    const list = await this.econRepo.find();
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('烧结经济性评价信息库');
 
-  // 收集动态字段
-  const dynamicKeys = new Set<string>();
-  list.forEach(i => {
-    if (i.composition) {
-      Object.keys(i.composition).forEach(k => {
-        if (k && k.trim()) dynamicKeys.add(k);
-      });
-    }
-  });
+    sheet.addRow(['名称', ...FIXED_HEADERS]);
 
-  // 表头（不再包含“是否启用”）
-  const headers = ['名称', ...Array.from(dynamicKeys)];
-  sheet.addRow(headers);
+    list.forEach(item => {
+      const composition = this.normalizeComposition(item.composition);
+      sheet.addRow([
+        item.name,
+        ...FIXED_HEADERS.map(h => composition[h]),
+      ]);
+    });
 
-  // 数据行
-  list.forEach(i => {
-    const row = [
-      i.name,
-      ...Array.from(dynamicKeys).map(k => i.composition?.[k] ?? null),
-    ];
-    sheet.addRow(row);
-  });
+    return Buffer.from(await workbook.xlsx.writeBuffer());
+  }
 
-  return Buffer.from(await workbook.xlsx.writeBuffer());
-}
-
-
-  /** 导入 Excel */
+  /** ========================= 导入 Excel ========================= */
   async importExcel(file: Express.Multer.File, username: string) {
-    if (!file?.buffer) {
-      return { status: 'error', message: '文件为空' };
-    }
+    if (!file?.buffer) throw new BadRequestException('文件为空');
 
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(file.buffer as any);
-
     const sheet = workbook.worksheets[0];
-    if (!sheet) {
-      return { status: 'error', message: 'Excel 中没有工作表' };
-    }
+    if (!sheet) throw new BadRequestException('Excel 中没有工作表');
 
-    // 读取表头
-    const headers: string[] = [];
-    sheet.getRow(1).eachCell({ includeEmpty: true }, cell => {
-      headers.push(String(cell.value ?? '').trim());
+    const headerRow = sheet.getRow(1);
+    const headerMap: Record<string, number> = {};
+
+    headerRow.eachCell((cell, col) => {
+      const val = String(cell.value ?? '').trim();
+      if (!val) return;
+      if (!FIXED_HEADERS.includes(val as FixedHeader) && val !== '名称') {
+        throw new BadRequestException(`非法列名：${val}`);
+      }
+      headerMap[val] = col;
     });
 
-    const nameIndex = headers.indexOf('名称') + 1;
-    if (nameIndex <= 0) {
-      return { status: 'error', message: '缺少【名称】列' };
+    if (!headerMap['名称']) {
+      throw new BadRequestException('缺少必要列：名称');
     }
 
-    const dynamicCols = headers
-      .map((h, i) => ({ key: h, idx: i + 1 }))
-      .filter(c => c.idx !== nameIndex && c.key);
+    const result: SjEconInfo[] = [];
 
-    const toSave: SjEconInfo[] = [];
+    sheet.eachRow({ includeEmpty: true }, (row, index) => {
+      if (index === 1) return;
 
-    sheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
-      if (rowNumber === 1) return;
-
-      const name = String(row.getCell(nameIndex).value ?? '').trim();
+      const name = String(row.getCell(headerMap['名称'])?.value ?? '').trim();
       if (!name) return;
 
-      const composition: Record<string, any> = {};
-      dynamicCols.forEach(c => {
-        composition[c.key] = row.getCell(c.idx).value;
+      const composition: Record<string, number> = {};
+
+      FIXED_HEADERS.forEach(key => {
+        const col = headerMap[key];
+        const val = col ? parseFloat(String(row.getCell(col)?.value ?? '')) : 0;
+        composition[key] = Number.isFinite(val) ? val : 0;
       });
 
-      toSave.push(
-        this.econRepo.create({
-          name,
-          composition,
-          modifier: username,
-          enabled: true,
-        }),
-      );
+      result.push(this.econRepo.create({
+        name,
+        composition,
+        modifier: username,
+        enabled: true,
+      }));
     });
 
-    if (!toSave.length) {
-      return { status: 'error', message: '没有可导入的数据' };
+    if (!result.length) {
+      return { status: 'error', message: '没有有效数据可导入' };
     }
 
-    await this.econRepo.save(toSave);
+    await this.econRepo.save(result);
+    return { status: 'success', message: `成功导入 ${result.length} 条数据` };
+  }
 
-    return {
-      status: 'success',
-      message: `成功导入 ${toSave.length} 条经济指标`,
-    };
+  /** ========================= 模板 ========================= */
+  private readonly templateDir = process.env.TEMPLATE_PATH || './templates';
+  private readonly templateFilename = 'sj-econ-info-template.xlsx';
+
+  private async ensureTemplateFileExists(): Promise<string> {
+    await fs.promises.mkdir(this.templateDir, { recursive: true });
+    const filePath = path.join(this.templateDir, this.templateFilename);
+    if (fs.existsSync(filePath)) return filePath;
+
+    const workbook = new ExcelJS.Workbook();
+    workbook.addWorksheet('模板').addRow(['名称', ...FIXED_HEADERS]);
+    await workbook.xlsx.writeFile(filePath);
+    return filePath;
+  }
+
+  async getTemplateFilePath(): Promise<string> {
+    return this.ensureTemplateFileExists();
   }
 }

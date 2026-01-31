@@ -7,6 +7,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { User } from '../user/entities/user.entity';
 import { SetLatestSchemeDto } from './dto/set-latest-scheme.dto';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import { ModuleTypeEnum } from '../../common/enums/module-type.enum';
 
 @ApiTags('系统当日最新方案')
 @ApiBearerAuth('JWT')
@@ -17,10 +18,7 @@ export class SystemLatestSchemeController {
 
   @Post('set-today')
   @ApiOperation({ summary: '设置为系统当日最新方案（按模块类型唯一）' })
-  setToday(
-    @CurrentUser() user: User,
-    @Body() body: SetLatestSchemeDto,
-  ) {
+  setToday(@CurrentUser() user: User, @Body() body: SetLatestSchemeDto) {
     return this.service.setTodayLatest(
       user,
       body.taskUuid,
@@ -32,12 +30,9 @@ export class SystemLatestSchemeController {
   @Get('latest')
   @ApiOperation({ summary: '获取系统最新方案（默认当天，可选最近几天）' })
   @ApiQuery({ name: 'days', required: false, description: '最近几天，默认1天', type: Number })
-  @ApiQuery({ name: 'module_type', required: false, description: '模块类型筛选', type: String })
-  getLatest(
-    @Query('days') days?: number,
-    @Query('module_type') module_type?: string,
-  ) {
-    const daysNum = Number(days) || 1; // 默认当天最新
+  @ApiQuery({ name: 'module_type', required: false, enum: ModuleTypeEnum, description: '模块类型筛选' })
+  getLatest(@Query('days') days?: number, @Query('module_type') module_type?: ModuleTypeEnum) {
+    const daysNum = Number(days) || 1;
     return this.service.getRecentLatest(daysNum, module_type);
   }
 }
