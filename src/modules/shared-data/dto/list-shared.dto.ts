@@ -1,24 +1,34 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, IsNumberString } from 'class-validator';
+import { IsOptional, IsEnum, IsString, IsInt, Min } from 'class-validator';
+import { Type } from 'class-transformer';
+import { ModuleTypeEnum } from '../../../common/enums/module-type.enum';
 
 export class ListSharedDto {
-  @ApiPropertyOptional({ description: '模块类型' , example: '烧结配料计算'})
+  @ApiPropertyOptional({ 
+    description: '模块类型', 
+    enum: ModuleTypeEnum, 
+    example: ModuleTypeEnum.SINTER_BLEND 
+  })
   @IsOptional()
-  @IsString()
-  module_type?: string;
+  @IsEnum(ModuleTypeEnum)
+  module_type?: ModuleTypeEnum;
 
   @ApiPropertyOptional({ description: '日期（YYYY-MM-DD）' })
   @IsOptional()
   @IsString()
   date?: string;
 
-  @ApiPropertyOptional({ description: '页码' })
+  @ApiPropertyOptional({ description: '页码', example: 1 })
   @IsOptional()
-  @IsNumberString()
-  page?: number;
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number = 1;
 
-  @ApiPropertyOptional({ description: '每页数量' })
+  @ApiPropertyOptional({ description: '每页数量', example: 10 })
   @IsOptional()
-  @IsNumberString()
-  pageSize?: number;
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  pageSize?: number = 10;
 }

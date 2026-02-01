@@ -63,7 +63,7 @@ export class CalcController {
   @Get('progress/:task_id')
   @Permissions('sj-calc')
   @ApiOperation({
-    summary: '查询任务进度（分页 + 排序）',
+    summary: '查询任务进度（默认按照成本从低到高排序）',
     description: '查询增量结果，支持分页和排序',
   })
   @ApiParam({ name: 'task_id', description: '任务 ID，由 /start 返回', required: true })
@@ -79,7 +79,7 @@ export class CalcController {
   @Get('scheme')
 @Permissions('sj:calc')
 @ApiOperation({
-  summary: '获取指定任务的某个方案信息',
+  summary: '双击计算结果行获取方案详情',
   description: '根据 taskUuid 和方案序号 index 获取该方案的详细计算结果',
 })
 @ApiErrorResponse()
@@ -99,7 +99,7 @@ async getScheme(
 @Permissions('sj:calc')
 @ApiOperation({
   summary: '导出烧结矿方案（Excel）',
-  description: '根据 taskUuid 和方案序号导出 Excel 文件',
+  description: '根据 taskUuid 和方案序号导出 Excel 文件。使用场景：用户点击“导出”按钮时调用此接口。',
 })
 @ApiErrorResponse()
 async exportExcel(

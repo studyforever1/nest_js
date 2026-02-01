@@ -4,6 +4,7 @@ import { Type } from 'class-transformer';
 import { NotificationType, NotificationPriority } from '../entities/notification.entity';
 
 // 创建通知
+// ✅ 创建通知 DTO（最终版）
 export class CreateNotificationDto {
   @ApiProperty({ enum: NotificationType, description: '通知类型' })
   @IsEnum(NotificationType)
@@ -23,12 +24,6 @@ export class CreateNotificationDto {
   @IsString()
   @MaxLength(1000)
   content: string;
-
-  @ApiProperty({ description: '是否已读', required: false })
-  @IsOptional()
-  @IsBoolean()
-  @Type(() => Boolean) // ✅ 自动转换为 boolean
-  read?: boolean;
 }
 
 // 列表查询通知

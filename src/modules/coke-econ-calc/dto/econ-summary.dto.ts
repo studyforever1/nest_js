@@ -7,9 +7,9 @@ import {
 import { Type } from 'class-transformer';
 
 import { EconTaskRefDto } from './econ-task-ref.dto';
-import { SJEconPaginationDto } from './coke-econ-pagination.dto';
+import { CokeEconPaginationDto } from './coke-econ-pagination.dto';
 
-export class EconSummaryDto extends SJEconPaginationDto {
+export class EconSummaryDto extends CokeEconPaginationDto {
   @ApiProperty({
     description: '参与汇总的经济性评价任务列表',
     type: [EconTaskRefDto],

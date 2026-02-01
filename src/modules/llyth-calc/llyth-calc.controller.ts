@@ -9,11 +9,11 @@ import { ApiOkResponseData, ApiErrorResponse } from '../../common/response/respo
 import { ApiResponse } from '../../common/response/response.dto';
 
 import { LlythCalcService } from './llyth-calc.service';
-import { GLStartTaskDto } from '../gl-calc/dto/start-task.dto';
-import { GLStartTaskResponseDto, GLStopTaskResponseDto, GLProgressResponseDto } from '../gl-calc/dto/response.dto';
-import { GLStopTaskDto } from '../gl-calc/dto/stop-task.dto';
-import { GLPaginationDto } from '../gl-calc/dto/pagination.dto';
-import { GLGetSchemeDto } from '../gl-calc/dto/get-scheme.dto';
+import { LLYTHStartTaskDto } from './dto/start-task.dto';
+import { LLYTHStartTaskResponseDto, LLYTHStopTaskResponseDto, LLYTHProgressResponseDto } from './dto/response.dto';
+import { LLYTHStopTaskDto } from './dto/stop-task.dto';
+import { LLYTHPaginationDto } from  './dto/pagination.dto';
+import { LLYTHGetSchemeDto } from './dto/get-scheme.dto';
 
 @ApiBearerAuth('JWT')
 @ApiTags('利润一体化计算任务接口')
@@ -26,9 +26,9 @@ export class LlythCalcController {
   @Post('start')
   @Permissions('llyth:calc')
   @ApiOperation({ summary: '启动利润一体化计算任务', description: '计算类型填:利润一体化配料计算' })
-  @ApiOkResponseData(GLStartTaskResponseDto)
+  @ApiOkResponseData(LLYTHStartTaskResponseDto)
   @ApiErrorResponse()
-  startTask(@CurrentUser() user: User, @Body() dto: GLStartTaskDto) {
+  startTask(@CurrentUser() user: User, @Body() dto: LLYTHStartTaskDto) {
     return this.llythCalcService.startTask(dto.calculateType, user);
   }
 
@@ -36,9 +36,9 @@ export class LlythCalcController {
   @Post('stop')
   @Permissions('llyth:calc')
   @ApiOperation({ summary: '停止利润一体化计算任务', description: '根据 task_id 停止正在运行的任务' })
-  @ApiOkResponseData(GLStopTaskResponseDto)
+  @ApiOkResponseData(LLYTHStopTaskResponseDto)
   @ApiErrorResponse()
-  stopTask(@Body() dto: GLStopTaskDto) {
+  stopTask(@Body() dto: LLYTHStopTaskDto) {
     return this.llythCalcService.stopTask(dto.task_id);
   }
 
@@ -47,9 +47,9 @@ export class LlythCalcController {
   @Permissions('llyth:calc')
   @ApiOperation({ summary: '查询利润一体化计算任务进度' })
   @ApiParam({ name: 'task_id', description: '可以按照默认 主要参数.吨材毛利润', required: true })
-  @ApiOkResponseData(GLProgressResponseDto)
+  @ApiOkResponseData(LLYTHProgressResponseDto)
   @ApiErrorResponse()
-  async getProgress(@Param('task_id') task_id: string, @Query() pagination: GLPaginationDto) {
+  async getProgress(@Param('task_id') task_id: string, @Query() pagination: LLYTHPaginationDto) {
     return this.llythCalcService.fetchAndSaveProgress(task_id, pagination);
   }
 
@@ -61,7 +61,7 @@ export class LlythCalcController {
     description: '根据 taskUuid 和方案序号 index 获取该方案的详细计算结果',
   })
   @ApiErrorResponse()
-  async getScheme(@Query() dto: GLGetSchemeDto, @CurrentUser() user: User): Promise<ApiResponse<any>> {
+  async getScheme(@Query() dto: LLYTHGetSchemeDto, @CurrentUser() user: User): Promise<ApiResponse<any>> {
     return await this.llythCalcService.getSchemeByIndex(dto.taskUuid, dto.index);
   }
 }

@@ -16,9 +16,9 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { User } from '../user/entities/user.entity';
 import { CokeEconCalcService } from './coke-econ-calc.service';
 
-import { StartEconCalcDto } from './dto/start-coke-econ-calc.dto';
-import { StopEconCalcDto } from './dto/stop-coke-econ-calc.dto';
-import { SJEconPaginationDto } from './dto/coke-econ-pagination.dto';
+import { CokeStartEconCalcDto } from './dto/start-coke-econ-calc.dto';
+import { CokeStopEconCalcDto } from './dto/stop-coke-econ-calc.dto';
+import { CokeEconPaginationDto} from './dto/coke-econ-pagination.dto';
 import { EconSummaryDto } from './dto/econ-summary.dto';
 
 import type { Response } from 'express';
@@ -37,7 +37,7 @@ export class CokeEconCalcController {
   @ApiOperation({ summary: '启动焦炭经济性评价任务（多任务并行）' })
   async start(
     @CurrentUser() user: User,
-    @Body() dto: StartEconCalcDto,
+    @Body() dto: CokeStartEconCalcDto,
   ) {
     return this.cokeService.startTasks(user, dto.calculateType);
   }
@@ -46,7 +46,7 @@ export class CokeEconCalcController {
   @Post('stop')
   @Permissions('coke:calc')
   @ApiOperation({ summary: '停止焦炭经济性评价任务' })
-  async stop(@Body() dto: StopEconCalcDto) {
+  async stop(@Body() dto: CokeStopEconCalcDto) {
     return this.cokeService.stopTasks(dto.taskUuids);
   }
 
@@ -59,7 +59,7 @@ export class CokeEconCalcController {
   })
   async getTaskProgress(
     @Param('task_id') taskId: string,
-    @Query() pagination: SJEconPaginationDto,
+    @Query() pagination: CokeEconPaginationDto,
   ) {
     return this.cokeService.fetchAndSaveProgress(taskId, pagination);
   }

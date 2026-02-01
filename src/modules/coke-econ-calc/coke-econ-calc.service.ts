@@ -9,7 +9,7 @@ import { CokeEconInfo } from '../coke-econ-info/entities/coke-econ-info.entity';
 import { ConfigGroup } from '../../database/entities/config-group.entity';
 import { BizModule } from '../../database/entities/biz-module.entity';
 import { ApiResponse } from '../../common/response/response.dto';
-import { SJEconPaginationDto } from './dto/coke-econ-pagination.dto';
+import { CokeEconPaginationDto } from './dto/coke-econ-pagination.dto';
 import { appConfig } from '../../config/app.config';
 
 @Injectable()
@@ -126,7 +126,7 @@ export class CokeEconCalcService {
     }
 
     /** 查询任务进度 */
-    async fetchAndSaveProgress(taskUuid: string, pagination?: SJEconPaginationDto): Promise<ApiResponse<any>> {
+    async fetchAndSaveProgress(taskUuid: string, pagination?: CokeEconPaginationDto): Promise<ApiResponse<any>> {
         try {
             const task = await this.taskRepo.findOne({ where: { task_uuid: taskUuid } });
             if (!task) return ApiResponse.error('任务不存在');
@@ -172,7 +172,7 @@ export class CokeEconCalcService {
     }
 
     /** 工具方法: 分页 + 排序 */
-    private applyPaginationAndSort(results: any[], pagination?: SJEconPaginationDto) {
+    private applyPaginationAndSort(results: any[], pagination?: CokeEconPaginationDto) {
         let sortedResults = results;
         if (pagination?.sort) {
             const fieldPath = pagination.sort;
@@ -236,7 +236,7 @@ export class CokeEconCalcService {
 
 async buildSummaryFromTaskRefs(
   taskRefs: { taskUuid: string; name: string }[],
-  pagination?: SJEconPaginationDto,
+  pagination?: CokeEconPaginationDto,
 ): Promise<ApiResponse<any>> {
   try {
     const summaryMap: Record<string, any> = {};

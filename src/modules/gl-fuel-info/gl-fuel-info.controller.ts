@@ -141,15 +141,4 @@ export class GlFuelInfoController {
       return { status: 'error', message: '删除失败' };
     }
   }
-
-  @Get('template')
-  @ApiOperation({ summary: '下载导入模板（按 FIXED_HEADERS 表头顺序）' })
-  async downloadTemplate(@Res() res: Response) {
-    const filePath = await this.rawService.getTemplateFilePath();
-    res.setHeader(
-      'Content-Disposition',
-      'attachment; filename=gl_fuel_info_template.xlsx',
-    );
-    res.sendFile(filePath, { root: process.cwd() });
-  }
 }

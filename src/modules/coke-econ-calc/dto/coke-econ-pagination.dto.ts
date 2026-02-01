@@ -2,7 +2,7 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsInt, Min, Max, IsOptional, IsString, IsIn } from 'class-validator';
 
-export class SJEconPaginationDto {
+export class CokeEconPaginationDto {
   @ApiPropertyOptional({ description: '页码（默认1）', example: 1 })
   @Type(() => Number)
   @IsInt({ message: 'page 必须是整数' })
