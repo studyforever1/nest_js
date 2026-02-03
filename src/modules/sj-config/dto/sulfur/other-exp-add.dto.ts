@@ -1,6 +1,13 @@
 // dto/sulfur/other-exp-add.dto.ts
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsNumber, Min } from 'class-validator';
+import {
+  IsString,
+  IsNumber,
+  Min,
+  IsArray,
+  ValidateNested,
+} from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class OtherSExpItemDto {
   @ApiProperty({
@@ -32,5 +39,8 @@ export class AddOtherSExpDto {
     type: [OtherSExpItemDto],
     description: '支出信息列表',
   })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => OtherSExpItemDto)
   items: OtherSExpItemDto[];
 }

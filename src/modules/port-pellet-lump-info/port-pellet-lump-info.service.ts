@@ -73,7 +73,7 @@ export class PortPelletLumpInfoService {
 
   /** ========================= 查询（核心修改点） ========================= */
   async query(params: PortPelletLumpPaginationDto) {
-    const { page = 1, pageSize = 10, name, sort, order } = params;
+    const { page = 1, pageSize = 10, name, type, sort, order } = params;
     const qb = this.repo.createQueryBuilder('ore');
 
     if (name) {
@@ -98,7 +98,7 @@ export class PortPelletLumpInfoService {
       composition: this.normalizeComposition(item.composition),
     }));
 
-    return { list: mapped, total, page, pageSize };
+    return { data: mapped, total, page, pageSize, totalPages: Math.ceil(total / pageSize) };
   }
 
   /** ========================= 删除 ========================= */

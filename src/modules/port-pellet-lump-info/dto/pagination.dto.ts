@@ -21,6 +21,11 @@ export class PortPelletLumpPaginationDto {
   @IsString()
   name?: string;
 
+  @ApiPropertyOptional({ description: '类型筛选' })
+  @IsOptional()
+  @IsString()
+  type?: string;
+
   @ApiPropertyOptional({
     description: '排序字段，如 name、inventory、composition.TFe',
   })

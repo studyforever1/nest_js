@@ -196,42 +196,54 @@ export class LlythCalcService {
   }
 
   /** 查询任务进度 */
-  async fetchAndSaveProgress(taskUuid: string, pagination?: PaginationDto): Promise<ApiResponse<any>> {
-    try {
-      const task = await this.findTask(taskUuid);
-      if (!task) return ApiResponse.success({ taskUuid, status: 'initializing', progress: 0, total: 0, results: [], page: 1, pageSize: 10, totalResults: 0, totalPages: 0 }, '任务初始化中');
+async fetchAndSaveProgress(taskUuid: string, pagination?: PaginationDto): Promise<ApiResponse<any>> {
+  try {
+    const task = await this.findTask(taskUuid);
+    if (!task) return ApiResponse.success({
+      taskUuid, status: 'initializing', progress: 0, total: 0,
+      results: [], page: 1, pageSize: 10,
+      totalResults: 0, totalPages: 0
+    }, '任务初始化中');
 
-      let results: any[] = [];
+    let results: any[] = [];
 
-      if (task.status !== TaskStatus.FINISHED) {
-        const res = await this.apiGet('/llyth/progress/', { taskUuid });
-        const { code, message, data } = res.data;
-        if (code !== 0 || !data) throw new Error(message || 'FastAPI 返回异常');
+    if (task.status !== TaskStatus.FINISHED) {
+      const res = await this.apiGet('/llyth/progress/', { taskUuid });
+      const { code, message, data } = res.data;
+      if (code !== 0 || !data) throw new Error(message || 'FastAPI 返回异常');
 
-        const incoming = (data.results || []).filter(r => r && typeof r === 'object' && Object.keys(r).length > 0);
+      const incoming = (data.results || []).filter(r => r && typeof r === 'object' && Object.keys(r).length > 0);
 
-        const idSet = new Set<number>();
-        incoming.forEach(item => {
-          Object.keys(item["原料配比和矿耗"] || {}).forEach(idStr => idSet.add(Number(idStr)));
-          Object.keys(item["燃料配比和矿耗"] || {}).forEach(idStr => idSet.add(Number(idStr)));
-        });
+      // 收集所有原料和燃料 id
+      const idSet = new Set<number>();
+      incoming.forEach(item => {
+        Object.keys(item["原料配比和矿耗"] || {}).forEach(idStr => idSet.add(Number(idStr)));
+        Object.keys(item["燃料配比和矿耗"] || {}).forEach(idStr => idSet.add(Number(idStr)));
+      });
 
-        const raws = await this.glMaterialRepo.find({ where: { id: In([...idSet]) } });
-        const fuels = await this.glFuelRepo.find({ where: { id: In([...idSet]) } });
+      // 查询数据库
+      const raws = await this.glMaterialRepo.find({ where: { id: In([...idSet]) } });
+      const fuels = await this.glFuelRepo.find({ where: { id: In([...idSet]) } });
 
-        const idNameMap: Record<string, string> = {};
-        raws.forEach(r => idNameMap[String(r.id)] = r.name);
-        fuels.forEach(f => idNameMap[String(f.id)] = f.name);
+      const idNameMap: Record<string, string> = {};
+      raws.forEach(r => idNameMap[String(r.id)] = r.name);
+      fuels.forEach(f => idNameMap[String(f.id)] = f.name);
 
-        const mappedIncoming = incoming.map(item => {
+      // 过滤出有“本月毛利”的方案
+      const validResults = incoming.filter(item => item["主要参数"] && typeof item["主要参数"].本月毛利 === "number");
+
+      // 1️⃣ 利润排名（按本月毛利降序）
+      validResults.sort((a, b) => b["主要参数"].本月毛利 - a["主要参数"].本月毛利);
+      validResults.forEach((item, index) => item.利润排名 = index + 1);
+
+      // 2️⃣ 给原料和燃料加 name
+      results = validResults.map(item => {
         const mapped = { ...item };
 
         if (item["原料配比和矿耗"]) {
           const newRaw: Record<string, any> = {};
           Object.entries(item["原料配比和矿耗"]).forEach(([id, val]: [string, any]) => {
-            if (val && val.矿耗 != null && val.配比 != null) {
-              newRaw[id] = { ...val, name: idNameMap[id] || id };
-            }
+            if (val && val.矿耗 != null && val.配比 != null) newRaw[id] = { ...val, name: idNameMap[id] || id };
           });
           mapped["原料配比和矿耗"] = newRaw;
         }
@@ -239,54 +251,57 @@ export class LlythCalcService {
         if (item["燃料配比和矿耗"]) {
           const newFuel: Record<string, any> = {};
           Object.entries(item["燃料配比和矿耗"]).forEach(([id, val]: [string, any]) => {
-            if (val && val.矿耗 != null && val.配比 != null) {
-              newFuel[id] = { ...val, name: idNameMap[id] || id };
-            }
+            if (val && val.矿耗 != null && val.配比 != null) newFuel[id] = { ...val, name: idNameMap[id] || id };
           });
           mapped["燃料配比和矿耗"] = newFuel;
         }
 
         return mapped;
-        });
+      });
 
-        const cache = this.taskCache.get(taskUuid) || { results: [], lastUpdated: Date.now() };
-        cache.results.push(...mappedIncoming);
-        cache.lastUpdated = Date.now();
-        this.taskCache.set(taskUuid, cache);
+      // 更新缓存
+      const cache = this.taskCache.get(taskUuid) || { results: [], lastUpdated: Date.now() };
+      cache.results = results; // 覆盖缓存保证排名正确
+      cache.lastUpdated = Date.now();
+      this.taskCache.set(taskUuid, cache);
 
-        task.status = data.status === 'finished' ? TaskStatus.FINISHED : TaskStatus.RUNNING;
-        task.progress = data.progress;
-        task.total = data.total;
-        await this.taskRepo.save(task);
+      // 更新任务状态
+      task.status = data.status === 'finished' ? TaskStatus.FINISHED : TaskStatus.RUNNING;
+      task.progress = data.progress;
+      task.total = data.total;
+      await this.taskRepo.save(task);
 
-        if (task.status === TaskStatus.FINISHED && cache.results.length) {
-          await this.saveResults(task, cache.results);
-          this.taskCache.delete(taskUuid);
-        }
-
-        results = cache.results;
-      } else {
-        const resultEntity = await this.resultRepo.findOne({ where: { task: { task_uuid: taskUuid } } });
-        results = resultEntity?.output_data || [];
+      // 任务完成，持久化结果
+      if (task.status === TaskStatus.FINISHED && cache.results.length) {
+        await this.saveResults(task, cache.results);
+        this.taskCache.delete(taskUuid);
       }
 
-      const { pagedResults, totalResults, totalPages } = this.applyPaginationAndSort(results, pagination);
+      results = cache.results;
 
-      return ApiResponse.success({
-        taskUuid: task.task_uuid,
-        status: task.status,
-        progress: task.progress,
-        total: task.total,
-        results: pagedResults,
-        page: pagination?.page ?? 1,
-        pageSize: pagination?.pageSize ?? 10,
-        totalResults,
-        totalPages,
-      });
-    } catch (err: any) {
-      return this.handleError(err, '获取任务进度失败');
+    } else {
+      const resultEntity = await this.resultRepo.findOne({ where: { task: { task_uuid: taskUuid } } });
+      results = resultEntity?.output_data || [];
     }
+
+    const { pagedResults, totalResults, totalPages } = this.applyPaginationAndSort(results, pagination);
+
+    return ApiResponse.success({
+      taskUuid: task.task_uuid,
+      status: task.status,
+      progress: task.progress,
+      total: task.total,
+      results: pagedResults,
+      page: pagination?.page ?? 1,
+      pageSize: pagination?.pageSize ?? 10,
+      totalResults,
+      totalPages,
+    });
+
+  } catch (err: any) {
+    return this.handleError(err, '获取任务进度失败');
   }
+}
 
   /** 获取指定方案 */
   async getSchemeByIndex(taskUuid: string, schemeIndex: number): Promise<ApiResponse<any>> {

@@ -44,7 +44,7 @@ export class PortPelletLumpInfoController {
   }
 
   @Get()
-  @ApiOperation({ summary: '分页查询球团/块矿信息' })
+  @ApiOperation({ summary: '查询球团/块矿信息（支持分页、名称模糊、类型筛选）' })
   findAll(@Query() query: PortPelletLumpPaginationDto) {
     return this.service.query(query);
   }

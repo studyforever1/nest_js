@@ -38,12 +38,13 @@ export class CoalEconInfoController {
   }
 
   @Get()
-  @ApiOperation({ summary: '查询煤炭经济性信息（分页、名称模糊）' })
+  @ApiOperation({ summary: '查询煤炭经济性信息（支持分页、名称模糊、类型筛选）' })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'pageSize', required: false })
   @ApiQuery({ name: 'name', required: false })
-  findAll(@Query() pagination: PaginationDto, @Query('name') name?: string) {
-    return this.service.query({ page: pagination.page ?? 1, pageSize: pagination.pageSize ?? 10, name });
+  @ApiQuery({ name: 'type', required: false })
+  findAll(@Query() pagination: PaginationDto, @Query('name') name?: string, @Query('type') type?: string) {
+    return this.service.query({ page: pagination.page ?? 1, pageSize: pagination.pageSize ?? 10, name, type });
   }
 
   @Put(':id')

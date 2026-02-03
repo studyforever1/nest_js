@@ -93,4 +93,32 @@ export class GLSaveConfigDto {
   @IsOptional()
   @IsObject()
   otherSettings?: Record<string, any>;
+
+
+  @ApiPropertyOptional({
+    description: '原料计算结果（id -> 配比/用量）',
+    example: {
+      "56": 2,
+      "59": 3,
+      "60": 12,
+      "62": 0,
+      "64": 70
+    }
+  })
+  @IsOptional()
+  @IsObject()
+  ingredientResults?: Record<string, number>;
+
+  @ApiPropertyOptional({
+    description: '燃料计算结果（id -> 配比/用量）',
+    example: {
+      "1": 0,
+      "2": 0,
+      "3": 0
+    }
+  })
+  @IsOptional()
+  @IsObject()
+  fuelResults?: Record<string, number>;
+
 }

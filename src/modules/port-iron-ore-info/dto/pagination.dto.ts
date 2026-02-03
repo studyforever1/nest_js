@@ -23,10 +23,15 @@ export class PortIronOrePaginationDto {
   @Max(100)
   pageSize: number = 10;
 
-  @ApiPropertyOptional({ description: '矿粉名称模糊查询' })
+  @ApiPropertyOptional({ description: '名称模糊查询' })
   @IsOptional()
   @IsString()
   name?: string;
+
+  @ApiPropertyOptional({ description: '类型筛选' })
+  @IsOptional()
+  @IsString()
+  type?: string;
 
   @ApiPropertyOptional({
     description: '排序字段，如 name、inventory、composition.TFe、composition.价格',
@@ -36,7 +41,7 @@ export class PortIronOrePaginationDto {
   @IsString()
   sort?: string;
 
-  @ApiPropertyOptional({ description: '排序方式 asc/desc', example: 'asc' })
+  @ApiPropertyOptional({ description: 'asc / desc' })
   @IsOptional()
   @IsIn(['asc', 'desc'])
   order?: 'asc' | 'desc';

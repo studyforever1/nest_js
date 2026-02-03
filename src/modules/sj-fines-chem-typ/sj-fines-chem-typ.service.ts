@@ -1,31 +1,36 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import * as ExcelJS from 'exceljs';
+import * as fs from 'fs';
+import * as path from 'path';
 import { Express } from 'express';
 
 import { SjFinesChemTyp } from './entities/sj-fines-chem-typ.entity';
 import { CreateSjFinesChemTypDto } from './dto/create-sj-fines-chem-typ.dto';
 import { UpdateSjFinesChemTypDto } from './dto/update-sj-fines-chem-typ.dto';
 
-function getCellText(v: any): string {
-  if (v == null) return '';
-  if (typeof v === 'object') {
-    if (v.richText) return v.richText.map((i: any) => i.text).join('');
-    if ('result' in v) return String(v.result ?? '');
-  }
-  return String(v);
-}
+const SORT_FIELD_MAP: Record<string, string> = {
+  name: 's.name',
+  created_at: 's.created_at',
+  'chemValues.TFe': "JSON_EXTRACT(s.chemValues, '$.TFe')",
+};
 
-function getCellValue(v: any) {
-  if (v == null) return null;
-  if (typeof v === 'object' && 'result' in v) return v.result;
-  return v;
-}
+/**
+ * ✅ 固定表头（唯一标准）
+ * - 查询 / 导入 / 导出 / 前端展示 都以此为准
+ * - 注意：composition 中不包含"矿粉名称"
+ */
+export const FIXED_HEADERS = [
+  '矿粉名称',
+  'TFe', 'SiO2', 'Al2O3', 'P', 'S', 'MnO', 'H2O',
+  '粉率', '车板价', '运费', '干粉价格',
+  '厂内筛分搬到等费用', '干基不含税',
+  'CaO', 'MgO', 'TiO2', 'Zn', 'K2O', 'Na2O',
+  'Cr', 'Cu', 'As', '烧损', 'Ni',
+];
 
-function normalizeHeader(v: any): string {
-  return getCellText(v).replace(/\u00A0/g, '').replace(/\s+/g, '').trim();
-}
+type FixedHeader = (typeof FIXED_HEADERS)[number];
 
 @Injectable()
 export class SjFinesChemTypService {
@@ -34,35 +39,73 @@ export class SjFinesChemTypService {
     private readonly repo: Repository<SjFinesChemTyp>,
   ) {}
 
-  async create(dto: CreateSjFinesChemTypDto, username: string) {
-    return this.repo.save(
-      this.repo.create({
-        ...dto,
-        chemValues: dto.chemValues ?? {},
-        modifier: username,
-        enabled: true,
-      }),
-    );
+  /** =========================
+   *  核心：规范化 chemValues（按 FIXED_HEADERS 顺序，排除"矿粉名称"）
+   * ========================= */
+  private normalizeChemValues(
+    chemValues?: Record<string, any>,
+  ): Record<string, any> {
+    const result: Record<string, any> = {};
+
+    FIXED_HEADERS.forEach((key) => {
+      if (key === '矿粉名称') return; // 排除"矿粉名称"
+      result[key] = chemValues?.[key] ?? 0;
+    });
+
+    return result;
   }
 
+  /** ========================= 创建 ========================= */
+  async create(dto: CreateSjFinesChemTypDto, username: string) {
+    const entity = this.repo.create({
+      ...dto,
+      chemValues: this.normalizeChemValues(dto.chemValues),
+      modifier: username,
+      enabled: true,
+    });
+    return this.repo.save(entity);
+  }
+
+  /** ========================= 更新 ========================= */
   async update(id: number, dto: UpdateSjFinesChemTypDto, username: string) {
     const entity = await this.repo.findOne({ where: { id } });
     if (!entity) throw new NotFoundException(`ID ${id} 不存在`);
 
-    Object.assign(entity, dto, {
-      chemValues: dto.chemValues ?? entity.chemValues,
+    Object.assign(entity, {
+      ...dto,
+      chemValues: dto.chemValues ? this.normalizeChemValues(dto.chemValues) : entity.chemValues,
       modifier: username,
     });
     return this.repo.save(entity);
   }
 
-  async query(options: { page: number; pageSize: number; name?: string }) {
-    const { page, pageSize, name } = options;
-    const qb = this.repo.createQueryBuilder('s').orderBy('s.id', 'ASC');
-    if (name) qb.andWhere('s.name LIKE :name', { name: `%${name}%` });
+  /** ========================= 查询（核心修改点） ========================= */
+  async query(options: { page: number; pageSize: number; name?: string; type?: string; sort?: string; order?: 'asc' | 'desc' }) {
+    const { page = 1, pageSize = 10, name, type, sort, order } = options;
+    const qb = this.repo.createQueryBuilder('s');
 
-    const [data, total] = await qb.skip((page - 1) * pageSize).take(pageSize).getManyAndCount();
-    return { data, total, page, pageSize, totalPages: Math.ceil(total / pageSize) };
+    if (name) {
+      qb.andWhere('s.name LIKE :name', { name: `%${name}%` });
+    }
+
+    const sortField = sort && SORT_FIELD_MAP[sort]
+      ? SORT_FIELD_MAP[sort]
+      : 's.id';
+
+    qb.orderBy(sortField, order === 'desc' ? 'DESC' : 'ASC');
+    qb.skip((page - 1) * pageSize).take(pageSize);
+
+    const [list, total] = await qb.getManyAndCount();
+
+    /**
+     * ✅ 规范化 chemValues，确保按 FIXED_HEADERS 顺序
+     */
+    const mapped = list.map(item => ({
+      ...item,
+      chemValues: this.normalizeChemValues(item.chemValues),
+    }));
+
+    return { data: mapped, total, page, pageSize, totalPages: Math.ceil(total / pageSize) };
   }
 
   async remove(ids: number[]) {
@@ -78,50 +121,105 @@ export class SjFinesChemTypService {
     return { message: `已清空 ${list.length} 条数据` };
   }
 
-  /** Excel 导出 */
+  /** ========================= 导出 Excel ========================= */
   async exportExcel(): Promise<Buffer> {
     const list = await this.repo.find();
-    const wb = new ExcelJS.Workbook();
-    const ws = wb.addWorksheet('烧结矿粉化学成分典型值');
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('烧结矿粉化学成分典型值');
 
-    const keys = new Set<string>();
-    list.forEach(i => Object.keys(i.chemValues ?? {}).forEach(k => k && keys.add(k)));
+    // ✅ 按 FIXED_HEADERS 顺序导出
+    sheet.addRow(FIXED_HEADERS);
 
-    ws.addRow(['矿粉名称', ...Array.from(keys)]);
-    list.forEach(i => ws.addRow([i.name, ...Array.from(keys).map(k => i.chemValues?.[k] ?? null)]));
+    list.forEach(item => {
+      const chemValues = this.normalizeChemValues(item.chemValues);
 
-    return Buffer.from(await wb.xlsx.writeBuffer());
+      sheet.addRow([
+        item.name,
+        ...FIXED_HEADERS
+          .filter(h => h !== '矿粉名称')
+          .map(h => chemValues[h]),
+      ]);
+    });
+
+    return Buffer.from(await workbook.xlsx.writeBuffer());
   }
 
-  /** Excel 导入 */
+  /** ========================= 导入 Excel ========================= */
   async importExcel(file: Express.Multer.File, username: string) {
-    const wb = new ExcelJS.Workbook();
-    await wb.xlsx.load(file.buffer as any);
-    const ws = wb.worksheets[0];
+    if (!file?.buffer) throw new BadRequestException('文件为空');
 
-    const headers: string[] = [];
-    ws.getRow(1).eachCell(cell => headers.push(normalizeHeader(cell.value)));
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(file.buffer as any);
+    const sheet = workbook.worksheets[0];
+    if (!sheet) throw new BadRequestException('Excel 中没有工作表');
 
-    const nameIndex = headers.indexOf('矿粉名称') + 1;
-    if (!nameIndex) return { message: '缺少【矿粉名称】列' };
+    const headerRow = sheet.getRow(1);
+    const headerMap: Record<string, number> = {};
 
-    const dynamicCols = headers.map((h, i) => ({ key: h, idx: i + 1 })).filter(c => c.idx !== nameIndex && c.key);
+    // ✅ 严格校验表头：每个列名必须在 FIXED_HEADERS 中
+    headerRow.eachCell((cell, col) => {
+      const val = String(cell.value ?? '').trim();
+      if (!val) return;
+      if (!FIXED_HEADERS.includes(val as FixedHeader)) {
+        throw new BadRequestException(`非法列名：${val}`);
+      }
+      headerMap[val] = col;
+    });
 
-    const toSave: SjFinesChemTyp[] = [];
-    ws.eachRow((row, idx) => {
-      if (idx === 1) return;
-      const name = normalizeHeader(row.getCell(nameIndex).value);
+    if (!headerMap['矿粉名称']) {
+      throw new BadRequestException('缺少必要列：矿粉名称');
+    }
+
+    const result: SjFinesChemTyp[] = [];
+
+    sheet.eachRow({ includeEmpty: true }, (row, index) => {
+      if (index === 1) return;
+
+      const name = String(row.getCell(headerMap['矿粉名称'])?.value ?? '').trim();
       if (!name) return;
 
       const chemValues: Record<string, any> = {};
-      dynamicCols.forEach(c => (chemValues[c.key] = getCellValue(row.getCell(c.idx).value)));
 
-      toSave.push(
-        this.repo.create({ name, chemValues, modifier: username, enabled: true }),
-      );
+      // ✅ 遍历 FIXED_HEADERS，缺失列自动补0
+      FIXED_HEADERS.forEach(key => {
+        if (key === '矿粉名称') return;
+        const col = headerMap[key];
+        const val = col ? parseFloat(String(row.getCell(col)?.value ?? '')) : 0;
+        chemValues[key] = Number.isFinite(val) ? val : 0;
+      });
+
+      result.push(this.repo.create({
+        name,
+        chemValues: this.normalizeChemValues(chemValues),
+        modifier: username,
+        enabled: true,
+      }));
     });
 
-    await this.repo.save(toSave);
-    return { message: `成功导入 ${toSave.length} 条` };
+    if (!result.length) {
+      return { status: 'error', message: '没有有效数据可导入' };
+    }
+
+    await this.repo.save(result);
+    return { status: 'success', message: `成功导入 ${result.length} 条数据` };
+  }
+
+  /** ========================= 模板 ========================= */
+  private readonly templateDir = process.env.TEMPLATE_PATH || './templates';
+  private readonly templateFilename = 'sj-fines-chem-typ-template.xlsx';
+
+  private async ensureTemplateFileExists(): Promise<string> {
+    await fs.promises.mkdir(this.templateDir, { recursive: true });
+    const filePath = path.join(this.templateDir, this.templateFilename);
+    if (fs.existsSync(filePath)) return filePath;
+
+    const workbook = new ExcelJS.Workbook();
+    workbook.addWorksheet('模板').addRow(FIXED_HEADERS);
+    await workbook.xlsx.writeFile(filePath);
+    return filePath;
+  }
+
+  async getTemplateFilePath(): Promise<string> {
+    return this.ensureTemplateFileExists();
   }
 }

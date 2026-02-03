@@ -1,6 +1,13 @@
 // dto/sulfur/ext-material-add.dto.ts
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsNumber, Min } from 'class-validator';
+import {
+  IsString,
+  IsNumber,
+  Min,
+  IsArray,
+  ValidateNested,
+} from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class ExtMaterialItemDto {
   @ApiProperty({ example: '高炉上料除尘' })
@@ -19,6 +26,12 @@ export class ExtMaterialItemDto {
 }
 
 export class AddExtMaterialDto {
-  @ApiProperty({ type: [ExtMaterialItemDto] })
+  @ApiProperty({
+    type: [ExtMaterialItemDto],
+    description: '外配物料列表',
+  })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ExtMaterialItemDto)
   items: ExtMaterialItemDto[];
 }

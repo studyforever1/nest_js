@@ -1,11 +1,14 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
+import * as ExcelJS from 'exceljs';
+import * as fs from 'fs';
+import * as path from 'path';
+import type { Express } from 'express';
 import { PortIronOreInfo } from './entities/port-iron-ore-info.entity';
 import { CreatePortIronOreInfoDto } from './dto/create-port-iron-ore-info.dto';
 import { UpdatePortIronOreInfoDto } from './dto/update-port-iron-ore-info.dto';
 import { PortIronOrePaginationDto } from './dto/pagination.dto';
-import * as ExcelJS from 'exceljs';
 
 const SORT_FIELD_MAP: Record<string, string> = {
   name: 'ore.name',
@@ -15,14 +18,21 @@ const SORT_FIELD_MAP: Record<string, string> = {
   'composition.价格': "JSON_EXTRACT(ore.composition, '$.价格')",
 };
 
-const FIXED_HEADERS = [
-  '矿粉名称',
-  'TFe', 'CaO', 'SiO2', 'MgO', 'Al2O3',
-  'S', 'P', 'TiO2', 'MnO',
-  'K2O', 'Na2O',
-  'Zn', 'Pb', 'As', 'Cr', 'V', 'Cu',
-  '烧损', '干基不含税',
+/**
+ * ✅ 固定表头（唯一标准）
+ * - 查询 / 导入 / 导出 / 前端展示 都以此为准
+ * - 注意：composition 中不包含"矿粉名称"和"港口"
+ */
+export const FIXED_HEADERS = [
+  '矿粉名称', '港口',
+  'TFe', 'SiO2', 'Al2O3', 'P', 'S', 'MnO', 'H2O',
+  '粉率', '车板价', '运费', '干粉价格',
+  '厂内筛分搬到等费用', '干基不含税',
+  'CaO', 'MgO', 'TiO2', 'Zn', 'K2O', 'Na2O',
+  'Cr', 'Cu', 'As', '烧损', 'Ni',
 ];
+
+type FixedHeader = (typeof FIXED_HEADERS)[number];
 
 
 @Injectable()
@@ -32,9 +42,27 @@ export class PortIronOreInfoService {
     private readonly repo: Repository<PortIronOreInfo>,
   ) {}
 
+  /** =========================
+   *  核心：规范化 composition（按 FIXED_HEADERS 顺序，排除"矿粉名称"和"港口"）
+   * ========================= */
+  private normalizeComposition(
+    composition?: Record<string, any>,
+  ): Record<string, any> {
+    const result: Record<string, any> = {};
+
+    FIXED_HEADERS.forEach((key) => {
+      if (key === '矿粉名称' || key === '港口') return;
+      result[key] = composition?.[key] ?? 0;
+    });
+
+    return result;
+  }
+
+  /** ========================= 创建 ========================= */
   async create(dto: CreatePortIronOreInfoDto, username: string) {
     const ore = this.repo.create({
       ...dto,
+      composition: this.normalizeComposition(dto.composition),
       inventory: dto.inventory ?? 0,
       modifier: username,
       remark: dto.remark ?? '',
@@ -42,31 +70,46 @@ export class PortIronOreInfoService {
     return this.repo.save(ore);
   }
 
+  /** ========================= 更新 ========================= */
   async update(id: number, dto: UpdatePortIronOreInfoDto, username: string) {
     const ore = await this.repo.findOne({ where: { id } });
     if (!ore) throw new NotFoundException(`ID ${id} 不存在`);
-    Object.assign(ore, dto, { modifier: username });
+    Object.assign(ore, {
+      ...dto,
+      composition: dto.composition ? this.normalizeComposition(dto.composition) : ore.composition,
+      modifier: username,
+    });
     return this.repo.save(ore);
   }
 
+  /** ========================= 查询（核心修改点） ========================= */
   async query(params: PortIronOrePaginationDto) {
-    const { page = 1, pageSize = 10, name, sort, order } = params;
+    const { page = 1, pageSize = 10, name, type, sort, order } = params;
     const qb = this.repo.createQueryBuilder('ore');
 
     if (name) {
       qb.andWhere('ore.name LIKE :name', { name: `%${name}%` });
     }
 
-    if (sort && SORT_FIELD_MAP[sort]) {
-      qb.orderBy(SORT_FIELD_MAP[sort], order === 'desc' ? 'DESC' : 'ASC');
-    } else {
-      qb.orderBy('ore.id', 'ASC');
-    }
+    const sortField = sort && SORT_FIELD_MAP[sort]
+      ? SORT_FIELD_MAP[sort]
+      : 'ore.id';
 
+    qb.orderBy(sortField, order === 'desc' ? 'DESC' : 'ASC');
     qb.skip((page - 1) * pageSize).take(pageSize);
+
     const [list, total] = await qb.getManyAndCount();
 
-    return { list, total, page, pageSize };
+    /**
+     * ✅ 规范化 composition，确保按 FIXED_HEADERS 顺序
+     * ✅ 统一返回 data 而不是 list
+     */
+    const mapped = list.map(item => ({
+      ...item,
+      composition: this.normalizeComposition(item.composition),
+    }));
+
+    return { data: mapped, total, page, pageSize, totalPages: Math.ceil(total / pageSize) };
   }
 
   async remove(ids: number[]) {
@@ -75,96 +118,114 @@ export class PortIronOreInfoService {
     return this.repo.remove(list);
   }
 
-async exportExcel(): Promise<Buffer> {
-  const list = await this.repo.find();
-  const workbook = new ExcelJS.Workbook();
-  const sheet = workbook.addWorksheet('港口矿粉');
-
-  sheet.addRow(FIXED_HEADERS);
-
-  list.forEach(item => {
-    const row = [
-      item.name,
-      ...FIXED_HEADERS.slice(1).map(k => item.composition?.[k] ?? 0),
-    ];
-    sheet.addRow(row);
-  });
-
-  const buffer = await workbook.xlsx.writeBuffer();
-  return Buffer.from(buffer);
-}
-
-
-async importExcel(file: Express.Multer.File, username: string) {
-  try {
+  /** ========================= 导出 Excel ========================= */
+  async exportExcel(): Promise<Buffer> {
+    const list = await this.repo.find();
     const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(file.buffer as any);
+    const sheet = workbook.addWorksheet('港口矿粉');
 
-    const sheet = workbook.worksheets[0];
-    if (!sheet) throw new Error('Excel 中没有工作表');
+    // ✅ 按 FIXED_HEADERS 顺序导出
+    sheet.addRow(FIXED_HEADERS);
 
-    /** 1️⃣ 读取表头，建立列名 → 列号映射 */
-    const headerRow = sheet.getRow(1);
-    const headerMap: Record<string, number> = {};
-    headerRow.eachCell((cell, colNumber) => {
-      const val = String(cell.value ?? '').trim();
-      if (FIXED_HEADERS.includes(val)) {
-        headerMap[val] = colNumber;
-      }
+    list.forEach(item => {
+      const composition = this.normalizeComposition(item.composition);
+
+      sheet.addRow([
+        item.name,
+        item.port ?? '未知港口',
+        ...FIXED_HEADERS
+          .filter(h => h !== '矿粉名称' && h !== '港口')
+          .map(h => composition[h]),
+      ]);
     });
 
-    const ores: PortIronOreInfo[] = [];
-
-    /** 2️⃣ 逐行解析 */
-    sheet.eachRow({ includeEmpty: true }, (row, rowNumber) => {
-  if (rowNumber === 1) return; // 跳过表头
-  if (!row) return; // 空行直接跳过
-
-  const nameCell = headerMap['矿粉名称'] ? row.getCell(headerMap['矿粉名称']) : null;
-  const portCell = headerMap['港口'] ? row.getCell(headerMap['港口']) : null;
-
-  const name = nameCell?.value ? String(nameCell.value).trim() : '';
-  if (!name) return; // 没名字的行跳过
-
-  const port = portCell?.value ? String(portCell.value).trim() : '未知港口';
-
-  // 不再用 slice(2)，而是直接遍历 FIXED_HEADERS，排除 "矿粉名称" 和 "港口"
-const composition: Record<string, number> = {};
-FIXED_HEADERS.forEach(key => {
-  if (key === '矿粉名称' || key === '港口') return; // 跳过前两列
-  const colNum = headerMap[key];
-  let val = 0;
-  if (colNum !== undefined) {
-    const cellVal = row.getCell(colNum)?.value;
-    val = Number.isFinite(parseFloat(String(cellVal ?? 0))) ? parseFloat(String(cellVal ?? 0)) : 0;
+    return Buffer.from(await workbook.xlsx.writeBuffer());
   }
-  composition[key] = val;
-});
 
+  /** ========================= 导入 Excel ========================= */
+  async importExcel(file: Express.Multer.File, username: string) {
+    if (!file?.buffer) throw new BadRequestException('文件为空');
 
-  ores.push(
-    this.repo.create({
-      name,
-      port,
-      inventory: 0,
-      remark: '',
-      composition,
-      modifier: username,
-    }),
-  );
-});
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(file.buffer as any);
+    const sheet = workbook.worksheets[0];
+    if (!sheet) throw new BadRequestException('Excel 中没有工作表');
 
-    if (!ores.length) {
+    const headerRow = sheet.getRow(1);
+    const headerMap: Record<string, number> = {};
+
+    // ✅ 严格校验表头：每个列名必须在 FIXED_HEADERS 中
+    headerRow.eachCell((cell, col) => {
+      const val = String(cell.value ?? '').trim();
+      if (!val) return;
+      if (!FIXED_HEADERS.includes(val as FixedHeader)) {
+        throw new BadRequestException(`非法列名：${val}`);
+      }
+      headerMap[val] = col;
+    });
+
+    if (!headerMap['矿粉名称']) {
+      throw new BadRequestException('缺少必要列：矿粉名称');
+    }
+
+    const result: PortIronOreInfo[] = [];
+
+    sheet.eachRow({ includeEmpty: true }, (row, index) => {
+      if (index === 1) return;
+
+      const name = String(row.getCell(headerMap['矿粉名称'])?.value ?? '').trim();
+      if (!name) return;
+
+      const port = headerMap['港口']
+        ? String(row.getCell(headerMap['港口'])?.value ?? '').trim()
+        : '未知港口';
+
+      const composition: Record<string, any> = {};
+
+      // ✅ 遍历 FIXED_HEADERS，缺失列自动补0
+      FIXED_HEADERS.forEach(key => {
+        if (key === '矿粉名称' || key === '港口') return;
+        const col = headerMap[key];
+        const val = col ? parseFloat(String(row.getCell(col)?.value ?? '')) : 0;
+        composition[key] = Number.isFinite(val) ? val : 0;
+      });
+
+      result.push(this.repo.create({
+        name,
+        port,
+        inventory: 0,
+        remark: '',
+        composition: this.normalizeComposition(composition),
+        modifier: username,
+      }));
+    });
+
+    if (!result.length) {
       return { status: 'error', message: '没有有效数据可导入' };
     }
 
-    await this.repo.save(ores);
-    return { status: 'success', message: `成功导入 ${ores.length} 条数据` };
-  } catch (error) {
-    console.error('importExcel error:', error);
-    return { status: 'error', message: error.message || '导入失败' };
+    await this.repo.save(result);
+    return { status: 'success', message: `成功导入 ${result.length} 条数据` };
   }
-}
+
+  /** ========================= 模板 ========================= */
+  private readonly templateDir = process.env.TEMPLATE_PATH || './templates';
+  private readonly templateFilename = 'port-iron-ore-info-template.xlsx';
+
+  private async ensureTemplateFileExists(): Promise<string> {
+    await fs.promises.mkdir(this.templateDir, { recursive: true });
+    const filePath = path.join(this.templateDir, this.templateFilename);
+    if (fs.existsSync(filePath)) return filePath;
+
+    const workbook = new ExcelJS.Workbook();
+    workbook.addWorksheet('模板').addRow(FIXED_HEADERS);
+    await workbook.xlsx.writeFile(filePath);
+    return filePath;
+  }
+
+  async getTemplateFilePath(): Promise<string> {
+    return this.ensureTemplateFileExists();
+  }
 
   /** 删除所有原料 */
 async removeAll(username: string) {

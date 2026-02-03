@@ -176,17 +176,32 @@ async fetchAndSaveProgress(
     });
 
     /** ---------- 映射结果 ---------- */
-    const mappedResults = (data.results || []).map(item => ({
+    let mappedResults = (data.results || []).map(item => ({
       ...item,
       喷吹煤名称: nameMap[item['喷吹煤名称']] || item['喷吹煤名称'],
     }));
 
-    /** ---------- 排序 + 分页（关键新增） ---------- */
-    const {
-      pagedResults,
-      totalResults,
-      totalPages,
-    } = this.applyPaginationAndSort(mappedResults, pagination);
+    /** ---------- 性价比排名（置换价值指数） ---------- */
+    const rankField = '置换价值指数';
+    if (mappedResults.some(item => !isNaN(Number(item[rankField])))) {
+      const resultsWithValue = mappedResults
+        .filter(item => !isNaN(Number(item[rankField])))
+        .sort((a, b) => Number(b[rankField]) - Number(a[rankField])); // 降序
+
+      const rankMap = new Map<string, number>();
+      resultsWithValue.forEach((item, index) => {
+        rankMap.set(item['喷吹煤名称'], index + 1);
+      });
+
+      mappedResults = mappedResults.map(item => ({
+        ...item,
+        性价比排名: rankMap.get(item['喷吹煤名称']) ?? undefined,
+      }));
+    }
+
+    /** ---------- 分页 + 排序 ---------- */
+    const { pagedResults, totalResults, totalPages } =
+      this.applyPaginationAndSort(mappedResults, pagination);
 
     return ApiResponse.success({
       taskUuid,
@@ -203,6 +218,7 @@ async fetchAndSaveProgress(
     return this.handleError(err, '获取任务进度失败');
   }
 }
+
 /** 排序 + 分页 */
 private applyPaginationAndSort(
   results: any[],

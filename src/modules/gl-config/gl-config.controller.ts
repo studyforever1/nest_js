@@ -76,7 +76,7 @@ async save(
 ) {
   return this.glConfigService.saveFullConfig(
     user,
-    moduleName,  // ← 改这里
+    moduleName,
     body.ingredientLimits,
     body.fuelLimits,
     body.slagLimits,
@@ -84,6 +84,8 @@ async save(
     body.loadTopLimits,
     body.ironWaterTopLimits,
     body.otherSettings,
+    body.ingredientResults,   // ✅ 新增
+    body.fuelResults,         // ✅ 新增
   );
 }
 

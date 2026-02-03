@@ -27,12 +27,15 @@ export class LumpMetallurgyPropController {
   }
 
   @Get()
-  @ApiOperation({ summary: '查询块矿冶金性能（分页、名称模糊）' })
-  @ApiQuery({ name: 'page', required: false })
-  @ApiQuery({ name: 'pageSize', required: false })
-  @ApiQuery({ name: 'name', required: false })
-  findAll(@Query() pagination: PaginationDto, @Query('name') name?: string) {
-    return this.service.query({ page: pagination.page ?? 1, pageSize: pagination.pageSize ?? 10, name });
+  @ApiOperation({ summary: '查询块矿冶金性能（支持分页、名称模糊、类型筛选、排序）' })
+  @ApiQuery({ name: 'page', required: false, description: '页码（默认1）' })
+  @ApiQuery({ name: 'pageSize', required: false, description: '每页条数（默认10）' })
+  @ApiQuery({ name: 'name', required: false, description: '名称模糊查询' })
+  @ApiQuery({ name: 'type', required: false, description: '类型筛选' })
+  @ApiQuery({ name: 'sort', required: false, description: '排序字段，如 name、created_at、properties.TFe' })
+  @ApiQuery({ name: 'order', required: false, description: 'asc / desc' })
+  findAll(@Query() pagination: PaginationDto) {
+    return this.service.query(pagination);
   }
 
   @Put(':id')
@@ -69,5 +72,16 @@ export class LumpMetallurgyPropController {
   @ApiBody({ schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } } })
   importExcel(@UploadedFile() file: Express.Multer.File, @CurrentUser() user: { username: string }) {
     return this.service.importExcel(file, user.username);
+  }
+
+  @Get('template')
+  @ApiOperation({ summary: '下载导入模板（按 FIXED_HEADERS 表头顺序）' })
+  async downloadTemplate(@Res() res: Response) {
+    const filePath = await this.service.getTemplateFilePath();
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename=lump_metallurgy_prop_template.xlsx',
+    );
+    res.sendFile(filePath, { root: process.cwd() });
   }
 }

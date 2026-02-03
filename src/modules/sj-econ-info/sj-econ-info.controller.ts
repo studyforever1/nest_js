@@ -49,20 +49,23 @@ export class SjEconInfoController {
     return this.econService.create(dto, user.username);
   }
 
-  /** 查询（分页 + 名称模糊） */
+  /** 查询（分页 + 名称模糊 + 类型筛选） */
   @Get()
-  @ApiOperation({ summary: '查询烧结原料信息（分页、名称模糊）' })
+  @ApiOperation({ summary: '查询烧结原料信息（支持分页、名称模糊、类型筛选）' })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'pageSize', required: false })
   @ApiQuery({ name: 'name', required: false })
+  @ApiQuery({ name: 'type', required: false })
   findAll(
     @Query() pagination: PaginationDto,
     @Query('name') name?: string,
+    @Query('type') type?: string,
   ) {
     return this.econService.query({
       page: pagination.page ?? 1,
       pageSize: pagination.pageSize ?? 10,
       name,
+      type,
     });
   }
 

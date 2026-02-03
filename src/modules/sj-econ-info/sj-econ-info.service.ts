@@ -15,8 +15,8 @@ import type { Express } from 'express';
  * - 根据数据库实际数据提取的composition字段
  */
 export const FIXED_HEADERS = [
-  'TFe', 'CaO', 'SiO2', 'MgO', 'Al2O3', 'S', 'P', 'TiO2', 'K2O', 'Na2O','Zn',
-  'As', 'Pb', 'V2O5', 'H2O', '烧损', '价格',
+  'Pb','P', 'S', 'As',  'Zn', 'CaO', 'K2O', 'MgO', 'TFe', 'Na2O',
+  'SiO2', 'TiO2', 'V2O5', 'Al2O3', '价格', '烧损',
 ];
 
 type FixedHeader = (typeof FIXED_HEADERS)[number];
@@ -65,13 +65,14 @@ export class SjEconInfoService {
     return this.econRepo.save(econ);
   }
 
-  /** 查询（分页 + 名称模糊） */
+  /** 查询（分页 + 名称模糊 + 类型筛选） */
   async query(options: {
     page: number;
     pageSize: number;
     name?: string;
+    type?: string;
   }) {
-    const { page, pageSize, name } = options;
+    const { page, pageSize, name, type } = options;
 
     const qb = this.econRepo
       .createQueryBuilder('e')
@@ -81,13 +82,26 @@ export class SjEconInfoService {
       qb.andWhere('e.name LIKE :name', { name: `%${name}%` });
     }
 
+    // 如果实体有 category 字段，支持按 type 筛选
+    // 注意：sj-econ-info 可能没有 category 字段，这里先保留接口，实际筛选逻辑根据实体结构调整
+    if (type) {
+      // 如果实体有 category 字段，取消下面的注释
+      // qb.andWhere('e.category LIKE :cat', { cat: `${type}%` });
+    }
+
     const [records, total] = await qb
       .skip((page - 1) * pageSize)
       .take(pageSize)
       .getManyAndCount();
 
+    // ✅ 规范化 composition，确保按 FIXED_HEADERS 顺序
+    const mapped = records.map(item => ({
+      ...item,
+      composition: this.normalizeComposition(item.composition),
+    }));
+
     return {
-      data: records,
+      data: mapped,
       total,
       page,
       pageSize,

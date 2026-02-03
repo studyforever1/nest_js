@@ -617,6 +617,7 @@ private async saveTableResultAndTotalCost(
 }
 
 // 分页获取工序成本列表
+// 分页获取工序成本列表
 async getSJProcessCostList(
   user: User,
   page = 1,
@@ -626,8 +627,13 @@ async getSJProcessCostList(
   const group = await this.getOrCreateUserGroup(user, '烧结配料计算');
   const costMap: Record<string, any> = group.config_data?.SJProcessCost || {};
 
+  // ⭐ 计算总费用
+  const totalCost = this.calcTotalCost(costMap);
+
+  // 转为列表
   let list = Object.entries(costMap).map(([name, val]) => ({ name, ...val }));
 
+  // 支持关键字过滤
   if (keyword?.trim()) {
     const kw = keyword.trim();
     list = list.filter(item => item.name.includes(kw));
@@ -636,14 +642,17 @@ async getSJProcessCostList(
   const total = list.length;
   const pagedList = list.slice((page - 1) * pageSize, page * pageSize);
 
+  // 返回分页 + totalCost
   return {
     data: pagedList,
     total,
     page,
     pageSize,
     totalPages: Math.ceil(total / pageSize),
+    totalCost, // ⭐ 新增
   };
 }
+
 
 // 工具函数
 private toNumber(val: any): number {

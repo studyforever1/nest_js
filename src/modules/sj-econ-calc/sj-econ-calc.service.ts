@@ -339,144 +339,214 @@ export class SjEconCalcService {
         return ApiResponse.success({ stopped }, '已停止任务');
     }
 
-    async fetchAndSaveProgress(
-        taskUuid: string,
-        pagination?: SJEconPaginationDto
-    ): Promise<ApiResponse<any>> {
-        try {
-            const task = await this.taskRepo.findOne({ where: { task_uuid: taskUuid } });
-            if (!task) return ApiResponse.error('任务不存在');
+async fetchAndSaveProgress(
+    taskUuid: string,
+    pagination?: SJEconPaginationDto
+): Promise<ApiResponse<any>> {
+    try {
+        // 1️⃣ 查询任务
+        const task = await this.taskRepo.findOne({ where: { task_uuid: taskUuid } });
+        if (!task) return ApiResponse.error('任务不存在');
 
-            const taskDef = this.ECON_TASKS.find(t => t.name === task.module_type);
-            if (!taskDef) return ApiResponse.error('任务定义不存在');
+        const taskDef = this.ECON_TASKS.find(t => t.name === task.module_type);
+        if (!taskDef) return ApiResponse.error('任务定义不存在');
 
-            const res = await this.apiGet(taskDef.progressUrl, { taskUuid });
-            const data = res.data?.data;
-            if (!data) return ApiResponse.success({ status: 'RUNNING', results: [] });
+        // 2️⃣ 调用 FastAPI 查询进度
+        const res = await this.apiGet(taskDef.progressUrl, { taskUuid });
+        const data = res.data?.data;
 
-            const idSet = new Set<number>();
-            (data.results || []).forEach(item => {
-                const rawId = Number(item['原料']);
-                if (!isNaN(rawId)) idSet.add(rawId);
-            });
-
-            const raws = idSet.size
-                ? await this.rawRepo.find({ where: { id: In([...idSet]) } })
-                : [];
-            const idNameMap: Record<number, string> = {};
-            raws.forEach(raw => (idNameMap[raw.id] = raw.name));
-
-            const mappedResults = (data.results || []).map(item => {
-                const rawId = Number(item['原料']);
-                return {
-                    ...item,
-                    原料: idNameMap[rawId] || item['原料'],
-                };
-            });
-
-            const { pagedResults, totalResults, totalPages } = this.applyPaginationAndSort(
-                mappedResults,
-                pagination
-            );
-
+        if (!data) {
             return ApiResponse.success({
                 taskUuid,
-                status: data.status,
-                progress: data.progress ?? 0,
-                total: data.total ?? 0,
-                results: pagedResults,
+                status: 'RUNNING',
+                results: [],
                 page: pagination?.page ?? 1,
                 pageSize: pagination?.pageSize ?? 10,
-                totalResults,
-                totalPages,
+                totalResults: 0,
+                totalPages: 0,
             });
-        } catch (err) {
-            return this.handleError(err, '获取任务进度失败');
         }
+
+        // 3️⃣ 收集原料 ID
+        const idSet = new Set<number>();
+        (data.results || []).forEach(item => {
+            const rawId = Number(item['原料']);
+            if (!isNaN(rawId)) idSet.add(rawId);
+        });
+
+        // 4️⃣ 查询原料名称
+        const raws = idSet.size
+            ? await this.rawRepo.find({ where: { id: In([...idSet]) } })
+            : [];
+        const idNameMap: Record<number, string> = {};
+        raws.forEach(raw => (idNameMap[raw.id] = raw.name));
+
+        // 5️⃣ 替换原料名称
+        let mappedResults = (data.results || []).map(item => {
+            const rawId = Number(item['原料']);
+            return { ...item, 原料: idNameMap[rawId] || item['原料'] };
+        });
+
+        // 6️⃣ ⚡ 性价比排名
+        const rankFields = [
+            '单品位价格折算后',
+            '烧结矿单品位价折算后',
+            '生铁成本',
+            '与PB粉对比'
+        ];
+
+        // 找到第一个有效字段
+        const rankField = rankFields.find(f =>
+            mappedResults.some(item => !isNaN(Number(item[f])))
+        );
+
+        if (rankField) {
+            // 只排序有数值的条目
+            const resultsWithValue = mappedResults
+                .filter(item => !isNaN(Number(item[rankField])))
+                .sort((a, b) => Number(a[rankField]) - Number(b[rankField])); // 升序
+
+            // 用 Map 回写排名
+            const rankMap = new Map<string, number>();
+            resultsWithValue.forEach((item, index) => {
+                rankMap.set(item['原料'], index + 1);
+            });
+
+            mappedResults = mappedResults.map(item => ({
+                ...item,
+                性价比排名: rankMap.get(item['原料']) ?? undefined
+            }));
+        }
+
+        // 7️⃣ 分页 + 排序
+        const { pagedResults, totalResults, totalPages } =
+            this.applyPaginationAndSort(mappedResults, pagination);
+
+        return ApiResponse.success({
+            taskUuid,
+            status: data.status,
+            progress: data.progress ?? 0,
+            total: data.total ?? 0,
+            results: pagedResults,
+            page: pagination?.page ?? 1,
+            pageSize: pagination?.pageSize ?? 10,
+            totalResults,
+            totalPages,
+        });
+
+    } catch (err) {
+        return this.handleError(err, '获取任务进度失败');
     }
+}
 
-    async fetchMaterialLibraryProgress(
-        taskUuid: string,
-        pagination?: SJEconPaginationDto
-    ): Promise<ApiResponse<any>> {
-        try {
-            const task = await this.taskRepo.findOne({
-                where: { task_uuid: taskUuid },
-            });
 
-            if (!task) {
-                return ApiResponse.error('任务不存在');
-            }
 
-            const taskDef = this.ECON_TASKS.find(
-                t => t.name === task.module_type,
-            );
 
-            if (!taskDef) {
-                return ApiResponse.error('任务定义不存在');
-            }
+async fetchMaterialLibraryProgress(
+    taskUuid: string,
+    pagination?: SJEconPaginationDto
+): Promise<ApiResponse<any>> {
+    try {
+        // 1️⃣ 查询任务
+        const task = await this.taskRepo.findOne({ where: { task_uuid: taskUuid } });
+        if (!task) return ApiResponse.error('任务不存在');
 
-            // 1️⃣ 调用 FastAPI 查询进度
-            const res = await this.apiGet(taskDef.progressUrl, { taskUuid });
-            const data = res.data?.data;
+        const taskDef = this.ECON_TASKS.find(t => t.name === task.module_type);
+        if (!taskDef) return ApiResponse.error('任务定义不存在');
 
-            if (!data) {
-                return ApiResponse.success({
-                    taskUuid,
-                    status: 'RUNNING',
-                    results: [],
-                });
-            }
+        // 2️⃣ 调用 FastAPI 查询进度
+        const res = await this.apiGet(taskDef.progressUrl, { taskUuid });
+        const data = res.data?.data;
 
-            // 2️⃣ 收集原料 ID
-            const idSet = new Set<number>();
-            (data.results || []).forEach(item => {
-                const rawId = Number(item['原料']);
-                if (!isNaN(rawId)) {
-                    idSet.add(rawId);
-                }
-            });
-
-            // 3️⃣ 用 SjRawMaterial 做 ID → name 映射（核心区别）
-            const raws = idSet.size
-                ? await this.sjRawRepo.find({
-                    where: { id: In([...idSet]) },
-                })
-                : [];
-
-            const idNameMap: Record<number, string> = {};
-            raws.forEach(raw => {
-                idNameMap[raw.id] = raw.name;
-            });
-
-            // 4️⃣ 替换结果中的“原料”字段
-            const mappedResults = (data.results || []).map(item => {
-                const rawId = Number(item['原料']);
-                return {
-                    ...item,
-                    原料: idNameMap[rawId] || item['原料'],
-                };
-            });
-
-            // 5️⃣ 分页 + 排序（复用原逻辑）
-            const { pagedResults, totalResults, totalPages } =
-                this.applyPaginationAndSort(mappedResults, pagination);
-
+        if (!data) {
             return ApiResponse.success({
                 taskUuid,
-                status: data.status,
-                progress: data.progress ?? 0,
-                total: data.total ?? 0,
-                results: pagedResults,
+                status: 'RUNNING',
+                results: [],
                 page: pagination?.page ?? 1,
                 pageSize: pagination?.pageSize ?? 10,
-                totalResults,
-                totalPages,
+                totalResults: 0,
+                totalPages: 0,
             });
-        } catch (err) {
-            return this.handleError(err, '获取烧结物料信息库评价结果失败');
         }
+
+        // 3️⃣ 收集原料 ID
+        const idSet = new Set<number>();
+        (data.results || []).forEach(item => {
+            const rawId = Number(item['原料']);
+            if (!isNaN(rawId)) idSet.add(rawId);
+        });
+
+        // 4️⃣ 用 SjRawMaterial 做 ID → name 映射
+        const raws = idSet.size
+            ? await this.sjRawRepo.find({ where: { id: In([...idSet]) } })
+            : [];
+
+        const idNameMap: Record<number, string> = {};
+        raws.forEach(raw => { idNameMap[raw.id] = raw.name; });
+
+        // 5️⃣ 替换结果中的“原料”字段
+        let mappedResults = (data.results || []).map(item => {
+            const rawId = Number(item['原料']);
+            return { ...item, 原料: idNameMap[rawId] || item['原料'] };
+        });
+
+        // 6️⃣ ⚡ 性价比排名
+        const rankFields = [
+            '单品位价格折算后',
+            '烧结矿单品位价折算后',
+            '生铁成本',
+            '与PB粉对比'
+        ];
+
+        // 找到第一个有效字段
+        const rankField = rankFields.find(f =>
+            mappedResults.some(item => !isNaN(Number(item[f])))
+        );
+
+        if (rankField) {
+            // 只排序有数值的条目
+            const resultsWithValue = mappedResults
+                .filter(item => !isNaN(Number(item[rankField])))
+                .sort((a, b) => Number(a[rankField]) - Number(b[rankField])); // 升序
+
+            // 创建 Map 保存原料对应排名
+            const rankMap = new Map<string, number>();
+            resultsWithValue.forEach((item, index) => {
+                rankMap.set(item['原料'], index + 1);
+            });
+
+            // 回写排名到原数组
+            mappedResults = mappedResults.map(item => ({
+                ...item,
+                性价比排名: rankMap.get(item['原料']) ?? undefined
+            }));
+        }
+
+        // 7️⃣ 分页 + 排序
+        const { pagedResults, totalResults, totalPages } =
+            this.applyPaginationAndSort(mappedResults, pagination);
+
+        return ApiResponse.success({
+            taskUuid,
+            status: data.status,
+            progress: data.progress ?? 0,
+            total: data.total ?? 0,
+            results: pagedResults,
+            page: pagination?.page ?? 1,
+            pageSize: pagination?.pageSize ?? 10,
+            totalResults,
+            totalPages,
+        });
+
+    } catch (err) {
+        return this.handleError(err, '获取烧结物料信息库评价结果失败');
     }
+}
+
+
+
+
 
 
     private applyPaginationAndSort(results: any[], pagination?: SJEconPaginationDto) {

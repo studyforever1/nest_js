@@ -15,7 +15,7 @@ import { UpdateCoalEconInfoDto } from './dto/update-coal-econ-info.dto';
  * - 根据数据库实际数据提取的composition字段
  */
 export const FIXED_HEADERS = [
-  'C', 'S', 'H2O', '内水', '灰分', '运费', '挥发份', '哈氏可磨',
+   '内水','C', 'S', 'H2O', '灰分', '运费', '挥发份', '哈氏可磨',
   '物料类别', '发热量_检测值', '干基不含税到厂价', '含税_含水_含粉合同价',
 ];
 
@@ -65,8 +65,8 @@ export class CoalEconInfoService {
   }
 
   /** ========================= 查询（核心修改点） ========================= */
-  async query(options: { page: number; pageSize: number; name?: string }) {
-    const { page, pageSize, name } = options;
+  async query(options: { page: number; pageSize: number; name?: string; type?: string }) {
+    const { page, pageSize, name, type } = options;
     const qb = this.repo.createQueryBuilder('c').orderBy('c.id', 'ASC');
     if (name) qb.andWhere('c.name LIKE :name', { name: `%${name}%` });
     const [records, total] = await qb.skip((page - 1) * pageSize).take(pageSize).getManyAndCount();

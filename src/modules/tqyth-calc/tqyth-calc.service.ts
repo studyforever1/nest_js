@@ -278,7 +278,6 @@ async stopTask(
       for (const item of incoming) {
         const rawMix = item["原料配比和矿耗"] || {};
         Object.keys(rawMix).forEach(idStr => idSet.add(Number(idStr)));
-
         const fuelMix = item["燃料配比和矿耗"] || {};
         Object.keys(fuelMix).forEach(idStr => idSet.add(Number(idStr)));
       }
@@ -291,16 +290,21 @@ async stopTask(
       raws.forEach(r => idNameMap[String(r.id)] = r.name);
       fuels.forEach(f => idNameMap[String(f.id)] = f.name);
 
-      // 给原料和燃料加 name
-      const mappedIncoming = incoming.map(item => {
+      // 过滤出有成本的方案
+      const validResults = incoming.filter(item => item["主要参数"] && typeof item["主要参数"].成本 === "number");
+
+      // 1️⃣ 成本排名（按成本升序）
+      validResults.sort((a, b) => a["主要参数"].成本 - b["主要参数"].成本);
+      validResults.forEach((item, index) => item.成本排名 = index + 1);
+
+      // 2️⃣ 给原料和燃料加 name
+      results = validResults.map(item => {
         const mapped = { ...item };
 
         if (item["原料配比和矿耗"]) {
           const newRaw: Record<string, any> = {};
           Object.entries(item["原料配比和矿耗"]).forEach(([id, val]: [string, any]) => {
-            if (val && val.矿耗 != null && val.配比 != null) {
-              newRaw[id] = { ...val, name: idNameMap[id] || id };
-            }
+            if (val && val.矿耗 != null && val.配比 != null) newRaw[id] = { ...val, name: idNameMap[id] || id };
           });
           mapped["原料配比和矿耗"] = newRaw;
         }
@@ -308,9 +312,7 @@ async stopTask(
         if (item["燃料配比和矿耗"]) {
           const newFuel: Record<string, any> = {};
           Object.entries(item["燃料配比和矿耗"]).forEach(([id, val]: [string, any]) => {
-            if (val && val.矿耗 != null && val.配比 != null) {
-              newFuel[id] = { ...val, name: idNameMap[id] || id };
-            }
+            if (val && val.矿耗 != null && val.配比 != null) newFuel[id] = { ...val, name: idNameMap[id] || id };
           });
           mapped["燃料配比和矿耗"] = newFuel;
         }
@@ -320,7 +322,7 @@ async stopTask(
 
       // 更新缓存
       const cache = this.taskCache.get(taskUuid) || { results: [], lastUpdated: Date.now() };
-      cache.results.push(...mappedIncoming);
+      cache.results = results; // 覆盖缓存保证排名正确
       cache.lastUpdated = Date.now();
       this.taskCache.set(taskUuid, cache);
 
@@ -337,6 +339,7 @@ async stopTask(
       }
 
       results = cache.results;
+
     } else {
       const resultEntity = await this.resultRepo.findOne({ where: { task: { task_uuid: taskUuid } } });
       results = resultEntity?.output_data || [];
@@ -360,6 +363,7 @@ async stopTask(
     return this.handleError(err, '获取任务进度失败');
   }
 }
+
 
 
   private applyPaginationAndSort(results: any[], pagination?: PaginationDto) {

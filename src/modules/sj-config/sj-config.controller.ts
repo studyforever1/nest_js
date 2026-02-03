@@ -221,13 +221,13 @@ async saveFixedModuleConfig(
 // =====================================================
 
 @Post('sulfur/other-exp/add')
-@ApiOperation({ summary: '新增 / 批量新增硫支出信息' })
-async addOtherSExp(
+addOtherSExp(
   @CurrentUser() user: User,
-  @Body() body: AddOtherSExpDto,
+  @Body() dto: AddOtherSExpDto,
 ) {
-  return this.sjconfigService.addOtherSExp(user, body.items);
+  return this.sjconfigService.addOtherSExp(user, dto.items);
 }
+
 
 @Post('sulfur/other-exp/update')
 @ApiOperation({ summary: '更新单条硫支出信息（PUT 语义）' })
@@ -256,13 +256,13 @@ async deleteOtherSExp(
 // =====================================================
 
 @Post('sulfur/ext-material/add')
-@ApiOperation({ summary: '新增 / 批量新增外配信息' })
-async addExtMaterial(
+addExtMaterial(
   @CurrentUser() user: User,
-  @Body() body: AddExtMaterialDto,
+  @Body() dto: AddExtMaterialDto,
 ) {
-  return this.sjconfigService.addExtMaterial(user, body.items);
+  return this.sjconfigService.addExtMaterial(user, dto.items);
 }
+
 
 @Post('sulfur/ext-material/update')
 @ApiOperation({ summary: '更新单条外配信息（PUT 语义）' })

@@ -40,7 +40,7 @@ export class PortIronOreInfoController {
     }
 
     @Get()
-    @ApiOperation({ summary: '查询港口矿粉（分页）' })
+    @ApiOperation({ summary: '查询港口矿粉（支持分页、名称模糊、类型筛选、排序）' })
     findAll(@Query() query: PortIronOrePaginationDto) {
         return this.service.query(query);
     }
@@ -104,15 +104,25 @@ async importExcel(
   return this.service.importExcel(file, user.username);
 }
 
-@Delete('del_all')
-@ApiOperation({ summary: '删除原料库所有原料' })
-async removeAll(@CurrentUser() user: { username: string }) {
-  try {
-    return await this.service.removeAll(user.username);
-  } catch (error) {
-    console.error('删除所有原料失败:', error);
-    return { status: 'error', message: '删除失败' };
+  @Get('template')
+  @ApiOperation({ summary: '下载导入模板（按 FIXED_HEADERS 表头顺序）' })
+  async downloadTemplate(@Res() res: Response) {
+    const filePath = await this.service.getTemplateFilePath();
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename=port_iron_ore_info_template.xlsx',
+    );
+    res.sendFile(filePath, { root: process.cwd() });
   }
-}
 
+  @Delete('del_all')
+  @ApiOperation({ summary: '删除原料库所有原料' })
+  async removeAll(@CurrentUser() user: { username: string }) {
+    try {
+      return await this.service.removeAll(user.username);
+    } catch (error) {
+      console.error('删除所有原料失败:', error);
+      return { status: 'error', message: '删除失败' };
+    }
+  }
 }

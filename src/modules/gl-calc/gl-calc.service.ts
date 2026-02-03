@@ -237,133 +237,137 @@ export class GlCalcService {
     }
   }
 
-  async fetchAndSaveProgress(taskUuid: string, pagination?: PaginationDto): Promise<ApiResponse<any>> {
-    try {
-      const task = await this.findTask(taskUuid);
-      if (!task) {
-        return ApiResponse.success({
-          taskUuid,
-          status: 'initializing',
-          progress: 0,
-          total: 0,
-          results: [],
-          page: pagination?.page ?? 1,
-          pageSize: pagination?.pageSize ?? 10,
-          totalResults: 0,
-          totalPages: 0,
-        }, '任务初始化中');
-      }
-
-      let results: any[] = [];
-
-      if (task.status !== TaskStatus.FINISHED) {
-        // 调用 FastAPI 获取增量结果
-        const res = await this.apiGet('/gl/progress/', { taskUuid });
-        const { code, message, data } = res.data;
-        if (code !== 0 || !data) throw new Error(message || 'FastAPI 返回异常');
-
-        // 收集所有原料和燃料代号
-        const idSet = new Set<number>();
-        for (const result of data.results || []) {
-          const rawMix = result["原料配比和矿耗"] || {};
-          Object.keys(rawMix).forEach(idStr => idSet.add(Number(idStr)));
-
-          const fuelMix = result["燃料配比和矿耗"] || {};
-          Object.keys(fuelMix).forEach(idStr => idSet.add(Number(idStr)));
-        }
-
-        // 获取数据库原料和燃料信息
-        const raws = await this.glRawMaterialRepo.find({ where: { id: In([...idSet]) } });
-        const fuels = await this.glFuelRepo.find({ where: { id: In([...idSet]) } });
-
-        // 统一 id → name 映射
-        const idNameMap: Record<string, string> = {};
-        raws.forEach(r => idNameMap[String(r.id)] = r.name);
-        fuels.forEach(f => idNameMap[String(f.id)] = f.name);
-
-        // 过滤空 {} 并处理原料/燃料配比和矿耗
-        results = (data.results || [])
-          .filter(item => Object.keys(item).length > 0)
-          .map(item => {
-            const mapped = { ...item };
-
-            // 原料配比和矿耗
-            if (item["原料配比和矿耗"]) {
-              const newRaw: Record<string, any> = {};
-              Object.entries(item["原料配比和矿耗"]).forEach(([id, val]: [string, any]) => {
-                if (val && val.矿耗 != null && val.配比 != null) {
-                  newRaw[id] = {
-                    ...val,
-                    name: idNameMap[id] || id,
-                  };
-                }
-              });
-              mapped["原料配比和矿耗"] = newRaw;
-            }
-
-            // 燃料配比和矿耗
-            if (item["燃料配比和矿耗"]) {
-              const newFuel: Record<string, any> = {};
-              Object.entries(item["燃料配比和矿耗"]).forEach(([id, val]: [string, any]) => {
-                if (val && val.矿耗 != null && val.配比 != null) {
-                  newFuel[id] = {
-                    ...val,
-                    name: idNameMap[id] || id,
-                  };
-                }
-              });
-              mapped["燃料配比和矿耗"] = newFuel;
-            }
-
-            return mapped;
-          });
-
-        // 更新缓存
-        const cache = this.taskCache.get(taskUuid) || { results: [], lastUpdated: Date.now() };
-        cache.results.push(...results);
-        cache.lastUpdated = Date.now();
-        this.taskCache.set(taskUuid, cache);
-
-        // 更新任务状态
-        task.status = data.status === 'finished' ? TaskStatus.FINISHED : TaskStatus.RUNNING;
-        task.progress = data.progress;
-        task.total = data.total;
-        await this.taskRepo.save(task);
-
-        results = cache.results;
-
-        // 如果任务完成，持久化最终结果并清理缓存
-        if (task.status === TaskStatus.FINISHED && results.length) {
-          await this.saveResults(task, results);
-          this.taskCache.delete(taskUuid);
-        }
-      } else {
-        // 任务已完成，从数据库获取最终结果
-        const resultEntity = await this.resultRepo.findOne({
-          where: { task: { task_uuid: taskUuid } },
-        });
-        results = resultEntity?.output_data || [];
-      }
-
-      // 分页 + 排序
-      const { pagedResults, totalResults, totalPages } = this.applyPaginationAndSort(results, pagination);
-
+async fetchAndSaveProgress(taskUuid: string, pagination?: PaginationDto): Promise<ApiResponse<any>> {
+  try {
+    const task = await this.findTask(taskUuid);
+    if (!task) {
       return ApiResponse.success({
-        taskUuid: task.task_uuid,
-        status: task.status,
-        progress: task.progress,
-        total: task.total,
-        results: pagedResults,
+        taskUuid,
+        status: 'initializing',
+        progress: 0,
+        total: 0,
+        results: [],
         page: pagination?.page ?? 1,
         pageSize: pagination?.pageSize ?? 10,
-        totalResults,
-        totalPages,
+        totalResults: 0,
+        totalPages: 0,
+      }, '任务初始化中');
+    }
+
+    let results: any[] = [];
+
+    if (task.status !== TaskStatus.FINISHED) {
+      // 调用 FastAPI 获取增量结果
+      const res = await this.apiGet('/gl/progress/', { taskUuid });
+      const { code, message, data } = res.data;
+      if (code !== 0 || !data) throw new Error(message || 'FastAPI 返回异常');
+
+      // 收集所有原料和燃料代号
+      const idSet = new Set<number>();
+      for (const result of data.results || []) {
+        const rawMix = result["原料配比和矿耗"] || {};
+        Object.keys(rawMix).forEach(idStr => idSet.add(Number(idStr)));
+        const fuelMix = result["燃料配比和矿耗"] || {};
+        Object.keys(fuelMix).forEach(idStr => idSet.add(Number(idStr)));
+      }
+
+      // 获取数据库原料和燃料信息
+      const raws = await this.glRawMaterialRepo.find({ where: { id: In([...idSet]) } });
+      const fuels = await this.glFuelRepo.find({ where: { id: In([...idSet]) } });
+
+      // 统一 id → name 映射
+      const idNameMap: Record<string, string> = {};
+      raws.forEach(r => idNameMap[String(r.id)] = r.name);
+      fuels.forEach(f => idNameMap[String(f.id)] = f.name);
+
+      // 过滤空对象 & 只保留有主要参数的方案
+      const validResults = (data.results || []).filter(
+        item => item && item["主要参数"] && typeof item["主要参数"].成本 === "number"
+      );
+
+      // 1️⃣ 成本排名（按成本升序）
+      validResults.sort((a, b) => a["主要参数"].成本 - b["主要参数"].成本);
+      validResults.forEach((item, index) => item.成本排名 = index + 1);
+
+      // 2️⃣ 映射原料和燃料配比
+      results = validResults.map(item => {
+        const mapped = { ...item };
+
+        // 原料配比和矿耗
+        if (item["原料配比和矿耗"]) {
+          const newRaw: Record<string, any> = {};
+          Object.entries(item["原料配比和矿耗"]).forEach(([id, val]: [string, any]) => {
+            if (val && val.矿耗 != null && val.配比 != null) {
+              newRaw[id] = {
+                ...val,
+                name: idNameMap[id] || id,
+              };
+            }
+          });
+          mapped["原料配比和矿耗"] = newRaw;
+        }
+
+        // 燃料配比和矿耗
+        if (item["燃料配比和矿耗"]) {
+          const newFuel: Record<string, any> = {};
+          Object.entries(item["燃料配比和矿耗"]).forEach(([id, val]: [string, any]) => {
+            if (val && val.矿耗 != null && val.配比 != null) {
+              newFuel[id] = {
+                ...val,
+                name: idNameMap[id] || id,
+              };
+            }
+          });
+          mapped["燃料配比和矿耗"] = newFuel;
+        }
+
+        return mapped;
       });
 
-    } catch (err: any) {
-      return this.handleError(err, '获取任务进度失败');
+      // 更新缓存
+      const cache = this.taskCache.get(taskUuid) || { results: [], lastUpdated: Date.now() };
+      cache.results = results; // 覆盖缓存，保证成本排名正确
+      cache.lastUpdated = Date.now();
+      this.taskCache.set(taskUuid, cache);
+
+      // 更新任务状态
+      task.status = data.status === 'finished' ? TaskStatus.FINISHED : TaskStatus.RUNNING;
+      task.progress = data.progress;
+      task.total = data.total;
+      await this.taskRepo.save(task);
+
+      // 如果任务完成，持久化最终结果并清理缓存
+      if (task.status === TaskStatus.FINISHED && results.length) {
+        await this.saveResults(task, results);
+        this.taskCache.delete(taskUuid);
+      }
+    } else {
+      // 任务已完成，从数据库获取最终结果
+      const resultEntity = await this.resultRepo.findOne({
+        where: { task: { task_uuid: taskUuid } },
+      });
+      results = resultEntity?.output_data || [];
     }
+
+    // 分页 + 排序
+    const { pagedResults, totalResults, totalPages } = this.applyPaginationAndSort(results, pagination);
+
+    return ApiResponse.success({
+      taskUuid: task.task_uuid,
+      status: task.status,
+      progress: task.progress,
+      total: task.total,
+      results: pagedResults,
+      page: pagination?.page ?? 1,
+      pageSize: pagination?.pageSize ?? 10,
+      totalResults,
+      totalPages,
+    });
+
+  } catch (err: any) {
+    return this.handleError(err, '获取任务进度失败');
   }
+}
 
 
   private applyPaginationAndSort(results: any[], pagination?: PaginationDto) {

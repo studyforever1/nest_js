@@ -885,40 +885,47 @@ async saveFullConfig(
   loadTopLimits?: Record<string, any>,
   ironWaterTopLimits?: Record<string, any>,
   otherSettings?: Record<string, any>,
+  ingredientResults?: Record<string, number>,
+  fuelResults?: Record<string, number>,
 ) {
   const group = await this.getOrCreateUserGroup(user, moduleName);
   const existingData = _.cloneDeep(group.config_data || {});
 
-  // 每个模块允许同步的 otherSettings 字段
+  // ===================== otherSettings 同步白名单 =====================
   const OTHER_SETTING_WHITELIST: Record<string, string[]> = {
     '单独高炉配料计算': ['固定配比', '煤比选择', '焦丁比选择'],
     '铁前一体化配料计算I': ['固定配比', '煤比选择', '焦丁比选择', '变量选择'],
     '铁前一体化配料计算II': ['固定配比', '煤比选择', '焦丁比选择', '变量选择'],
     '利润一体化配料计算': ['固定配比', '煤比选择', '焦丁比选择', '变量选择'],
-    '生铁固定配料计算': ['煤比选择', '焦丁比选择'], // ✅ 新增
+    '生铁固定配料计算': ['煤比选择', '焦丁比选择'],
   };
 
-  // 公共同步字段
+  // ===================== 公共同步字段 =====================
   const syncCommonData: Record<string, any> = {};
-  if (ingredientLimits) syncCommonData.ingredientLimits = ingredientLimits;
-  if (fuelLimits) syncCommonData.fuelLimits = fuelLimits;
-  if (slagLimits) syncCommonData.slagLimits = slagLimits;
-  if (hotMetalRatio) syncCommonData.hotMetalRatio = hotMetalRatio;
-  if (loadTopLimits) syncCommonData.loadTopLimits = loadTopLimits;
-  if (ironWaterTopLimits) syncCommonData.ironWaterTopLimits = ironWaterTopLimits;
+  if (ingredientLimits !== undefined) syncCommonData.ingredientLimits = ingredientLimits;
+  if (fuelLimits !== undefined) syncCommonData.fuelLimits = fuelLimits;
+  if (slagLimits !== undefined) syncCommonData.slagLimits = slagLimits;
+  if (hotMetalRatio !== undefined) syncCommonData.hotMetalRatio = hotMetalRatio;
+  if (loadTopLimits !== undefined) syncCommonData.loadTopLimits = loadTopLimits;
+  if (ironWaterTopLimits !== undefined) syncCommonData.ironWaterTopLimits = ironWaterTopLimits;
 
-  // 当前模块保存自己全部 otherSettings（非同步字段也保留）
-  const currentWhitelist = OTHER_SETTING_WHITELIST[moduleName] || [];
+  // ===================== 当前模块 otherSettings（全量保存） =====================
   const currentOtherSettings: Record<string, any> = {};
   if (otherSettings) {
     for (const key of Object.keys(otherSettings)) {
-      currentOtherSettings[key] = otherSettings[key]; // 当前模块全保存
+      currentOtherSettings[key] = otherSettings[key];
     }
   }
 
+  // ===================== 当前模块保存（含结果） =====================
   group.config_data = {
     ...existingData,
     ...syncCommonData,
+
+    // ⭐ 只有当前模块才允许写入结果
+    ...(ingredientResults !== undefined ? { ingredientResults } : {}),
+    ...(fuelResults !== undefined ? { fuelResults } : {}),
+
     otherSettings: {
       ...(existingData.otherSettings || {}),
       ...currentOtherSettings,
@@ -927,7 +934,7 @@ async saveFullConfig(
 
   await this.configRepo.save(group);
 
-  // 跨模块同步，只同步字段在目标模块白名单里的字段
+  // ===================== 跨模块同步（不带结果） =====================
   const allModules = Object.keys(OTHER_SETTING_WHITELIST);
   const otherModules = allModules.filter(m => m !== moduleName);
 
@@ -936,6 +943,7 @@ async saveFullConfig(
     const otherData = _.cloneDeep(otherGroup.config_data || {});
     const targetWhitelist = OTHER_SETTING_WHITELIST[other] || [];
 
+    // 仅同步白名单里的 otherSettings
     const syncedOtherSettings: Record<string, any> = {};
     if (otherSettings) {
       for (const key of Object.keys(otherSettings)) {
@@ -954,7 +962,11 @@ async saveFullConfig(
       },
     };
 
-    // ⭐ 生铁固定配料计算模块特殊处理：保留 ingredientResults & fuelResults
+    // 🚫 默认禁止跨模块同步结果
+    delete newConfig.ingredientResults;
+    delete newConfig.fuelResults;
+
+    // ⭐ 生铁固定配料计算：只保留自身已有结果
     if (other === '生铁固定配料计算') {
       newConfig.ingredientResults = otherData.ingredientResults || {};
       newConfig.fuelResults = otherData.fuelResults || {};
@@ -966,6 +978,7 @@ async saveFullConfig(
 
   return group;
 }
+
 
 
 private toNumber(val: any): number {
@@ -1056,18 +1069,26 @@ async getGLProcessCostList(
   const group = await this.getOrCreateUserGroup(user, '单独高炉配料计算');
   const map = group.config_data?.GLProcessCost || {};
 
+  // 🔢 计算总费用
+  const totalCost = this.calcTotalCost(map);
+
   let list = this.toTableArray(map);
-  if (keyword) list = list.filter(i => i.name.includes(keyword));
+  if (keyword) {
+    list = list.filter(i => i.name.includes(keyword));
+  }
 
   const total = list.length;
+
   return {
     data: list.slice((page - 1) * pageSize, page * pageSize),
     total,
     page,
     pageSize,
     totalPages: Math.ceil(total / pageSize),
+    totalCost, // ✅ 新增字段
   };
 }
+
 private async syncGLProcessCost(
   user: User,
   glProcessCost: Record<string, any>,

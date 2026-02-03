@@ -16,7 +16,7 @@ import { UpdateCokeEconInfoDto } from './dto/update-coke-econ-info.dto';
  * - 根据数据库实际数据提取的composition字段
  */
 export const FIXED_HEADERS = [
-  'C', 'S', '内水', 'M10', '水分', '灰分', 'M25/M40', '含粉率',
+  'C', 'S', 'M10', '内水', '水分', '灰分', 'M25/M40', '含粉率',
   '挥发份', '反应性CRI', '物料类别', '反应后强度CSR', '焦炭含税到厂价',
 ];
 
@@ -66,8 +66,8 @@ export class CokeEconInfoService {
   }
 
   /** ========================= 查询（核心修改点） ========================= */
-  async query(options: { page: number; pageSize: number; name?: string }) {
-    const { page, pageSize, name } = options;
+  async query(options: { page: number; pageSize: number; name?: string; type?: string }) {
+    const { page, pageSize, name, type } = options;
     const qb = this.repo.createQueryBuilder('c').orderBy('c.id', 'ASC');
     if (name) qb.andWhere('c.name LIKE :name', { name: `%${name}%` });
     const [records, total] = await qb.skip((page - 1) * pageSize).take(pageSize).getManyAndCount();

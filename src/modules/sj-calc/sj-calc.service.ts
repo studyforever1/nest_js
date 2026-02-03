@@ -213,48 +213,53 @@ async fetchAndSaveProgress(taskUuid: string, pagination?: PaginationDto): Promis
       const idNameMap: Record<string, string> = {};
       raws.forEach(raw => idNameMap[String(raw.id)] = raw.name);
 
-      // 原料上下限信息
       const ingredientLimits: Record<string, any> = task.parameters?.ingredientLimits || {};
 
-      results = (data.results || [])
-  .filter(item =>
-    item &&
-    typeof item === 'object' &&
-    (
-      item['方案序号'] !== undefined ||
-      item['主要参数'] ||
-      item['原料配比']
-    )
-  )
-  .map(item => {
-    const mapped = { ...item };
+      // 过滤有效方案（必须有成本和吨度价）
+      const validResults = (data.results || []).filter(
+        item => item && item["主要参数"] &&
+                typeof item["主要参数"].成本 === "number" &&
+                typeof item["主要参数"].吨度价 === "number"
+      );
 
-    if (item["原料配比"]) {
-      const newMix: Record<string, any> = {};
-      Object.entries(item["原料配比"]).forEach(([code, val]) => {
-        const valObj = val as Record<string, any>;
-        const limits = ingredientLimits[code] || {};
-        newMix[code] = {
-          ...valObj,
-          name: idNameMap[code] || limits.name || code,
-          配比: (valObj.配比 ?? 0) * 100,
-        };
+      // 1️⃣ 成本排名（按成本升序）
+      validResults.sort((a, b) => a["主要参数"].成本 - b["主要参数"].成本);
+      validResults.forEach((item, index) => item.成本排名 = index + 1);
+
+      // 2️⃣ 吨度价排名（按吨度价升序）
+      validResults
+        .slice() // 克隆数组避免覆盖性价比排序
+        .sort((a, b) => a["主要参数"].吨度价 - b["主要参数"].吨度价)
+        .forEach((item, index) => item.吨度价排名 = index + 1);
+
+      // 映射原料配比和化学成分
+      results = validResults.map(item => {
+        const mapped = { ...item };
+
+        if (item["原料配比"]) {
+          const newMix: Record<string, any> = {};
+          Object.entries(item["原料配比"]).forEach(([code, val]) => {
+            const valObj = val as Record<string, any>;
+            const limits = ingredientLimits[code] || {};
+            newMix[code] = {
+              ...valObj,
+              name: idNameMap[code] || limits.name || code,
+              配比: (valObj.配比 ?? 0) * 100,
+            };
+          });
+          mapped["原料配比"] = newMix;
+        }
+
+        if (mapped["化学成分"]) {
+          mapped["化学成分"] = mapped["化学成分"];
+        }
+
+        return mapped;
       });
-      mapped["原料配比"] = newMix;
-    }
-
-    // ⚠️ 只在原本就有化学成分时才补
-    if (mapped["化学成分"]) {
-      mapped["化学成分"] = mapped["化学成分"];
-    }
-
-    return mapped;
-  });
-
 
       // 更新内存缓存
       const cache = this.taskCache.get(taskUuid) || { results: [], lastUpdated: Date.now() };
-      cache.results.push(...results);
+      cache.results = results; // 覆盖缓存，保证两种排名正确
       cache.lastUpdated = Date.now();
       this.taskCache.set(taskUuid, cache);
 
@@ -263,8 +268,6 @@ async fetchAndSaveProgress(taskUuid: string, pagination?: PaginationDto): Promis
       task.progress = data.progress;
       task.total = data.total;
       await this.taskRepo.save(task);
-
-      results = cache.results;
 
       // 如果任务完成，持久化最终结果并清理缓存
       if (task.status === TaskStatus.FINISHED && results.length) {
@@ -298,6 +301,7 @@ async fetchAndSaveProgress(taskUuid: string, pagination?: PaginationDto): Promis
     return this.handleError(err, '获取任务进度失败');
   }
 }
+
 
 
 /** 分页 + 排序工具方法 */

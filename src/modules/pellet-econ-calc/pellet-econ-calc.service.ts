@@ -210,137 +210,173 @@ async startPortPelletLumpTask(
   }
 
   /* ======================= 查询进度（排序 + 分页） ======================= */
-  async fetchAndSaveProgress(
-    taskUuid: string,
-    pagination?: PelletEconPaginationDto,
-  ): Promise<ApiResponse<any>> {
-    try {
-      const task = await this.taskRepo.findOne({ where: { task_uuid: taskUuid } });
-      if (!task) return ApiResponse.error('任务不存在');
+/** -------------------- 球团经济性进度接口 -------------------- */
+async fetchAndSaveProgress(
+  taskUuid: string,
+  pagination?: PelletEconPaginationDto,
+): Promise<ApiResponse<any>> {
+  try {
+    const task = await this.taskRepo.findOne({ where: { task_uuid: taskUuid } });
+    if (!task) return ApiResponse.error('任务不存在');
 
-      const res = await this.apiGet(this.ECON_TASK.progressUrl, { taskUuid });
-      const data = res.data?.data;
-      if (!data) return ApiResponse.success({ status: 'RUNNING', results: [] });
+    const res = await this.apiGet(this.ECON_TASK.progressUrl, { taskUuid });
+    const data = res.data?.data;
+    if (!data) return ApiResponse.success({ status: 'RUNNING', results: [] });
 
-      /** ---------- 提取球团标识 ---------- */
-      const identifiers = new Set<string>();
-      (data.results || []).forEach(item => {
-        const idOrName = item['矿粉名称'];
-        if (idOrName) identifiers.add(String(idOrName));
-      });
+    /** ---------- 提取球团标识 ---------- */
+    const identifiers = new Set<string>();
+    (data.results || []).forEach(item => {
+      const idOrName = item['矿粉名称'];
+      if (idOrName) identifiers.add(String(idOrName));
+    });
 
-      /** ---------- 查询数据库 ---------- */
-      let pellets: PelletEconInfo[] = [];
-      if (identifiers.size) {
-        const numericIds = [...identifiers].map(v => Number(v)).filter(v => !isNaN(v));
-        if (numericIds.length) {
-          pellets = await this.pelletRepo.find({ where: { id: In(numericIds) } });
-        }
-
-        const nameStrings = [...identifiers].filter(v => isNaN(Number(v)));
-        if (nameStrings.length) {
-          const byName = await this.pelletRepo.find({ where: { name: In(nameStrings) } });
-          pellets = pellets.concat(byName);
-        }
+    /** ---------- 查询数据库 ---------- */
+    let pellets: PelletEconInfo[] = [];
+    if (identifiers.size) {
+      const numericIds = [...identifiers].map(v => Number(v)).filter(v => !isNaN(v));
+      if (numericIds.length) {
+        pellets = await this.pelletRepo.find({ where: { id: In(numericIds) } });
       }
 
-      /** ---------- 构建映射 ---------- */
-      const nameMap: Record<string, string> = {};
-      pellets.forEach(p => {
-        nameMap[p.id] = p.name;
-        nameMap[p.name] = p.name;
-      });
-
-      /** ---------- 映射结果 ---------- */
-      const mappedResults = (data.results || []).map(item => ({
-        ...item,
-        矿粉名称: nameMap[item['矿粉名称']] || item['矿粉名称'],
-      }));
-
-      /** ---------- 排序 + 分页 ---------- */
-      const { pagedResults, totalResults, totalPages } = this.applyPaginationAndSort(mappedResults, pagination);
-
-      return ApiResponse.success({
-        taskUuid,
-        status: data.status,
-        progress: data.progress ?? 0,
-        total: data.total ?? totalResults,
-        results: pagedResults,
-        page: Number(pagination?.page ?? 1),
-        pageSize: Number(pagination?.pageSize ?? 10),
-        totalResults,
-        totalPages,
-      });
-    } catch (err) {
-      return this.handleError(err, '获取任务进度失败');
+      const nameStrings = [...identifiers].filter(v => isNaN(Number(v)));
+      if (nameStrings.length) {
+        const byName = await this.pelletRepo.find({ where: { name: In(nameStrings) } });
+        pellets = pellets.concat(byName);
+      }
     }
-  }
 
+    /** ---------- 构建映射 ---------- */
+    const nameMap: Record<string, string> = {};
+    pellets.forEach(p => {
+      nameMap[p.id] = p.name;
+      nameMap[p.name] = p.name;
+    });
+
+    /** ---------- 映射结果 ---------- */
+    const mappedResults = (data.results || []).map(item => ({
+      ...item,
+      矿粉名称: nameMap[item['矿粉名称']] || item['矿粉名称'],
+    }));
+
+    /** ---------- 性价比排名（吨铁成本，从小到大） ---------- */
+    const rankField = '吨铁成本';
+    if (mappedResults.some(item => !isNaN(Number(item[rankField])))) {
+      const resultsWithValue = mappedResults
+        .filter(item => !isNaN(Number(item[rankField])))
+        .sort((a, b) => Number(a[rankField]) - Number(b[rankField]));
+
+      const rankMap = new Map<string, number>();
+      resultsWithValue.forEach((item, index) => {
+        rankMap.set(item['矿粉名称'], index + 1);
+      });
+
+      mappedResults.forEach(item => {
+        item['性价比排名'] = rankMap.get(item['矿粉名称']) ?? undefined;
+      });
+    }
+
+    /** ---------- 分页 + 排序 ---------- */
+    const { pagedResults, totalResults, totalPages } = this.applyPaginationAndSort(mappedResults, pagination);
+
+    return ApiResponse.success({
+      taskUuid,
+      status: data.status,
+      progress: data.progress ?? 0,
+      total: data.total ?? totalResults,
+      results: pagedResults,
+      page: Number(pagination?.page ?? 1),
+      pageSize: Number(pagination?.pageSize ?? 10),
+      totalResults,
+      totalPages,
+    });
+  } catch (err) {
+    return this.handleError(err, '获取任务进度失败');
+  }
+}
+
+/** -------------------- 港口球团块经济性进度接口 -------------------- */
 async fetchAndSavePortPelletLumpProgress(
-    taskUuid: string,
-    pagination?: PelletEconPaginationDto,
-  ): Promise<ApiResponse<any>> {
-    try {
-      const task = await this.taskRepo.findOne({ where: { task_uuid: taskUuid } });
-      if (!task) return ApiResponse.error('任务不存在');
+  taskUuid: string,
+  pagination?: PelletEconPaginationDto,
+): Promise<ApiResponse<any>> {
+  try {
+    const task = await this.taskRepo.findOne({ where: { task_uuid: taskUuid } });
+    if (!task) return ApiResponse.error('任务不存在');
 
-      const res = await this.apiGet(this.ECON_TASK.progressUrl, { taskUuid });
-      const data = res.data?.data;
-      if (!data) return ApiResponse.success({ status: 'RUNNING', results: [] });
+    const res = await this.apiGet(this.ECON_TASK.progressUrl, { taskUuid });
+    const data = res.data?.data;
+    if (!data) return ApiResponse.success({ status: 'RUNNING', results: [] });
 
-      /** ---------- 提取球团标识 ---------- */
-      const identifiers = new Set<string>();
-      (data.results || []).forEach(item => {
-        const idOrName = item['矿粉名称'];
-        if (idOrName) identifiers.add(String(idOrName));
-      });
+    /** ---------- 提取球团标识 ---------- */
+    const identifiers = new Set<string>();
+    (data.results || []).forEach(item => {
+      const idOrName = item['矿粉名称'];
+      if (idOrName) identifiers.add(String(idOrName));
+    });
 
-      /** ---------- 查询数据库 ---------- */
-      let pellets: PelletEconInfo[] = [];
-      if (identifiers.size) {
-        const numericIds = [...identifiers].map(v => Number(v)).filter(v => !isNaN(v));
-        if (numericIds.length) {
-          pellets = await this.portPelletLumpRepo.find({ where: { id: In(numericIds) } });
-        }
-
-        const nameStrings = [...identifiers].filter(v => isNaN(Number(v)));
-        if (nameStrings.length) {
-          const byName = await this.portPelletLumpRepo.find({ where: { name: In(nameStrings) } });
-          pellets = pellets.concat(byName);
-        }
+    /** ---------- 查询数据库 ---------- */
+    let pellets: PelletEconInfo[] = [];
+    if (identifiers.size) {
+      const numericIds = [...identifiers].map(v => Number(v)).filter(v => !isNaN(v));
+      if (numericIds.length) {
+        pellets = await this.portPelletLumpRepo.find({ where: { id: In(numericIds) } });
       }
 
-      /** ---------- 构建映射 ---------- */
-      const nameMap: Record<string, string> = {};
-      pellets.forEach(p => {
-        nameMap[p.id] = p.name;
-        nameMap[p.name] = p.name;
-      });
-
-      /** ---------- 映射结果 ---------- */
-      const mappedResults = (data.results || []).map(item => ({
-        ...item,
-        矿粉名称: nameMap[item['矿粉名称']] || item['矿粉名称'],
-      }));
-
-      /** ---------- 排序 + 分页 ---------- */
-      const { pagedResults, totalResults, totalPages } = this.applyPaginationAndSort(mappedResults, pagination);
-
-      return ApiResponse.success({
-        taskUuid,
-        status: data.status,
-        progress: data.progress ?? 0,
-        total: data.total ?? totalResults,
-        results: pagedResults,
-        page: Number(pagination?.page ?? 1),
-        pageSize: Number(pagination?.pageSize ?? 10),
-        totalResults,
-        totalPages,
-      });
-    } catch (err) {
-      return this.handleError(err, '获取任务进度失败');
+      const nameStrings = [...identifiers].filter(v => isNaN(Number(v)));
+      if (nameStrings.length) {
+        const byName = await this.portPelletLumpRepo.find({ where: { name: In(nameStrings) } });
+        pellets = pellets.concat(byName);
+      }
     }
+
+    /** ---------- 构建映射 ---------- */
+    const nameMap: Record<string, string> = {};
+    pellets.forEach(p => {
+      nameMap[p.id] = p.name;
+      nameMap[p.name] = p.name;
+    });
+
+    /** ---------- 映射结果 ---------- */
+    const mappedResults = (data.results || []).map(item => ({
+      ...item,
+      矿粉名称: nameMap[item['矿粉名称']] || item['矿粉名称'],
+    }));
+
+    /** ---------- 性价比排名（吨铁成本，从小到大） ---------- */
+    const rankField = '吨铁成本';
+    if (mappedResults.some(item => !isNaN(Number(item[rankField])))) {
+      const resultsWithValue = mappedResults
+        .filter(item => !isNaN(Number(item[rankField])))
+        .sort((a, b) => Number(a[rankField]) - Number(b[rankField]));
+
+      const rankMap = new Map<string, number>();
+      resultsWithValue.forEach((item, index) => {
+        rankMap.set(item['矿粉名称'], index + 1);
+      });
+
+      mappedResults.forEach(item => {
+        item['性价比排名'] = rankMap.get(item['矿粉名称']) ?? undefined;
+      });
+    }
+
+    /** ---------- 分页 + 排序 ---------- */
+    const { pagedResults, totalResults, totalPages } = this.applyPaginationAndSort(mappedResults, pagination);
+
+    return ApiResponse.success({
+      taskUuid,
+      status: data.status,
+      progress: data.progress ?? 0,
+      total: data.total ?? totalResults,
+      results: pagedResults,
+      page: Number(pagination?.page ?? 1),
+      pageSize: Number(pagination?.pageSize ?? 10),
+      totalResults,
+      totalPages,
+    });
+  } catch (err) {
+    return this.handleError(err, '获取任务进度失败');
   }
+}
 
 
 

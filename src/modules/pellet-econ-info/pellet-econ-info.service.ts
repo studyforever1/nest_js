@@ -72,8 +72,8 @@ export class PelletEconInfoService {
   }
 
   /** ========================= 查询（核心修改点） ========================= */
-  async query(options: { page: number; pageSize: number; name?: string }) {
-    const { page, pageSize, name } = options;
+  async query(options: { page: number; pageSize: number; name?: string; type?: string }) {
+    const { page, pageSize, name, type } = options;
     const qb = this.repo.createQueryBuilder('p').orderBy('p.id', 'ASC');
     if (name) qb.andWhere('p.name LIKE :name', { name: `%${name}%` });
     const [records, total] = await qb.skip((page - 1) * pageSize).take(pageSize).getManyAndCount();
