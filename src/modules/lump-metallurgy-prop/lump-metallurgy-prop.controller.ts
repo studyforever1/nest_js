@@ -27,12 +27,11 @@ export class LumpMetallurgyPropController {
   }
 
   @Get()
-  @ApiOperation({ summary: '查询块矿冶金性能（支持分页、名称模糊、类型筛选、排序）' })
+  @ApiOperation({ summary: '查询块矿冶金性能（支持分页、名称模糊、排序）' })
   @ApiQuery({ name: 'page', required: false, description: '页码（默认1）' })
   @ApiQuery({ name: 'pageSize', required: false, description: '每页条数（默认10）' })
   @ApiQuery({ name: 'name', required: false, description: '名称模糊查询' })
-  @ApiQuery({ name: 'type', required: false, description: '类型筛选' })
-  @ApiQuery({ name: 'sort', required: false, description: '排序字段，如 name、created_at、properties.TFe' })
+  @ApiQuery({ name: 'sort', required: false, description: '排序字段，如 name、created_at、composition.TFe' })
   @ApiQuery({ name: 'order', required: false, description: 'asc / desc' })
   findAll(@Query() pagination: PaginationDto) {
     return this.service.query(pagination);

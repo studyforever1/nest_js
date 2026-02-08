@@ -40,20 +40,23 @@ export class CoalEconConfigController {
   }
 
   @Get('selected-coal')
-async getSelectedCoal(
-  @CurrentUser() user: User,
-  @Query() query: CoalEconPaginationDto,
-) {
-  const page = Number(query.page ?? 1);
-  const pageSize = Number(query.pageSize ?? 10);
+  @ApiOperation({ summary: '获取已选喷吹煤（分页、名称模糊、排序）' })
+  async getSelectedCoal(
+    @CurrentUser() user: User,
+    @Query() query: CoalEconPaginationDto,
+  ) {
+    const page = Number(query.page ?? 1);
+    const pageSize = Number(query.pageSize ?? 10);
 
-  return this.service.getSelectedCoals(
-    user,
-    this.MODULE_NAME,
-    page,
-    pageSize,
-    query.name,
-  );
-}
+    return this.service.getSelectedCoals(
+      user,
+      this.MODULE_NAME,
+      page,
+      pageSize,
+      query.name,
+      query.sort,
+      query.order,
+    );
+  }
 
 }

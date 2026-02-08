@@ -69,9 +69,9 @@ export class SjEconConfigController {
     return this.service.deleteIngredients(user, this.MODULE_NAME, body.removeIds);
   }
 
-  /** 获取已选原料（分页 + 模糊查找） */
+  /** 获取已选原料（分页 + 模糊查找 + 排序） */
   @Get('selected-ingredients')
-  @ApiOperation({ summary: '获取已选原料（支持分页和名称模糊查找）' })
+  @ApiOperation({ summary: '获取已选原料（支持分页、名称模糊查找、排序）' })
   async getSelectedIngredients(
     @CurrentUser() user: User,
     @Query() query: SjEconPaginationDto,
@@ -84,6 +84,8 @@ export class SjEconConfigController {
       page,
       pageSize,
       query.name,
+      query.sort,
+      query.order,
     );
   }
 }

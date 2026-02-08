@@ -13,21 +13,17 @@ import { UpdateMineTypIndDto } from './dto/update-mine-typ-ind.dto';
 const SORT_FIELD_MAP: Record<string, string> = {
   name: 'm.name',
   created_at: 'm.created_at',
-  'indicators.TFe': "JSON_EXTRACT(m.indicators, '$.TFe')",
+  'composition.TFe': "JSON_EXTRACT(m.composition, '$.TFe')",
 };
 
 /**
  * ✅ 固定表头（唯一标准）
  * - 查询 / 导入 / 导出 / 前端展示 都以此为准
- * - 注意：indicators 中不包含"矿粉名称"
+ * - 注意：composition 中不包含"矿粉名称"
  */
 export const FIXED_HEADERS = [
-  '矿粉名称',
-  'TFe', 'SiO2', 'Al2O3', 'P', 'S', 'MnO', 'H2O',
-  '粉率', '车板价', '运费', '干粉价格',
-  '厂内筛分搬到等费用', '干基不含税',
-  'CaO', 'MgO', 'TiO2', 'Zn', 'K2O', 'Na2O',
-  'Cr', 'Cu', 'As', '烧损', 'Ni',
+  '矿粉名称','产地及矿山','指标','Fe','SiO2','Al2O3','P','S','H2O','CaO','MgO',
+  'Mn','K2O','Na2O','LOI','粒度','产量'
 ];
 
 type FixedHeader = (typeof FIXED_HEADERS)[number];
@@ -39,19 +35,15 @@ export class MineTypIndService {
     private readonly repo: Repository<MineTypInd>,
   ) {}
 
-  /** =========================
-   *  核心：规范化 indicators（按 FIXED_HEADERS 顺序，排除"矿粉名称"）
-   * ========================= */
-  private normalizeIndicators(
-    indicators?: Record<string, any>,
+  /** ========================= 核心：规范化 composition ========================= */
+  private normalizeComposition(
+    composition?: Record<string, any>,
   ): Record<string, any> {
     const result: Record<string, any> = {};
-
     FIXED_HEADERS.forEach((key) => {
-      if (key === '矿粉名称') return; // 排除"矿粉名称"
-      result[key] = indicators?.[key] ?? 0;
+      if (key === '矿粉名称') return;
+      result[key] = composition?.[key] ?? 0;
     });
-
     return result;
   }
 
@@ -59,7 +51,7 @@ export class MineTypIndService {
   async create(dto: CreateMineTypIndDto, username: string) {
     const entity = this.repo.create({
       ...dto,
-      indicators: this.normalizeIndicators(dto.indicators),
+      composition: this.normalizeComposition(dto.composition),
       modifier: username,
       enabled: true,
     });
@@ -73,15 +65,15 @@ export class MineTypIndService {
 
     Object.assign(entity, {
       ...dto,
-      indicators: dto.indicators ? this.normalizeIndicators(dto.indicators) : entity.indicators,
+      composition: dto.composition ? this.normalizeComposition(dto.composition) : entity.composition,
       modifier: username,
     });
     return this.repo.save(entity);
   }
 
-  /** ========================= 查询（核心修改点） ========================= */
-  async query(options: { page: number; pageSize: number; name?: string; type?: string; sort?: string; order?: 'asc' | 'desc' }) {
-    const { page = 1, pageSize = 10, name, type, sort, order } = options;
+  /** ========================= 查询 ========================= */
+  async query(options: { page: number; pageSize: number; name?: string; sort?: string; order?: 'asc' | 'desc' }) {
+    const { page = 1, pageSize = 10, name, sort, order } = options;
     const qb = this.repo.createQueryBuilder('m');
 
     if (name) {
@@ -97,17 +89,15 @@ export class MineTypIndService {
 
     const [list, total] = await qb.getManyAndCount();
 
-    /**
-     * ✅ 规范化 indicators，确保按 FIXED_HEADERS 顺序
-     */
     const mapped = list.map(item => ({
       ...item,
-      indicators: this.normalizeIndicators(item.indicators),
+      composition: this.normalizeComposition(item.composition),
     }));
 
     return { data: mapped, total, page, pageSize, totalPages: Math.ceil(total / pageSize) };
   }
 
+  /** ========================= 删除 ========================= */
   async remove(ids: number[]) {
     const list = await this.repo.findBy({ id: In(ids) });
     if (!list.length) throw new NotFoundException('数据不存在');
@@ -131,20 +121,20 @@ export class MineTypIndService {
     sheet.addRow(FIXED_HEADERS);
 
     list.forEach(item => {
-      const indicators = this.normalizeIndicators(item.indicators);
+      const composition = this.normalizeComposition(item.composition);
 
       sheet.addRow([
         item.name,
         ...FIXED_HEADERS
           .filter(h => h !== '矿粉名称')
-          .map(h => indicators[h]),
+          .map(h => composition[h]),
       ]);
     });
 
     return Buffer.from(await workbook.xlsx.writeBuffer());
   }
 
-  /** ========================= 导入 Excel ========================= */
+  /** ========================= 导入 Excel（支持汉字） ========================= */
   async importExcel(file: Express.Multer.File, username: string) {
     if (!file?.buffer) throw new BadRequestException('文件为空');
 
@@ -156,7 +146,6 @@ export class MineTypIndService {
     const headerRow = sheet.getRow(1);
     const headerMap: Record<string, number> = {};
 
-    // ✅ 严格校验表头：每个列名必须在 FIXED_HEADERS 中
     headerRow.eachCell((cell, col) => {
       const val = String(cell.value ?? '').trim();
       if (!val) return;
@@ -175,22 +164,32 @@ export class MineTypIndService {
     sheet.eachRow({ includeEmpty: true }, (row, index) => {
       if (index === 1) return;
 
-      const name = String(row.getCell(headerMap['矿粉名称'])?.value ?? '').trim();
+      const nameCell = row.getCell(headerMap['矿粉名称']);
+      const name = nameCell?.value ? String(nameCell.value).trim() : '';
       if (!name) return;
 
-      const indicators: Record<string, any> = {};
+      const composition: Record<string, any> = {};
 
-      // ✅ 遍历 FIXED_HEADERS，缺失列自动补0
       FIXED_HEADERS.forEach(key => {
         if (key === '矿粉名称') return;
+
         const col = headerMap[key];
-        const val = col ? parseFloat(String(row.getCell(col)?.value ?? '')) : 0;
-        indicators[key] = Number.isFinite(val) ? val : 0;
+        const cell = col ? row.getCell(col) : undefined;
+        const val = cell?.value;
+
+        // 数字列
+        if (['Fe','SiO2','Al2O3','P','S','H2O','CaO','MgO','Mn','K2O','Na2O','LOI'].includes(key)) {
+          const num = Number(val);
+          composition[key] = Number.isFinite(num) ? num : 0;
+        } else {
+          // 文本列（可以是汉字）
+          composition[key] = val != null ? String(val) : '';
+        }
       });
 
       result.push(this.repo.create({
         name,
-        indicators: this.normalizeIndicators(indicators),
+        composition: this.normalizeComposition(composition),
         modifier: username,
         enabled: true,
       }));

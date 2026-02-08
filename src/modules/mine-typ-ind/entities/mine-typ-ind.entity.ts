@@ -14,11 +14,11 @@ export class MineTypInd {
   @Column({ comment: '矿山名称' })
   name: string;
 
-  @Column('json', {
+ @Column('json', {
     nullable: true,
-    comment: '典型指标（JSON）',
+    comment: '化学成分典型值（JSON）',
   })
-  indicators: Record<string, any>;
+  composition: Record<string, any>;
 
   @Column({ nullable: true, comment: '修改者' })
   modifier: string;

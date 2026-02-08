@@ -6,6 +6,7 @@ import { ConfigGroup } from '../../database/entities/config-group.entity';
 import { BizModule } from '../../database/entities/biz-module.entity';
 import { User } from '../user/entities/user.entity';
 import { CoalEconInfo } from '../coal-econ-info/entities/coal-econ-info.entity';
+import { FIXED_HEADERS } from '../coal-econ-info/coal-econ-info.service';
 
 @Injectable()
 export class CoalEconConfigService {
@@ -118,53 +119,85 @@ export class CoalEconConfigService {
     return this.configRepo.save(group);
   }
 
-  /** 获取已选煤炭（分页、名称模糊） */
+  /** 规范化composition */
+  private normalizeComposition(composition?: Record<string, number>): Record<string, number> {
+    const result: Record<string, number> = {};
+    FIXED_HEADERS.forEach((key) => {
+      result[key] = composition?.[key] ?? 0;
+    });
+    return result;
+  }
+
+  /** 排序字段映射 */
+  private readonly SORT_FIELD_MAP: Record<string, string> = {
+    name: 'coal.name',
+    created_at: 'coal.created_at',
+    'composition.干基不含税到厂价': "JSON_EXTRACT(coal.composition, '$.干基不含税到厂价')",
+  };
+
+  /** 获取已选煤炭（分页、名称模糊、排序） */
   async getSelectedCoals(
-  user: User,
-  moduleName: string,
-  page = 1,
-  pageSize = 10,
-  name?: string,
-) {
-  // 🔴 关键：强制数值化（Service 层兜底）
-  page = Number(page);
-  pageSize = Number(pageSize);
+    user: User,
+    moduleName: string,
+    page = 1,
+    pageSize = 10,
+    name?: string,
+    sort?: string,
+    order?: 'asc' | 'desc',
+  ) {
+    // 🔴 关键：强制数值化（Service 层兜底）
+    page = Number(page);
+    pageSize = Number(pageSize);
 
-  const group = await this.getOrCreateUserGroup(user, moduleName);
-  const configData = group.config_data || {};
-  const coalParams: number[] = configData.coalParams || [];
+    const group = await this.getOrCreateUserGroup(user, moduleName);
+    const configData = group.config_data || {};
+    const coalParams: number[] = configData.coalParams || [];
 
-  if (!coalParams.length) {
+    if (!coalParams.length) {
+      return {
+        data: [],
+        total: 0,
+        page,
+        pageSize,
+        totalPages: 0,
+      };
+    }
+
+    let qb = this.coalRepo
+      .createQueryBuilder('coal')
+      .where('coal.id IN (:...ids)', { ids: coalParams });
+
+    if (name?.trim()) {
+      qb.andWhere('coal.name LIKE :name', { name: `%${name}%` });
+    }
+
+    // ⭐ 排序逻辑
+    if (sort && this.SORT_FIELD_MAP[sort]) {
+      qb.orderBy(
+        this.SORT_FIELD_MAP[sort],
+        order === 'desc' ? 'DESC' : 'ASC',
+      );
+    } else {
+      qb.orderBy('coal.id', 'ASC');
+    }
+
+    const total = await qb.getCount();
+    const records = await qb
+      .skip((page - 1) * pageSize)
+      .take(pageSize)
+      .getMany();
+
+    // ✅ 统一格式：返回composition对象，不展开
     return {
-      data: [],
-      total: 0,
-      page,
-      pageSize,
-      totalPages: 0,
+      data: records.map(item => ({
+        ...item,
+        composition: this.normalizeComposition(item.composition),
+      })),
+      total,
+      page,       // ✅ 一定是 number
+      pageSize,   // ✅ 一定是 number
+      totalPages: Math.ceil(total / pageSize),
     };
   }
-
-  let qb = this.coalRepo
-    .createQueryBuilder('coal')
-    .where('coal.id IN (:...ids)', { ids: coalParams });
-
-  if (name?.trim()) {
-    qb.andWhere('coal.name LIKE :name', { name: `%${name}%` });
-  }
-
-  const total = await qb.getCount();
-  const records = await qb
-    .skip((page - 1) * pageSize)
-    .take(pageSize)
-    .getMany();
-
-  return {
-    data: records,
-    total,
-    page,       // ✅ 一定是 number
-    pageSize,   // ✅ 一定是 number
-    totalPages: Math.ceil(total / pageSize),
-  };
-}
 
 }

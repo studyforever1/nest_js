@@ -9,30 +9,32 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { Express } from 'express';
 
-/**
- * ✅ 固定表头（唯一标准）
- * - 查询 / 导入 / 导出 / 前端展示 / 计算
- * - 全部只存在于 composition 中
- */
 export const FIXED_HEADERS = [
-  'TFe','P', 'S', 'Cr', 'Ni', 'Pb', 'Zn', 'CaO', 'H2O', 'K2O', 'MgO', 'MnO',
-   'Na2O', 'SiO2', 'TiO2', 'V2O5', 'Al2O3',
-  '返焦率', '返焦价格', '干基价格'
-] as const;
+  'TFe','CaO','SiO2','MgO', 'Al2O3','S','P','TiO2','MnO', 'Cr', 'Pb', 'Zn', 'K2O','Na2O','Ni'
+   , 'V2O5', 'H2O', '返焦率', '返焦价格', '干基价格'
+];
+
+const SORT_FIELD_MAP: Record<string, string> = {
+  name: 'raw.name',
+  category: 'raw.category',
+  inventory: 'raw.inventory',
+  created_at: 'raw.created_at',
+  'composition.TFe': "JSON_EXTRACT(raw.composition, '$.TFe')",
+  'composition.SiO2': "JSON_EXTRACT(raw.composition, '$.SiO2')",
+  'composition.返焦价格': "JSON_EXTRACT(raw.composition, '$.返焦价格')",
+  'composition.干基价格': "JSON_EXTRACT(raw.composition, '$.干基价格')",
+};
 
 @Injectable()
 export class GlFuelInfoService {
+  private readonly SORT_FIELD_MAP = SORT_FIELD_MAP;
+
   constructor(
     @InjectRepository(GlFuelInfo)
     private readonly rawRepo: Repository<GlFuelInfo>,
   ) {}
 
-  /** =========================
-   *  核心：规范化 composition
-   * ========================= */
-  private normalizeComposition(
-    composition?: Record<string, number>,
-  ): Record<string, number> {
+  private normalizeComposition(composition?: Record<string, number>): Record<string, number> {
     const result: Record<string, number> = {};
     FIXED_HEADERS.forEach(key => {
       result[key] = composition?.[key] ?? 0;
@@ -40,73 +42,56 @@ export class GlFuelInfoService {
     return result;
   }
 
-  /** ========================= 创建 ========================= */
-  async create(dto: CreateGlFuelInfoDto, username: string) {
-    const raw = this.rawRepo.create({
-      ...dto,
-      composition: this.normalizeComposition(dto.composition),
-      inventory: dto.inventory ?? 0,
-      remark: dto.remark ?? '',
-      modifier: username,
-    });
-    return this.rawRepo.save(raw);
-  }
-
-  /** ========================= 更新 ========================= */
-  async update(id: number, dto: UpdateGlFuelInfoDto, username: string) {
-    const raw = await this.rawRepo.findOne({ where: { id } });
-    if (!raw) throw new NotFoundException('数据不存在');
-
-    Object.assign(raw, {
-      ...dto,
-      composition: dto.composition
-        ? this.normalizeComposition(dto.composition)
-        : raw.composition,
-      inventory: dto.inventory ?? raw.inventory,
-      remark: dto.remark ?? raw.remark,
-      modifier: username,
-    });
-
-    return this.rawRepo.save(raw);
-  }
-
-  /** ========================= 前端统一输出格式 ========================= */
   private formatRaw(raw: GlFuelInfo) {
-    const { id, category, name, inventory, remark, composition } = raw;
-
+    const { id, category, name, composition, remark, inventory, ...rest } = raw;
     return {
       id,
       category,
       name,
       inventory,
       remark,
-      composition: this.normalizeComposition(composition),
+      composition: composition ? this.normalizeComposition(composition) : {},
+      ...rest,
     };
   }
 
-  /** ========================= 分页查询 ========================= */
-  async query(options: {
-    page?: number;
-    pageSize?: number;
-    name?: string;
-    type?: string;
-  }) {
-    const { page = 1, pageSize = 10, name, type } = options;
+  async create(dto: CreateGlFuelInfoDto, username: string) {
+    const raw = this.rawRepo.create({
+      ...dto,
+      composition: this.normalizeComposition(dto.composition),
+      inventory: dto.inventory ?? 0,
+      modifier: username,
+      remark: dto.remark ?? '',
+    });
+    return this.rawRepo.save(raw);
+  }
 
-    const qb = this.rawRepo.createQueryBuilder('raw').orderBy('raw.id', 'ASC');
+  async update(id: number, dto: UpdateGlFuelInfoDto, username: string) {
+    const raw = await this.rawRepo.findOne({ where: { id } });
+    if (!raw) throw new NotFoundException('数据不存在');
+    Object.assign(raw, dto, {
+      composition: dto.composition ? this.normalizeComposition(dto.composition) : raw.composition,
+      inventory: dto.inventory ?? raw.inventory,
+      modifier: username,
+      remark: dto.remark ?? raw.remark,
+    });
+    return this.rawRepo.save(raw);
+  }
 
-    if (name) {
-      qb.andWhere('raw.name LIKE :name', { name: `%${name}%` });
+  async query(options: { page?: number; pageSize?: number; name?: string; type?: string; sort?: string; order?: 'asc'|'desc' }) {
+    const { page = 1, pageSize = 10, name, type, sort, order } = options;
+    const qb = this.rawRepo.createQueryBuilder('raw');
+
+    if (name) qb.andWhere('raw.name LIKE :name', { name: `%${name}%` });
+    if (type) qb.andWhere('raw.category LIKE :type', { type: `%${type}%` });
+
+    if (sort && this.SORT_FIELD_MAP[sort]) {
+      qb.orderBy(this.SORT_FIELD_MAP[sort], order === 'desc' ? 'DESC' : 'ASC');
+    } else {
+      qb.orderBy('raw.id', 'ASC');
     }
 
-    if (type) {
-      qb.andWhere('raw.category LIKE :cat', { cat: `${type}%` });
-    }
-
-    const [records, total] = await qb
-      .skip((page - 1) * pageSize)
-      .take(pageSize)
-      .getManyAndCount();
+    const [records, total] = await qb.skip((page - 1) * pageSize).take(pageSize).getManyAndCount();
 
     return {
       data: records.map(r => this.formatRaw(r)),
@@ -119,54 +104,47 @@ export class GlFuelInfoService {
 
   async findOne(id: number) {
     const raw = await this.rawRepo.findOne({ where: { id } });
-    if (!raw) throw new NotFoundException(`燃料ID ${id} 不存在`);
+    if (!raw) throw new NotFoundException(`原料ID ${id} 不存在`);
     return this.formatRaw(raw);
   }
 
-  /** ========================= 删除 ========================= */
   async remove(ids: number[]) {
-    if (!ids?.length) throw new BadRequestException('未提供要删除的ID');
+    if (!ids?.length) throw new Error('未提供要删除的ID');
     const raws = await this.rawRepo.findBy({ id: In(ids) });
-    if (!raws.length) throw new NotFoundException('数据不存在');
+    if (!raws.length) throw new NotFoundException(`原料ID ${ids.join(',')} 不存在`);
     return this.rawRepo.remove(raws);
   }
 
   async removeAll(username: string) {
     const raws = await this.rawRepo.find();
-    if (!raws.length) {
-      return { status: 'error', message: '燃料库为空' };
-    }
-    raws.forEach(r => (r.modifier = username));
+    if (!raws.length) return { status: 'error', message: '原料库为空，无需删除' };
+    raws.forEach(r => r.modifier = username);
     await this.rawRepo.remove(raws);
-    return { status: 'success', message: `成功删除 ${raws.length} 条数据` };
+    return { status: 'success', message: `成功删除 ${raws.length} 条原料数据` };
   }
 
-  /** ========================= 导出 Excel ========================= */
   async exportExcel(): Promise<Buffer> {
     const raws = await this.rawRepo.find();
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('高炉燃料信息库');
-
     sheet.addRow(['分类编号', '原料', ...FIXED_HEADERS, '库存', '备注']);
 
-    raws.forEach(raw => {
-      const composition = this.normalizeComposition(raw.composition);
+    raws.forEach(r => {
+      const comp = this.normalizeComposition(r.composition);
       sheet.addRow([
-        raw.category ?? '',
-        raw.name ?? '',
-        ...FIXED_HEADERS.map(h => composition[h]),
-        raw.inventory ?? 0,
-        raw.remark ?? '',
+        r.category ?? '',
+        r.name ?? '',
+        ...FIXED_HEADERS.map(h => comp[h]),
+        r.inventory ?? 0,
+        r.remark ?? '',
       ]);
     });
 
     return Buffer.from(await workbook.xlsx.writeBuffer());
   }
 
-  /** ========================= 导入 Excel ========================= */
   async importExcel(file: Express.Multer.File, username: string) {
     if (!file?.buffer) throw new BadRequestException('文件为空');
-
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(file.buffer as any);
     const sheet = workbook.worksheets[0];
@@ -174,68 +152,39 @@ export class GlFuelInfoService {
 
     const headerRow = sheet.getRow(1);
     const headerMap: Record<string, number> = {};
-
-    const allowedHeaders = ['分类编号', '原料', '库存', '备注', ...FIXED_HEADERS];
-
     headerRow.eachCell((cell, col) => {
       const val = String(cell.value ?? '').trim();
       if (!val) return;
-      if (!allowedHeaders.includes(val)) {
-        throw new BadRequestException(`非法列名：${val}`);
-      }
+      const allowedHeaders = ['分类编号','原料','库存','备注',...FIXED_HEADERS];
+      if (!allowedHeaders.includes(val)) throw new BadRequestException(`非法列名：${val}`);
       headerMap[val] = col;
     });
-
-    if (!headerMap['原料']) {
-      throw new BadRequestException('缺少必要列：原料');
-    }
+    if (!headerMap['原料']) throw new BadRequestException('缺少必要列：原料');
 
     const result: GlFuelInfo[] = [];
-
     sheet.eachRow({ includeEmpty: true }, (row, index) => {
       if (index === 1) return;
-
       const name = String(row.getCell(headerMap['原料'])?.value ?? '').trim();
       if (!name) return;
-
-      const category = headerMap['分类编号']
-        ? String(row.getCell(headerMap['分类编号'])?.value ?? '').trim()
-        : '';
-
-      const inventory = headerMap['库存']
-        ? Number(row.getCell(headerMap['库存'])?.value ?? 0)
-        : 0;
-
-      const remark = headerMap['备注']
-        ? String(row.getCell(headerMap['备注'])?.value ?? '').trim()
-        : '';
+      const category = headerMap['分类编号'] ? String(row.getCell(headerMap['分类编号'])?.value ?? '').trim() : '';
+      const inventory = headerMap['库存'] ? parseFloat(String(row.getCell(headerMap['库存'])?.value ?? 0)) || 0 : 0;
+      const remark = headerMap['备注'] ? String(row.getCell(headerMap['备注'])?.value ?? '').trim() : '';
 
       const composition: Record<string, number> = {};
-      FIXED_HEADERS.forEach(key => {
-        const col = headerMap[key];
-        const val = col ? Number(row.getCell(col)?.value ?? 0) : 0;
-        composition[key] = Number.isFinite(val) ? val : 0;
+      FIXED_HEADERS.forEach(h => {
+        const col = headerMap[h];
+        const val = col ? parseFloat(String(row.getCell(col)?.value ?? '')) : 0;
+        composition[h] = Number.isFinite(val) ? val : 0;
       });
 
-      result.push(this.rawRepo.create({
-        category,
-        name,
-        inventory,
-        remark,
-        composition,
-        modifier: username,
-      }));
+      result.push(this.rawRepo.create({ category, name, inventory, remark, composition, modifier: username }));
     });
 
-    if (!result.length) {
-      return { status: 'error', message: '没有有效数据可导入' };
-    }
-
+    if (!result.length) return { status: 'error', message: '没有有效数据可导入' };
     await this.rawRepo.save(result);
     return { status: 'success', message: `成功导入 ${result.length} 条数据` };
   }
 
-  /** ========================= 模板 ========================= */
   private readonly templateDir = process.env.TEMPLATE_PATH || './templates';
   private readonly templateFilename = 'gl-fuel-info-template.xlsx';
 
@@ -245,8 +194,7 @@ export class GlFuelInfoService {
     if (fs.existsSync(filePath)) return filePath;
 
     const workbook = new ExcelJS.Workbook();
-    workbook.addWorksheet('模板')
-      .addRow(['分类编号', '原料', ...FIXED_HEADERS, '库存', '备注']);
+    workbook.addWorksheet('模板').addRow(['分类编号','原料', ...FIXED_HEADERS,'库存','备注']);
     await workbook.xlsx.writeFile(filePath);
     return filePath;
   }

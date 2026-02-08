@@ -7,8 +7,8 @@ export class UpdateSjFinesChemTypDto {
   @IsString()
   name?: string;
 
-  @ApiPropertyOptional({ description: '化学成分典型值（JSON）' })
+  @ApiPropertyOptional({ description: '化学成分典型值（composition，JSON 对象）' })
   @IsOptional()
   @IsObject()
-  chemValues?: Record<string, any>;
+  composition?: Record<string, any>;
 }

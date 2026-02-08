@@ -7,6 +7,7 @@ import { AllExceptionsFilter } from './common/filters/all-exception.filter';
 import { join } from 'path';
 import { appConfig } from './config/app.config';
 import { ValidationPipe } from '@nestjs/common';
+import { DateTimeInterceptor } from './common/interceptors/date-time.interceptor';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
@@ -30,6 +31,8 @@ async function bootstrap() {
 
   // ========== 全局拦截 & 异常 ==========
   app.useGlobalInterceptors(new TransformInterceptor());
+  app.useGlobalInterceptors(new DateTimeInterceptor());
+  
   app.useGlobalFilters(new AllExceptionsFilter());
 
   // ========== 静态资源 ==========

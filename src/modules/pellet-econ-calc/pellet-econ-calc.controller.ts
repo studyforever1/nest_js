@@ -7,6 +7,8 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { User } from '../user/entities/user.entity';
 import { PelletEconCalcService } from './pellet-econ-calc.service';
 import { StartPelletEconCalcDto, StopPelletEconCalcDto, PelletEconPaginationDto } from './dto/pellet-econ-calc.dto';
+import { Res } from '@nestjs/common';
+import type { Response } from 'express';
 
 @ApiBearerAuth('JWT')
 @ApiTags('外购球团块矿经济性评价-计算')
@@ -67,6 +69,53 @@ async getPortPelletLumpProgress(
     task_id,
     pagination,
   );
+}
+@Get('export/:task_id')
+@Permissions('pellet:calc')
+@ApiOperation({ summary: '导出球团经济性评价结果 Excel' })
+async exportPelletExcel(
+  @Param('task_id') taskId: string,
+  @Query() pagination: PelletEconPaginationDto,
+  @Res() res: Response,
+) {
+  const buffer = await this.pelletService.exportPelletTaskResultToExcel(
+    taskId,
+    pagination,
+  );
+
+  res.setHeader(
+    'Content-Disposition',
+    `attachment; filename=球团经济性评价结果.xlsx`,
+  );
+  res.setHeader(
+    'Content-Type',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  );
+  res.end(buffer);
+}
+@Get('port-pellet-lump/export/:task_id')
+@Permissions('pellet:calc')
+@ApiOperation({ summary: '导出港口球团块矿资源库评价结果 Excel' })
+async exportPortPelletLumpExcel(
+  @Param('task_id') taskId: string,
+  @Query() pagination: PelletEconPaginationDto,
+  @Res() res: Response,
+) {
+  const buffer =
+    await this.pelletService.exportPortPelletLumpTaskResultToExcel(
+      taskId,
+      pagination,
+    );
+
+  res.setHeader(
+    'Content-Disposition',
+    `attachment; filename=港口球团块矿资源库评价结果.xlsx`,
+  );
+  res.setHeader(
+    'Content-Type',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  );
+  res.end(buffer);
 }
 
 }

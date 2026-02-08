@@ -1,6 +1,6 @@
 // dto/sj-econ-config.dto.ts
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsArray, IsNumber, IsOptional, IsObject, IsString } from 'class-validator';
+import { IsArray, IsNumber, IsOptional, IsObject, IsString, IsIn } from 'class-validator';
 import { Type } from 'class-transformer';
 /** 保存完整参数组 DTO */
 export class SaveSjEconConfigDto {
@@ -48,4 +48,17 @@ export class SjEconPaginationDto {
   @IsOptional()
   @IsString()
   name?: string;
+
+  @ApiPropertyOptional({
+    description: '排序字段，如 name、composition.TFe、composition.价格',
+    example: 'composition.价格',
+  })
+  @IsOptional()
+  @IsString()
+  sort?: string;
+
+  @ApiPropertyOptional({ description: '排序方式 asc/desc', example: 'asc' })
+  @IsOptional()
+  @IsIn(['asc', 'desc'])
+  order?: 'asc' | 'desc';
 }

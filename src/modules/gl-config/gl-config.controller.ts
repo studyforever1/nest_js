@@ -109,17 +109,42 @@ async save(
     return this.glConfigService.deleteSelectedIngredients(user, this.MODULE_NAME, body.removeParams);
   }
 
-  @Get('selected-ingredients')
+  @Get('selected-fuels')
+@ApiOperation({ summary: '分页查询已选燃料', description: '支持分页、名称模糊搜索、分类筛选' })
+async getSelectedFuels(
+  @CurrentUser() user: User,
+  @Query() dto: GLPaginationDto
+) {
+  return this.glConfigService.getSelectedFuels({
+    user,
+    moduleName: this.MODULE_NAME,
+    page: dto.page,
+    pageSize: dto.pageSize,
+    name: dto.name,
+    type: dto.type, // 新增 type
+    sort: dto.sort,
+    order: dto.order,
+  });
+}
+
+@Get('selected-ingredients')
 @ApiOperation({ summary: '分页查询已选原料', description: '支持分页、名称模糊搜索、分类筛选' })
-async getSelectedIngredients(@CurrentUser() user: User, @Query() dto: GLPaginationDto) {
+async getSelectedIngredients(
+  @CurrentUser() user: User,
+  @Query() dto: GLPaginationDto
+) {
   return this.glConfigService.getSelectedIngredients({
     user,
     moduleName: this.MODULE_NAME,
     page: dto.page,
     pageSize: dto.pageSize,
     name: dto.name,
-    type: dto.type,
+    type: dto.type, // 新增 type
+    sort: dto.sort,
+    order: dto.order,
   });
+
+
 }
   // ===================== 燃料 =====================
   @Post('save-fuels')
@@ -140,18 +165,6 @@ async getSelectedIngredients(@CurrentUser() user: User, @Query() dto: GLPaginati
     return this.glConfigService.deleteSelectedFuels(user, this.MODULE_NAME, body.removeParams);
   }
 
-  @Get('selected-fuels')
-@ApiOperation({ summary: '分页查询已选燃料', description: '支持分页、名称模糊搜索、分类筛选' })
-async getSelectedFuels(@CurrentUser() user: User, @Query() dto: GLPaginationDto) {
-  return this.glConfigService.getSelectedFuels({
-    user,
-    moduleName: this.MODULE_NAME,
-    page: dto.page,
-    pageSize: dto.pageSize,
-    name: dto.name,
-    type: dto.type,
-  });
-}
 
 // =====================================================
 // 🔥 高炉工序成本（GLProcessCost）

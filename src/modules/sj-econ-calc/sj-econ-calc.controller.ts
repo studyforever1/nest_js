@@ -92,6 +92,16 @@ async getMaterialLibraryTaskProgress(
   return this.econService.fetchMaterialLibraryProgress(task_id, pagination);
 }
 
+@Get('port-iron-ore/progress/:task_id')
+@Permissions('sj:calc')
+@ApiOperation({ summary: '查询港口矿粉资源库评价任务进度' })
+async getPortIronOreTaskProgress(
+  @Param('task_id') task_id: string,
+  @Query() pagination: SJEconPaginationDto,
+) {
+  return this.econService.fetchPortIronOreProgress(task_id, pagination);
+}
+
 
 @Post('summary')
 @Permissions('sj:calc')
@@ -99,8 +109,23 @@ async getMaterialLibraryTaskProgress(
 async getSummary(@Body() dto: EconSummaryDto) {
   return this.econService.buildSummaryFromTaskRefs(dto.taskUuids, dto);
 }
+@Post('summary/material-library')
+async summaryMaterial(@Body() dto: EconSummaryDto) {
+  return this.econService.buildMaterialLibrarySummaryFromTaskRefs(
+    dto.taskUuids,
+    dto,
+  );
+}
 
+@Post('summary/port-iron-ore')
+async summaryPort(@Body() dto: EconSummaryDto) {
+  return this.econService.buildPortIronOreSummaryFromTaskRefs(
+    dto.taskUuids,
+    dto,
+  );
+}
 
+   
 @Post('summary/export')
 @Permissions('sj:calc')
 @ApiOperation({ summary: '导出四种经济性评价汇总到 Excel' })

@@ -7,7 +7,7 @@ export class CreateLumpMetallurgyPropDto {
   name: string;
 
   @ApiProperty({
-    description: '块矿冶金性能（JSON）',
+    description: '块矿冶金性能（composition，JSON 对象）',
     required: false,
     example: {
       '碱度4_0液相流动性指数/1250度': 68.5,
@@ -17,5 +17,5 @@ export class CreateLumpMetallurgyPropDto {
   })
   @IsOptional()
   @IsObject()
-  properties?: Record<string, any>;
+  composition?: Record<string, any>;
 }

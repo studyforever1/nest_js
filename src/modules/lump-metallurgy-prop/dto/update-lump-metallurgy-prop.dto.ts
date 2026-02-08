@@ -7,8 +7,8 @@ export class UpdateLumpMetallurgyPropDto {
   @IsString()
   name?: string;
 
-  @ApiPropertyOptional({ description: '块矿冶金性能（JSON）' })
+  @ApiPropertyOptional({ description: '块矿冶金性能（composition，JSON 对象）' })
   @IsOptional()
   @IsObject()
-  properties?: Record<string, any>;
+  composition?: Record<string, any>;
 }

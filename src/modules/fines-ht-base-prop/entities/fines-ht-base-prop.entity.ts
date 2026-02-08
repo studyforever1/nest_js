@@ -14,11 +14,11 @@ export class FinesHtBaseProp {
   @Column({ comment: '矿粉名称' })
   name: string;
 
-  @Column('json', {
+ @Column('json', {
     nullable: true,
-    comment: '高温基础特性指标（JSON）',
+    comment: '化学成分典型值（JSON）',
   })
-  properties: Record<string, any>;
+  composition: Record<string, any>;
 
   @Column({ nullable: true, comment: '修改者' })
   modifier: string;

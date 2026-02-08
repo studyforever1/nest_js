@@ -7,7 +7,7 @@ import { ConfigGroup } from '../../database/entities/config-group.entity';
 import { BizModule } from '../../database/entities/biz-module.entity';
 import { User } from '../user/entities/user.entity';
 import { SjRawMaterial } from '../sj-raw-material/entities/sj-raw-material.entity';
-import { formatRaw } from '../sj-config/util/format-raw.util';
+import { FIXED_HEADERS } from '../sj-raw-material/sj-raw-material.service';
 import _ from 'lodash';
 import { In } from 'typeorm';
 import { BadRequestException } from '@nestjs/common/exceptions';
@@ -135,8 +135,43 @@ export class SjconfigService {
     configData.ingredientResults = resultsWithName;
   }
 
+  // ===============================
+  // 3️⃣ otherSettings 固定字段顺序
+  // ===============================
+  const otherSettingsOrder = [
+    '精粉',
+    '固定配比',
+    '其他费用',
+    '计划上料量',
+    '脱硫率',
+    '烟气流量',
+    '品位间距',
+    '碱度间距',
+    'S残存系数',
+    'Pb残存系数',
+    'K2O残存系数',
+    'Na2O残存系数',
+    '烧结矿产量',
+    '原料余量设置',
+    '精粉总比例上限',
+    '精粉总比例下限',
+    '干基总残存修正值',
+    '修正值运算'
+  ];
+
+  if (configData.otherSettings) {
+    const fixedOtherSettings: Record<string, any> = {};
+    otherSettingsOrder.forEach(key => {
+      if (key in configData.otherSettings) {
+        fixedOtherSettings[key] = configData.otherSettings[key];
+      }
+    });
+    configData.otherSettings = fixedOtherSettings;
+  }
+
   return configData;
 }
+
 
 
   /** 保存完整参数组（深合并更新，不修改默认参数） */
@@ -470,6 +505,25 @@ async deleteIngredientParams(
 
   /** 获取已选原料（分页） */
   /** 获取已选原料（支持分页、名称模糊、分类筛选） */
+  /** 规范化composition */
+  private normalizeComposition(composition?: Record<string, number>): Record<string, number> {
+    const result: Record<string, number> = {};
+    FIXED_HEADERS.forEach((key) => {
+      result[key] = composition?.[key] ?? 0;
+    });
+    return result;
+  }
+
+  /** 排序字段映射 */
+  private readonly SORT_FIELD_MAP: Record<string, string> = {
+    name: 'raw.name',
+    category: 'raw.category',
+    inventory: 'raw.inventory',
+    'composition.TFe': "JSON_EXTRACT(raw.composition, '$.TFe')",
+    'composition.SiO2': "JSON_EXTRACT(raw.composition, '$.SiO2')",
+    'composition.价格': "JSON_EXTRACT(raw.composition, '$.价格')",
+  };
+
 async getSelectedIngredients(
   user: User,
   moduleName: string,
@@ -477,11 +531,15 @@ async getSelectedIngredients(
   pageSize = 10,
   name?: string,
   type?: string,
+  sort?: string,
+  order?: 'asc' | 'desc',
 ) {
+  /** ---- 0. 获取用户分组配置 ---- */
   const group = await this.getOrCreateUserGroup(user, moduleName);
   const configData = group.config_data || {};
   const ingredientParams: number[] = configData.ingredientParams || [];
 
+  /** ---- 用户尚未选择任何原料，直接返回 ---- */
   if (!ingredientParams.length) {
     return {
       data: [],
@@ -492,32 +550,49 @@ async getSelectedIngredients(
     };
   }
 
-  /** ---- 1. 构建 query builder（先筛选用户所选原料） ---- */
-  const qb = this.rawRepo.createQueryBuilder('raw')
-    .where('raw.id IN (:...ids)', { ids: ingredientParams })
-    .orderBy('raw.id', 'ASC'); // 保持顺序一致
+  /** ---- 1. 构建 QueryBuilder（限定用户已选原料） ---- */
+  const qb = this.rawRepo
+    .createQueryBuilder('raw')
+    .where('raw.id IN (:...ids)', { ids: ingredientParams });
 
-  /** ---- 2. 追加搜索条件 ---- */
+  /** ---- 2. 名称模糊搜索 ---- */
   if (name) {
     qb.andWhere('raw.name LIKE :name', { name: `%${name}%` });
   }
 
+  /** ---- 3. 分类 / 类型筛选（⭐ 新增） ---- */
   if (type) {
-    qb.andWhere('raw.category LIKE :cat', { cat: `${type}%` });
+    qb.andWhere('raw.category LIKE :type', { type: `%${type}%` });
+    // 如果你的字段不是 category，这里改成真实字段即可
   }
 
-  /** ---- 3. 获取总数（用于分页） ---- */
+  /** ---- 4. 排序逻辑 ---- */
+  if (sort && this.SORT_FIELD_MAP[sort]) {
+    qb.orderBy(
+      this.SORT_FIELD_MAP[sort],
+      order === 'desc' ? 'DESC' : 'ASC',
+    );
+  } else {
+    // ⚠️ 默认排序一定要有，防止分页结果抖动
+    qb.orderBy('raw.id', 'ASC');
+  }
+
+  /** ---- 5. 获取总数（⚠️ 在 skip / take 之前） ---- */
   const total = await qb.getCount();
 
-  /** ---- 4. 分页查询 ---- */
+  /** ---- 6. 分页查询 ---- */
   const records = await qb
     .skip((page - 1) * pageSize)
     .take(pageSize)
     .getMany();
 
-  /** ---- 5. 统一格式化 ---- */
-  const list = records.map(formatRaw);
+  /** ---- 7. 统一返回结构（composition 规范化） ---- */
+  const list = records.map(item => ({
+    ...item,
+    composition: this.normalizeComposition(item.composition),
+  }));
 
+  /** ---- 8. 返回分页结果 ---- */
   return {
     data: list,
     total,
@@ -526,6 +601,7 @@ async getSelectedIngredients(
     totalPages: Math.ceil(total / pageSize),
   };
 }
+
 
 
 // sjconfig.service.ts
@@ -639,19 +715,39 @@ async getSJProcessCostList(
     list = list.filter(item => item.name.includes(kw));
   }
 
-  const total = list.length;
-  const pagedList = list.slice((page - 1) * pageSize, page * pageSize);
+  // ================= 排序逻辑 =================
+  const categoryOrder = ['动力费用', '制造费用', '其他']; // 固定分类顺序
+  list.sort((a, b) => {
+    const catA = categoryOrder.indexOf(a['项目分类']) >= 0 ? categoryOrder.indexOf(a['项目分类']) : 999;
+    const catB = categoryOrder.indexOf(b['项目分类']) >= 0 ? categoryOrder.indexOf(b['项目分类']) : 999;
+    if (catA !== catB) return catA - catB;
 
-  // 返回分页 + totalCost
+    return a.name.localeCompare(b.name);
+  });
+
+  // ================= 字段顺序固定 =================
+  const formattedList = list.map(item => ({
+    'name': item['name'],           // ⭐ name 放最前
+    '项目分类': item['项目分类'] ?? '',
+    '单位': item['单位'] ?? '',
+    '价格': item['价格'] ?? '--',
+    '单位用量': item['单位用量'] ?? '--',
+    '单位成本': item['单位成本'] ?? '--',
+  }));
+
+  const total = formattedList.length;
+  const pagedList = formattedList.slice((page - 1) * pageSize, page * pageSize);
+
   return {
     data: pagedList,
     total,
     page,
     pageSize,
     totalPages: Math.ceil(total / pageSize),
-    totalCost, // ⭐ 新增
+    totalCost,
   };
 }
+
 
 
 // 工具函数

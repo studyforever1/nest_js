@@ -16,15 +16,26 @@ import { UpdatePelletEconInfoDto } from './dto/update-pellet-econ-info.dto';
  * - 根据数据库实际数据提取的composition字段（不包含name、港口等基础字段）
  */
 export const FIXED_HEADERS = [
-  'P', 'S', 'As', 'Cr', 'Cu', 'Ni', 'Zn', 'CaO', 'H2O', 'K2O', 'MgO', 'MnO',
-  'TFe', 'Na2O', 'SiO2', 'TiO2', 'Al2O3', '港口', '烧损', '粉率',
-  '运费', '车板价', '干粉价格', '干基不含税到厂价',
+  'TFe','SiO2','Al2O3','P', 'S', 'MnO', 'H2O', '粉率', '车板价','运费', '干粉价格', '干基不含税到厂价',
+  'CaO','MgO','TiO2','Zn','K2O','Na2O','Cr','Cu','As','Ni','烧损'
 ];
 
 type FixedHeader = (typeof FIXED_HEADERS)[number];
 
+/** 排序字段映射 */
+const SORT_FIELD_MAP: Record<string, string> = {
+  // 普通字段
+  name: 'p.name',
+  created_at: 'p.created_at',
+  // JSON 字段
+  'composition.TFe': "JSON_EXTRACT(p.composition, '$.TFe')",
+  'composition.干基不含税到厂价': "JSON_EXTRACT(p.composition, '$.干基不含税到厂价')",
+};
+
 @Injectable()
 export class PelletEconInfoService {
+  private readonly SORT_FIELD_MAP = SORT_FIELD_MAP;
+
   constructor(
     @InjectRepository(PelletEconInfo)
     private readonly repo: Repository<PelletEconInfo>,
@@ -72,10 +83,21 @@ export class PelletEconInfoService {
   }
 
   /** ========================= 查询（核心修改点） ========================= */
-  async query(options: { page: number; pageSize: number; name?: string; type?: string }) {
-    const { page, pageSize, name, type } = options;
-    const qb = this.repo.createQueryBuilder('p').orderBy('p.id', 'ASC');
+  async query(options: { page: number; pageSize: number; name?: string; sort?: string; order?: 'asc' | 'desc' }) {
+    const { page, pageSize, name, sort, order } = options;
+    const qb = this.repo.createQueryBuilder('p');
     if (name) qb.andWhere('p.name LIKE :name', { name: `%${name}%` });
+    
+    // ⭐ 排序逻辑
+    if (sort && this.SORT_FIELD_MAP[sort]) {
+      qb.orderBy(
+        this.SORT_FIELD_MAP[sort],
+        order === 'desc' ? 'DESC' : 'ASC',
+      );
+    } else {
+      qb.orderBy('p.id', 'ASC');
+    }
+    
     const [records, total] = await qb.skip((page - 1) * pageSize).take(pageSize).getManyAndCount();
 
     const mapped = records.map(item => ({

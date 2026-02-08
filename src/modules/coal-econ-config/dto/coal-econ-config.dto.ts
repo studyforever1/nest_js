@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsArray, ArrayNotEmpty, IsInt, IsOptional, IsObject } from 'class-validator';
+import { IsArray, ArrayNotEmpty, IsInt, IsOptional, IsObject, IsString, IsIn } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class SaveCoalEconConfigDto {
   @ApiProperty({ description: '完整参数组', example: {} })
@@ -30,13 +31,31 @@ export class DeleteCoalParamsDto {
 export class CoalEconPaginationDto {
   @ApiPropertyOptional({ default: 1 })
   @IsOptional()
+  @Type(() => Number)
+  @IsInt()
   page?: number;
 
   @ApiPropertyOptional({ default: 10 })
   @IsOptional()
+  @Type(() => Number)
+  @IsInt()
   pageSize?: number;
 
   @ApiPropertyOptional({ description: '煤炭名称模糊搜索' })
   @IsOptional()
+  @IsString()
   name?: string;
+
+  @ApiPropertyOptional({
+    description: '排序字段，如 name、composition.干基不含税到厂价',
+    example: 'composition.干基不含税到厂价',
+  })
+  @IsOptional()
+  @IsString()
+  sort?: string;
+
+  @ApiPropertyOptional({ description: '排序方式 asc/desc', example: 'asc' })
+  @IsOptional()
+  @IsIn(['asc', 'desc'])
+  order?: 'asc' | 'desc';
 }

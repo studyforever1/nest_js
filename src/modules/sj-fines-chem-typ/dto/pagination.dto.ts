@@ -21,13 +21,8 @@ export class PaginationDto {
   @IsString()
   name?: string;
 
-  @ApiPropertyOptional({ description: '类型筛选' })
-  @IsOptional()
-  @IsString()
-  type?: string;
-
   @ApiPropertyOptional({
-    description: '排序字段，如 name、created_at、chemValues.TFe',
+    description: '排序字段，如 name、created_at、composition.TFe',
   })
   @IsOptional()
   @IsString()

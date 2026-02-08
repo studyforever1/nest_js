@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsArray, IsNumber, IsOptional, IsObject, IsString } from 'class-validator';
+import { IsArray, IsNumber, IsOptional, IsObject, IsString,IsIn } from 'class-validator';
 import { Type } from 'class-transformer';
 
 /** 保存完整参数组 DTO */
@@ -73,4 +73,17 @@ export class CokeEconPaginationDto {
   @IsOptional()
   @IsString()
   name?: string;
+
+  @ApiPropertyOptional({
+    description: '排序字段，如 name、composition.焦炭含税到厂价',
+    example: 'composition.焦炭含税到厂价',
+  })
+  @IsOptional()
+  @IsString()
+  sort?: string;
+
+  @ApiPropertyOptional({ description: '排序方式 asc/desc', example: 'asc' })
+  @IsOptional()
+  @IsIn(['asc', 'desc'])
+  order?: 'asc' | 'desc';
 }

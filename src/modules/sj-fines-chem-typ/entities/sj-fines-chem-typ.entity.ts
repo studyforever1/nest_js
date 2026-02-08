@@ -18,7 +18,7 @@ export class SjFinesChemTyp {
     nullable: true,
     comment: '化学成分典型值（JSON）',
   })
-  chemValues: Record<string, any>;
+  composition: Record<string, any>;
 
   @Column({ nullable: true, comment: '修改者' })
   modifier: string;

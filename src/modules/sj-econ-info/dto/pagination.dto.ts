@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsInt, Min, Max, IsOptional, IsString } from 'class-validator';
+import { IsInt, Min, Max, IsOptional, IsString, IsIn } from 'class-validator';
 
 export class PaginationDto {
   @ApiPropertyOptional({ description: '页码（默认1）', example: 1 })
@@ -20,5 +20,18 @@ export class PaginationDto {
   @IsOptional()
   @IsString()
   name?: string;
+
+  @ApiPropertyOptional({
+    description: '排序字段，如 name、composition.TFe、composition.价格',
+    example: 'composition.价格',
+  })
+  @IsOptional()
+  @IsString()
+  sort?: string;
+
+  @ApiPropertyOptional({ description: '排序方式 asc/desc', example: 'asc' })
+  @IsOptional()
+  @IsIn(['asc', 'desc'])
+  order?: 'asc' | 'desc';
 }
 

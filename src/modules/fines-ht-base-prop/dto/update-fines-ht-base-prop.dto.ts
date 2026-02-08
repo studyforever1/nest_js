@@ -8,9 +8,9 @@ export class UpdateFinesHtBasePropDto {
   name?: string;
 
   @ApiPropertyOptional({
-    description: '高温基础特性（JSON）',
+    description: '高温基础特性（composition，JSON 对象）',
   })
   @IsOptional()
   @IsObject()
-  properties?: Record<string, any>;
+  composition?: Record<string, any>;
 }

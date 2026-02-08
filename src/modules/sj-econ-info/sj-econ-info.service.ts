@@ -15,14 +15,26 @@ import type { Express } from 'express';
  * - 根据数据库实际数据提取的composition字段
  */
 export const FIXED_HEADERS = [
-  'Pb','P', 'S', 'As',  'Zn', 'CaO', 'K2O', 'MgO', 'TFe', 'Na2O',
+  'P', 'S', 'As', 'Pb', 'Zn', 'CaO', 'K2O', 'MgO', 'TFe', 'Na2O',
   'SiO2', 'TiO2', 'V2O5', 'Al2O3', '价格', '烧损',
 ];
 
 type FixedHeader = (typeof FIXED_HEADERS)[number];
 
+/** 排序字段映射 */
+const SORT_FIELD_MAP: Record<string, string> = {
+  // 普通字段
+  name: 'e.name',
+  created_at: 'e.created_at',
+  // JSON 字段
+  'composition.TFe': "JSON_EXTRACT(e.composition, '$.TFe')",
+  'composition.价格': "JSON_EXTRACT(e.composition, '$.价格')",
+};
+
 @Injectable()
 export class SjEconInfoService {
+  private readonly SORT_FIELD_MAP = SORT_FIELD_MAP;
+
   constructor(
     @InjectRepository(SjEconInfo)
     private readonly econRepo: Repository<SjEconInfo>,
@@ -65,28 +77,31 @@ export class SjEconInfoService {
     return this.econRepo.save(econ);
   }
 
-  /** 查询（分页 + 名称模糊 + 类型筛选） */
+  /** 查询（分页 + 名称模糊 + 排序） */
   async query(options: {
     page: number;
     pageSize: number;
     name?: string;
-    type?: string;
+    sort?: string;
+    order?: 'asc' | 'desc';
   }) {
-    const { page, pageSize, name, type } = options;
+    const { page, pageSize, name, sort, order } = options;
 
-    const qb = this.econRepo
-      .createQueryBuilder('e')
-      .orderBy('e.id', 'ASC');
+    const qb = this.econRepo.createQueryBuilder('e');
 
     if (name) {
       qb.andWhere('e.name LIKE :name', { name: `%${name}%` });
     }
 
-    // 如果实体有 category 字段，支持按 type 筛选
-    // 注意：sj-econ-info 可能没有 category 字段，这里先保留接口，实际筛选逻辑根据实体结构调整
-    if (type) {
-      // 如果实体有 category 字段，取消下面的注释
-      // qb.andWhere('e.category LIKE :cat', { cat: `${type}%` });
+    // ⭐ 排序逻辑
+    if (sort && this.SORT_FIELD_MAP[sort]) {
+      qb.orderBy(
+        this.SORT_FIELD_MAP[sort],
+        order === 'desc' ? 'DESC' : 'ASC',
+      );
+    } else {
+      // 默认排序
+      qb.orderBy('e.id', 'ASC');
     }
 
     const [records, total] = await qb

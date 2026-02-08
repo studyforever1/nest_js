@@ -69,9 +69,9 @@ export class PelletEconConfigController {
     return this.service.deletePelletParams(user, this.MODULE_NAME, body.removeIds);
   }
 
-  /** 获取已选球团（分页 + 名称模糊） */
+  /** 获取已选球团（分页 + 名称模糊 + 排序） */
   @Get('selected-pellet')
-  @ApiOperation({ summary: '获取已选球团块矿（分页、名称模糊）' })
+  @ApiOperation({ summary: '获取已选球团块矿（分页、名称模糊、排序）' })
   async getSelected(
     @CurrentUser() user: User,
     @Query() query: PelletEconPaginationDto,
@@ -84,6 +84,8 @@ export class PelletEconConfigController {
       page,
       pageSize,
       query.name,
+      query.sort,
+      query.order,
     );
   }
 }

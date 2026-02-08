@@ -7,6 +7,16 @@ import { ConfigGroup } from '../../database/entities/config-group.entity';
 import { BizModule } from '../../database/entities/biz-module.entity';
 import { User } from '../user/entities/user.entity';
 import { PelletEconInfo } from '../pellet-econ-info/entities/pellet-econ-info.entity';
+import { FIXED_HEADERS } from '../pellet-econ-info/pellet-econ-info.service';
+
+const OTHER_MINERAL_FIELD_ORDER = [
+  '单价',
+  'SiO2',
+  'CaO',
+  'MgO',
+  'Al2O3'
+];
+
 
 @Injectable()
 export class PelletEconConfigService {
@@ -62,12 +72,56 @@ export class PelletEconConfigService {
 
     return group;
   }
+private sortFields(
+  source: Record<string, any>,
+  order: string[],
+) {
+  const result: Record<string, any> = {};
 
-  /** 获取最新参数 */
-  async getLatestConfig(user: User, moduleName: string) {
-    const group = await this.getOrCreateUserGroup(user, moduleName);
-    return _.cloneDeep(group.config_data);
+  for (const key of order) {
+    if (key in source) {
+      result[key] = source[key];
+    }
   }
+
+  for (const key of Object.keys(source)) {
+    if (!(key in result)) {
+      result[key] = source[key];
+    }
+  }
+
+  return result;
+}
+
+private normalizePelletConfig(config: Record<string, any>) {
+  const clone = _.cloneDeep(config);
+
+  if (clone?.pelletCostSet?.['其他矿粉成分设置']) {
+    const sorted: Record<string, any> = {};
+
+    for (const [name, material] of Object.entries(
+      clone.pelletCostSet['其他矿粉成分设置'],
+    )) {
+      sorted[name] = this.sortFields(
+        material as Record<string, any>,
+        OTHER_MINERAL_FIELD_ORDER,
+      );
+    }
+
+    clone.pelletCostSet['其他矿粉成分设置'] = sorted;
+  }
+
+  return clone;
+}
+
+
+  async getLatestConfig(user: User, moduleName: string) {
+  const group = await this.getOrCreateUserGroup(user, moduleName);
+  const rawConfig = group.config_data || {};
+
+  return this.normalizePelletConfig(rawConfig);
+}
+
 
   /** 保存完整参数 */
   /** 保存完整参数（保护 pelletParams） */
@@ -137,8 +191,37 @@ async saveFullConfig(
     return this.configRepo.save(group);
   }
 
+  /** 规范化composition */
+  private normalizeComposition(composition?: Record<string, any>): Record<string, any> {
+    const result: Record<string, any> = {};
+    FIXED_HEADERS.forEach((key) => {
+      if (key === '港口') {
+        result[key] = composition?.[key] ?? '未知港口';
+      } else {
+        result[key] = composition?.[key] ?? 0;
+      }
+    });
+    return result;
+  }
+
+  /** 排序字段映射 */
+  private readonly SORT_FIELD_MAP: Record<string, string> = {
+    name: 'pellet.name',
+    created_at: 'pellet.created_at',
+    'composition.TFe': "JSON_EXTRACT(pellet.composition, '$.TFe')",
+    'composition.干基不含税到厂价': "JSON_EXTRACT(pellet.composition, '$.干基不含税到厂价')",
+  };
+
   /** 获取已选球团 */
-  async getSelectedPellet(user: User, moduleName: string, page = 1, pageSize = 10, name?: string) {
+  async getSelectedPellet(
+    user: User,
+    moduleName: string,
+    page = 1,
+    pageSize = 10,
+    name?: string,
+    sort?: string,
+    order?: 'asc' | 'desc',
+  ) {
     const group = await this.getOrCreateUserGroup(user, moduleName);
     const configData = group.config_data || {};
     const pelletParams: number[] = configData.pelletParams || [];
@@ -153,11 +236,25 @@ async saveFullConfig(
 
     if (name?.trim()) qb.andWhere('pellet.name LIKE :name', { name: `%${name}%` });
 
+    // ⭐ 排序逻辑
+    if (sort && this.SORT_FIELD_MAP[sort]) {
+      qb.orderBy(
+        this.SORT_FIELD_MAP[sort],
+        order === 'desc' ? 'DESC' : 'ASC',
+      );
+    } else {
+      qb.orderBy('pellet.id', 'ASC');
+    }
+
     const total = await qb.getCount();
     const records = await qb.skip((page - 1) * pageSize).take(pageSize).getMany();
 
+    // ✅ 统一格式：返回composition对象，不展开
     return {
-      data: records,
+      data: records.map(item => ({
+        ...item,
+        composition: this.normalizeComposition(item.composition),
+      })),
       total,
       page: Number(page),
       pageSize: Number(pageSize),

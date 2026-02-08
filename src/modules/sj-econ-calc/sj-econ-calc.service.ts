@@ -545,6 +545,108 @@ async fetchMaterialLibraryProgress(
 }
 
 
+async fetchPortIronOreProgress(
+    taskUuid: string,
+    pagination?: SJEconPaginationDto
+): Promise<ApiResponse<any>> {
+    try {
+        // 1️⃣ 查询任务
+        const task = await this.taskRepo.findOne({ where: { task_uuid: taskUuid } });
+        if (!task) return ApiResponse.error('任务不存在');
+
+        const taskDef = this.ECON_TASKS.find(t => t.name === task.module_type);
+        if (!taskDef) return ApiResponse.error('任务定义不存在');
+
+        // 2️⃣ 调用 FastAPI 查询进度
+        const res = await this.apiGet(taskDef.progressUrl, { taskUuid });
+        const data = res.data?.data;
+
+        if (!data) {
+            return ApiResponse.success({
+                taskUuid,
+                status: 'RUNNING',
+                results: [],
+                page: pagination?.page ?? 1,
+                pageSize: pagination?.pageSize ?? 10,
+                totalResults: 0,
+                totalPages: 0,
+            });
+        }
+
+        // 3️⃣ 收集原料 ID
+        const idSet = new Set<number>();
+        (data.results || []).forEach(item => {
+            const rawId = Number(item['原料']);
+            if (!isNaN(rawId)) idSet.add(rawId);
+        });
+
+        // 4️⃣ 用 SjRawMaterial 做 ID → name 映射
+        // 🔥 用 portIronRepo 映射原料名称
+const raws = await this.portIronRepo.find({ where: { id: In([...idSet]) } });
+
+
+        const idNameMap: Record<number, string> = {};
+        raws.forEach(raw => { idNameMap[raw.id] = raw.name; });
+
+        // 5️⃣ 替换结果中的“原料”字段
+        let mappedResults = (data.results || []).map(item => {
+            const rawId = Number(item['原料']);
+            return { ...item, 原料: idNameMap[rawId] || item['原料'] };
+        });
+
+        // 6️⃣ ⚡ 性价比排名
+        const rankFields = [
+            '单品位价格折算后',
+            '烧结矿单品位价折算后',
+            '生铁成本',
+            '与PB粉对比'
+        ];
+
+        // 找到第一个有效字段
+        const rankField = rankFields.find(f =>
+            mappedResults.some(item => !isNaN(Number(item[f])))
+        );
+
+        if (rankField) {
+            // 只排序有数值的条目
+            const resultsWithValue = mappedResults
+                .filter(item => !isNaN(Number(item[rankField])))
+                .sort((a, b) => Number(a[rankField]) - Number(b[rankField])); // 升序
+
+            // 创建 Map 保存原料对应排名
+            const rankMap = new Map<string, number>();
+            resultsWithValue.forEach((item, index) => {
+                rankMap.set(item['原料'], index + 1);
+            });
+
+            // 回写排名到原数组
+            mappedResults = mappedResults.map(item => ({
+                ...item,
+                性价比排名: rankMap.get(item['原料']) ?? undefined
+            }));
+        }
+
+        // 7️⃣ 分页 + 排序
+        const { pagedResults, totalResults, totalPages } =
+            this.applyPaginationAndSort(mappedResults, pagination);
+
+        return ApiResponse.success({
+            taskUuid,
+            status: data.status,
+            progress: data.progress ?? 0,
+            total: data.total ?? 0,
+            results: pagedResults,
+            page: pagination?.page ?? 1,
+            pageSize: pagination?.pageSize ?? 10,
+            totalResults,
+            totalPages,
+        });
+
+    } catch (err) {
+        return this.handleError(err, '获取烧结物料信息库评价结果失败');
+    }
+}
+
 
 
 
@@ -717,8 +819,146 @@ async fetchMaterialLibraryProgress(
     }
 
 
+async buildMaterialLibrarySummaryFromTaskRefs(
+  taskRefs: { taskUuid: string; name: string }[],
+  pagination?: SJEconPaginationDto,
+): Promise<ApiResponse<any>> {
+  try {
+    const summaryMap: Record<string, any> = {};
+
+    for (const { taskUuid, name } of taskRefs) {
+      const task = await this.taskRepo.findOne({ where: { task_uuid: taskUuid } });
+      if (!task) continue;
+
+      const taskDef = this.ECON_TASKS.find(t => t.name === name);
+      if (!taskDef) continue;
+
+      const fieldConfig = this.ECON_SUMMARY_FIELD_MAP[name];
+      if (!fieldConfig) continue;
+
+      const res = await this.apiGet(taskDef.progressUrl, { taskUuid });
+      const results = res.data?.data?.results || [];
+      if (!results.length) continue;
+
+      const rawIdSet = new Set<number>();
+      results.forEach(item => {
+        const rawId = Number(item['原料']);
+        if (!isNaN(rawId)) rawIdSet.add(rawId);
+      });
+
+      // ✅ 唯一变化：使用 sjRawMaterialRepo
+      const raws = rawIdSet.size
+        ? await this.sjRawRepo.find({ where: { id: In([...rawIdSet]) } })
+        : [];
+
+      const idNameMap: Record<number, string> = {};
+      raws.forEach(raw => (idNameMap[raw.id] = raw.name));
+
+      results.forEach(item => {
+        const rawId = Number(item['原料']);
+        const rawName = idNameMap[rawId] || item['原料'];
+
+        if (!summaryMap[rawName]) summaryMap[rawName] = { 原料: rawName };
+
+        fieldConfig.pickFields.forEach(field => {
+          if (field in item) {
+            summaryMap[rawName][field] = item[field];
+          }
+        });
+      });
+    }
+
+    return this.buildPagedSummary(summaryMap, pagination);
+  } catch (err) {
+    return this.handleError(err, '烧结物料信息库评价汇总失败');
+  }
+}
+async buildPortIronOreSummaryFromTaskRefs(
+  taskRefs: { taskUuid: string; name: string }[],
+  pagination?: SJEconPaginationDto,
+): Promise<ApiResponse<any>> {
+  try {
+    const summaryMap: Record<string, any> = {};
+
+    for (const { taskUuid, name } of taskRefs) {
+      const task = await this.taskRepo.findOne({ where: { task_uuid: taskUuid } });
+      if (!task) continue;
+
+      const taskDef = this.ECON_TASKS.find(t => t.name === name);
+      if (!taskDef) continue;
+
+      const fieldConfig = this.ECON_SUMMARY_FIELD_MAP[name];
+      if (!fieldConfig) continue;
+
+      const res = await this.apiGet(taskDef.progressUrl, { taskUuid });
+      const results = res.data?.data?.results || [];
+      if (!results.length) continue;
+
+      const rawIdSet = new Set<number>();
+      results.forEach(item => {
+        const rawId = Number(item['原料']);
+        if (!isNaN(rawId)) rawIdSet.add(rawId);
+      });
+
+      // ✅ 唯一变化：使用 portIronOreRepo
+      const raws = rawIdSet.size
+        ? await this.portIronRepo.find({ where: { id: In([...rawIdSet]) } })
+        : [];
+
+      const idNameMap: Record<number, string> = {};
+      raws.forEach(raw => (idNameMap[raw.id] = raw.name));
+
+      results.forEach(item => {
+        const rawId = Number(item['原料']);
+        const rawName = idNameMap[rawId] || item['原料'];
+
+        if (!summaryMap[rawName]) summaryMap[rawName] = { 原料: rawName };
+
+        fieldConfig.pickFields.forEach(field => {
+          if (field in item) {
+            summaryMap[rawName][field] = item[field];
+          }
+        });
+      });
+    }
+
+    return this.buildPagedSummary(summaryMap, pagination);
+  } catch (err) {
+    return this.handleError(err, '港口矿粉资源库评价汇总失败');
+  }
+}
 
 
+private buildPagedSummary(
+  summaryMap: Record<string, any>,
+  pagination?: SJEconPaginationDto,
+) {
+  let summaryList = Object.values(summaryMap);
+
+  if (pagination?.sort) {
+    const order = pagination.order === 'desc' ? -1 : 1;
+    summaryList = summaryList.sort((a, b) => {
+      const va = a[pagination.sort!];
+      const vb = b[pagination.sort!];
+      const na = Number(va);
+      const nb = Number(vb);
+      if (!isNaN(na) && !isNaN(nb)) return na > nb ? order : na < nb ? -order : 0;
+      return va > vb ? order : va < vb ? -order : 0;
+    });
+  }
+
+  const page = pagination?.page ?? 1;
+  const pageSize = pagination?.pageSize ?? 10;
+  const start = (page - 1) * pageSize;
+
+  return ApiResponse.success({
+    results: summaryList.slice(start, start + pageSize),
+    page,
+    pageSize,
+    totalResults: summaryList.length,
+    totalPages: Math.ceil(summaryList.length / pageSize),
+  });
+}
 
 
 }

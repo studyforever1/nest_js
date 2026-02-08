@@ -22,8 +22,19 @@ export const FIXED_HEADERS = [
 
 type FixedHeader = (typeof FIXED_HEADERS)[number];
 
+/** 排序字段映射 */
+const SORT_FIELD_MAP: Record<string, string> = {
+  // 普通字段
+  name: 'c.name',
+  created_at: 'c.created_at',
+  // JSON 字段
+  'composition.焦炭含税到厂价': "JSON_EXTRACT(c.composition, '$.焦炭含税到厂价')",
+};
+
 @Injectable()
 export class CokeEconInfoService {
+  private readonly SORT_FIELD_MAP = SORT_FIELD_MAP;
+
   constructor(
     @InjectRepository(CokeEconInfo)
     private readonly repo: Repository<CokeEconInfo>,
@@ -66,10 +77,21 @@ export class CokeEconInfoService {
   }
 
   /** ========================= 查询（核心修改点） ========================= */
-  async query(options: { page: number; pageSize: number; name?: string; type?: string }) {
-    const { page, pageSize, name, type } = options;
-    const qb = this.repo.createQueryBuilder('c').orderBy('c.id', 'ASC');
+  async query(options: { page: number; pageSize: number; name?: string; sort?: string; order?: 'asc' | 'desc' }) {
+    const { page, pageSize, name, sort, order } = options;
+    const qb = this.repo.createQueryBuilder('c');
     if (name) qb.andWhere('c.name LIKE :name', { name: `%${name}%` });
+    
+    // ⭐ 排序逻辑
+    if (sort && this.SORT_FIELD_MAP[sort]) {
+      qb.orderBy(
+        this.SORT_FIELD_MAP[sort],
+        order === 'desc' ? 'DESC' : 'ASC',
+      );
+    } else {
+      qb.orderBy('c.id', 'ASC');
+    }
+    
     const [records, total] = await qb.skip((page - 1) * pageSize).take(pageSize).getManyAndCount();
 
     const mapped = records.map(item => ({

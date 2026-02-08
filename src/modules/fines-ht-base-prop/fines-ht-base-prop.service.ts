@@ -13,21 +13,19 @@ import { UpdateFinesHtBasePropDto } from './dto/update-fines-ht-base-prop.dto';
 const SORT_FIELD_MAP: Record<string, string> = {
   name: 'f.name',
   created_at: 'f.created_at',
-  'properties.TFe': "JSON_EXTRACT(f.properties, '$.TFe')",
+  'composition.TFe': "JSON_EXTRACT(f.composition, '$.TFe')",
 };
 
 /**
  * ✅ 固定表头（唯一标准）
  * - 查询 / 导入 / 导出 / 前端展示 都以此为准
- * - 注意：properties 中不包含"矿粉名称"
+ * - 注意：composition 中不包含"矿粉名称"
  */
 export const FIXED_HEADERS = [
-  '矿粉名称',
-  'TFe', 'SiO2', 'Al2O3', 'P', 'S', 'MnO', 'H2O',
-  '粉率', '车板价', '运费', '干粉价格',
-  '厂内筛分搬到等费用', '干基不含税',
-  'CaO', 'MgO', 'TiO2', 'Zn', 'K2O', 'Na2O',
-  'Cr', 'Cu', 'As', '烧损', 'Ni',
+  '矿粉名称','同化性', '碱度4_0液相流动性指数/1250度', '碱度4_0液相流动性指数/1270度', '碱度4_0液相流动性指数/1290度',
+   '碱度2_0粘结相强度', '连晶强度N', 'TFe','SiO2', 'CaO', 'MnO', 'Al2O3',
+  'MnO', 'P','S', 'TiO2', 'K2O', 'Na2O', 'Zn', 'FeO',
+  'LOI', '高温特性评价'
 ];
 
 type FixedHeader = (typeof FIXED_HEADERS)[number];
@@ -41,16 +39,16 @@ export class FinesHtBasePropService {
   ) {}
 
   /** =========================
-   *  核心：规范化 properties（按 FIXED_HEADERS 顺序，排除"矿粉名称"）
+   *  核心：规范化 composition（按 FIXED_HEADERS 顺序，排除"矿粉名称"）
    * ========================= */
-  private normalizeProperties(
-    properties?: Record<string, any>,
+  private normalizeComposition(
+    composition?: Record<string, any>,
   ): Record<string, any> {
     const result: Record<string, any> = {};
 
     FIXED_HEADERS.forEach((key) => {
       if (key === '矿粉名称') return; // 排除"矿粉名称"
-      result[key] = properties?.[key] ?? 0;
+      result[key] = composition?.[key] ?? 0;
     });
 
     return result;
@@ -60,7 +58,7 @@ export class FinesHtBasePropService {
   async create(dto: CreateFinesHtBasePropDto, username: string) {
     const entity = this.repo.create({
       ...dto,
-      properties: this.normalizeProperties(dto.properties),
+      composition: this.normalizeComposition(dto.composition),
       modifier: username,
       enabled: true,
     });
@@ -74,7 +72,7 @@ export class FinesHtBasePropService {
 
     Object.assign(entity, {
       ...dto,
-      properties: dto.properties ? this.normalizeProperties(dto.properties) : entity.properties,
+      composition: dto.composition ? this.normalizeComposition(dto.composition) : entity.composition,
       modifier: username,
     });
 
@@ -82,8 +80,8 @@ export class FinesHtBasePropService {
   }
 
   /** ========================= 查询（核心修改点） ========================= */
-  async query(options: { page: number; pageSize: number; name?: string; type?: string; sort?: string; order?: 'asc' | 'desc' }) {
-    const { page = 1, pageSize = 10, name, type, sort, order } = options;
+  async query(options: { page: number; pageSize: number; name?: string; sort?: string; order?: 'asc' | 'desc' }) {
+    const { page = 1, pageSize = 10, name, sort, order } = options;
     const qb = this.repo.createQueryBuilder('f');
 
     if (name) {
@@ -100,11 +98,11 @@ export class FinesHtBasePropService {
     const [list, total] = await qb.getManyAndCount();
 
     /**
-     * ✅ 规范化 properties，确保按 FIXED_HEADERS 顺序
+     * ✅ 规范化 composition，确保按 FIXED_HEADERS 顺序
      */
     const mapped = list.map(item => ({
       ...item,
-      properties: this.normalizeProperties(item.properties),
+      composition: this.normalizeComposition(item.composition),
     }));
 
     return { data: mapped, total, page, pageSize, totalPages: Math.ceil(total / pageSize) };
@@ -124,87 +122,121 @@ export class FinesHtBasePropService {
   }
 
   /** ========================= 导出 Excel ========================= */
-  async exportExcel(): Promise<Buffer> {
-    const list = await this.repo.find();
-    const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet('铁矿粉高温基础特性');
+async exportExcel(): Promise<Buffer> {
+  const list = await this.repo.find();
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet('铁矿粉高温基础特性');
 
-    // ✅ 按 FIXED_HEADERS 顺序导出
-    sheet.addRow(FIXED_HEADERS);
+  // 添加表头
+  sheet.addRow(FIXED_HEADERS);
 
-    list.forEach(item => {
-      const properties = this.normalizeProperties(item.properties);
+  // 数值列
+  const NUMERIC_COLUMNS = [
+    '同化性', '碱度4_0液相流动性指数/1250度', '碱度4_0液相流动性指数/1270度', '碱度4_0液相流动性指数/1290度',
+    '碱度2_0粘结相强度', '连晶强度N', 'TFe','SiO2', 'CaO', 'MnO', 'Al2O3',
+    'MnO', 'P','S', 'TiO2', 'K2O', 'Na2O', 'Zn', 'FeO', 'LOI'
+  ];
 
-      sheet.addRow([
-        item.name,
-        ...FIXED_HEADERS
-          .filter(h => h !== '矿粉名称')
-          .map(h => properties[h]),
-      ]);
+  list.forEach(item => {
+    const composition = this.normalizeComposition(item.composition);
+
+    const rowValues = FIXED_HEADERS.map((key, idx) => {
+      if (key === '矿粉名称') return item.name;
+
+      if (NUMERIC_COLUMNS.includes(key)) {
+        const val = composition[key];
+        return Number.isFinite(val) ? Number(val) : 0; // 数字列保持数字
+      } else {
+        const val = composition[key];
+        return val != null ? String(val) : ''; // 文本列保持字符串
+      }
     });
 
-    return Buffer.from(await workbook.xlsx.writeBuffer());
-  }
+    sheet.addRow(rowValues);
+  });
+
+  // 可选：设置列宽，便于查看
+  sheet.columns.forEach(col => {
+    col.width = 15;
+  });
+
+  return Buffer.from(await workbook.xlsx.writeBuffer());
+}
+
 
   /** ========================= 导入 Excel ========================= */
-  async importExcel(file: Express.Multer.File, username: string) {
-    if (!file?.buffer) throw new BadRequestException('文件为空');
+async importExcel(file: Express.Multer.File, username: string) {
+  if (!file?.buffer) throw new BadRequestException('文件为空');
 
-    const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(file.buffer as any);
-    const sheet = workbook.worksheets[0];
-    if (!sheet) throw new BadRequestException('Excel 中没有工作表');
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(file.buffer as any);
+  const sheet = workbook.worksheets[0];
+  if (!sheet) throw new BadRequestException('Excel 中没有工作表');
 
-    const headerRow = sheet.getRow(1);
-    const headerMap: Record<string, number> = {};
+  const headerRow = sheet.getRow(1);
+  const headerMap: Record<string, number> = {};
 
-    // ✅ 严格校验表头：每个列名必须在 FIXED_HEADERS 中
-    headerRow.eachCell((cell, col) => {
-      const val = String(cell.value ?? '').trim();
-      if (!val) return;
-      if (!FIXED_HEADERS.includes(val as FixedHeader)) {
-        throw new BadRequestException(`非法列名：${val}`);
-      }
-      headerMap[val] = col;
-    });
-
-    if (!headerMap['矿粉名称']) {
-      throw new BadRequestException('缺少必要列：矿粉名称');
+  headerRow.eachCell((cell, col) => {
+    const val = String(cell.value ?? '').trim();
+    if (!val) return;
+    if (!FIXED_HEADERS.includes(val as FixedHeader)) {
+      throw new BadRequestException(`非法列名：${val}`);
     }
+    headerMap[val] = col;
+  });
 
-    const result: FinesHtBaseProp[] = [];
-
-    sheet.eachRow({ includeEmpty: true }, (row, index) => {
-      if (index === 1) return;
-
-      const name = String(row.getCell(headerMap['矿粉名称'])?.value ?? '').trim();
-      if (!name) return;
-
-      const properties: Record<string, any> = {};
-
-      // ✅ 遍历 FIXED_HEADERS，缺失列自动补0
-      FIXED_HEADERS.forEach(key => {
-        if (key === '矿粉名称') return;
-        const col = headerMap[key];
-        const val = col ? parseFloat(String(row.getCell(col)?.value ?? '')) : 0;
-        properties[key] = Number.isFinite(val) ? val : 0;
-      });
-
-      result.push(this.repo.create({
-        name,
-        properties: this.normalizeProperties(properties),
-        modifier: username,
-        enabled: true,
-      }));
-    });
-
-    if (!result.length) {
-      return { status: 'error', message: '没有有效数据可导入' };
-    }
-
-    await this.repo.save(result);
-    return { status: 'success', message: `成功导入 ${result.length} 条数据` };
+  if (!headerMap['矿粉名称']) {
+    throw new BadRequestException('缺少必要列：矿粉名称');
   }
+
+  const result: FinesHtBaseProp[] = [];
+
+  // ✅ 数值列，其他列均按文本处理
+  const NUMERIC_COLUMNS = [
+    '同化性', '碱度4_0液相流动性指数/1250度', '碱度4_0液相流动性指数/1270度', '碱度4_0液相流动性指数/1290度',
+    '碱度2_0粘结相强度', '连晶强度N', 'TFe','SiO2', 'CaO', 'MnO', 'Al2O3',
+    'MnO', 'P','S', 'TiO2', 'K2O', 'Na2O', 'Zn', 'FeO', 'LOI'
+  ];
+
+  sheet.eachRow({ includeEmpty: true }, (row, index) => {
+    if (index === 1) return;
+
+    const name = String(row.getCell(headerMap['矿粉名称'])?.value ?? '').trim();
+    if (!name) return;
+
+    const composition: Record<string, any> = {};
+
+    FIXED_HEADERS.forEach(key => {
+      if (key === '矿粉名称') return;
+
+      const col = headerMap[key];
+      const val = col ? row.getCell(col)?.value : null;
+
+      if (NUMERIC_COLUMNS.includes(key)) {
+        const num = Number(val);
+        composition[key] = Number.isFinite(num) ? num : 0;
+      } else {
+        // 文本列，保留原始字符
+        composition[key] = val != null ? String(val).trim() : '';
+      }
+    });
+
+    result.push(this.repo.create({
+      name,
+      composition: this.normalizeComposition(composition),
+      modifier: username,
+      enabled: true,
+    }));
+  });
+
+  if (!result.length) {
+    return { status: 'error', message: '没有有效数据可导入' };
+  }
+
+  await this.repo.save(result);
+  return { status: 'success', message: `成功导入 ${result.length} 条数据` };
+}
+
 
   /** ========================= 模板 ========================= */
   private readonly templateDir = process.env.TEMPLATE_PATH || './templates';

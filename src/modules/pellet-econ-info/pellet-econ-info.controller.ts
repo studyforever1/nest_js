@@ -47,13 +47,20 @@ export class PelletEconInfoController {
   }
 
   @Get()
-  @ApiOperation({ summary: '查询球团块矿经济性信息（支持分页、名称模糊、类型筛选）' })
+  @ApiOperation({ summary: '查询球团块矿经济性信息（支持分页、名称模糊、排序）' })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'pageSize', required: false })
   @ApiQuery({ name: 'name', required: false })
-  @ApiQuery({ name: 'type', required: false })
-  findAll(@Query() pagination: PaginationDto, @Query('name') name?: string, @Query('type') type?: string) {
-    return this.service.query({ page: pagination.page ?? 1, pageSize: pagination.pageSize ?? 10, name, type });
+  @ApiQuery({ name: 'sort', required: false })
+  @ApiQuery({ name: 'order', required: false })
+  findAll(@Query() pagination: PaginationDto) {
+    return this.service.query({
+      page: pagination.page ?? 1,
+      pageSize: pagination.pageSize ?? 10,
+      name: pagination.name,
+      sort: pagination.sort,
+      order: pagination.order,
+    });
   }
 
   @Put(':id')

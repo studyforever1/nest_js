@@ -1,28 +1,38 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsInt, Min, Max, IsOptional, IsString } from 'class-validator';
+import { IsInt, Min, Max, IsOptional, IsString, IsIn } from 'class-validator';
 
 export class GLPaginationDto {
-  @ApiPropertyOptional({ description: '页码（默认1）', example: 1 })
+  @ApiPropertyOptional({ description: '页码', example: 1 })
   @Type(() => Number)
-  @IsInt({ message: 'page 必须是整数' })
-  @Min(1, { message: 'page 最小为 1' })
-  page: number = 1;
+  @IsInt()
+  @Min(1)
+  page?: number = 1;
 
-  @ApiPropertyOptional({ description: '每页条数（默认10，最大100）', example: 10 })
+  @ApiPropertyOptional({ description: '每页条数', example: 10 })
   @Type(() => Number)
-  @IsInt({ message: 'pageSize 必须是整数' })
-  @Min(1, { message: 'pageSize 最小为 1' })
-  @Max(100, { message: 'pageSize 最大为 100' })
-  pageSize: number = 10;
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  pageSize?: number = 10;
 
-  @ApiPropertyOptional({ description: '名称模糊搜索', example: '粉' })
+  @ApiPropertyOptional({ description: '名称模糊搜索' })
   @IsOptional()
-  @IsString({ message: 'name 必须为字符串' })
+  @IsString()
   name?: string;
 
-  @ApiPropertyOptional({ description: '分类前缀筛选', example: 'K' })
+  @ApiPropertyOptional({ description: '分类/类型筛选' })
   @IsOptional()
-  @IsString({ message: 'type 必须为字符串' })
+  @IsString()
   type?: string;
+
+  @ApiPropertyOptional({ description: '排序字段' })
+  @IsOptional()
+  @IsString()
+  sort?: string;
+
+  @ApiPropertyOptional({ description: '排序方式', enum: ['asc', 'desc'] })
+  @IsOptional()
+  @IsIn(['asc', 'desc'])
+  order?: 'asc' | 'desc';
 }

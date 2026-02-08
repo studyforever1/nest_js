@@ -156,6 +156,7 @@ async query(params: RawPaginationDto) {
     total,
     page,
     pageSize,
+    totalPages: Math.ceil(total / pageSize),
   };
 }
 

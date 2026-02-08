@@ -122,20 +122,23 @@ async latest(
   }
 
   @Get('selected-ingredients')
-  @ApiOperation({ summary: '获取已选原料（分页 / 搜索）' })
-  async getSelectedIngredients(
-    @CurrentUser() user: User,
-    @Query() dto: SJPaginationDto,
-  ) {
-    return this.sjconfigService.getSelectedIngredients(
-      user,
-      this.MODULE_NAME,
-      dto.page,
-      dto.pageSize,
-      dto.name,
-      dto.type,
-    );
-  }
+@ApiOperation({ summary: '获取已选原料（分页 / 搜索 / 类型 / 排序）' })
+async getSelectedIngredients(
+  @CurrentUser() user: User,
+  @Query() dto: SJPaginationDto,
+) {
+  return this.sjconfigService.getSelectedIngredients(
+    user,
+    this.MODULE_NAME,
+    dto.page ?? 1,
+    dto.pageSize ?? 10,
+    dto.name,
+    dto.type,      // ⭐ 新增
+    dto.sort,
+    dto.order,
+  );
+}
+
 
   // =====================================================
 // 🔥 烧结工序成本（重点）

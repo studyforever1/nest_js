@@ -85,9 +85,9 @@ export class CokeEconConfigController {
     );
   }
 
-  /** 获取已选焦炭（分页 + 模糊） */
+  /** 获取已选焦炭（分页 + 模糊 + 排序） */
   @Get('selected-coke')
-  @ApiOperation({ summary: '获取已选焦炭（分页、名称模糊）' })
+  @ApiOperation({ summary: '获取已选焦炭（分页、名称模糊、排序）' })
   async getSelectedCoke(
     @CurrentUser() user: User,
     @Query() query: CokeEconPaginationDto,
@@ -101,6 +101,8 @@ export class CokeEconConfigController {
       page,
       pageSize,
       query.name,
+      query.sort,
+      query.order,
     );
   }
 }

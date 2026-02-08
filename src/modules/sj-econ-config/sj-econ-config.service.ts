@@ -7,6 +7,38 @@ import { ConfigGroup } from '../../database/entities/config-group.entity';
 import { BizModule } from '../../database/entities/biz-module.entity';
 import { User } from '../user/entities/user.entity';
 import { SjEconInfo } from '../sj-econ-info/entities/sj-econ-info.entity';
+import { FIXED_HEADERS } from '../sj-econ-info/sj-econ-info.service';
+
+
+const RAW_MATERIAL_FIELD_ORDER = [
+  '原料',
+  'TFe',
+  'SiO2',
+  'CaO',
+  'MgO',
+  'Al2O3',
+'TiO2',
+  'P',
+  'S',
+  'Zn',
+  'K2O',
+  'Na2O',
+  '烧损',
+  '价格',
+  '干配比',
+];
+
+const COKE_FIELD_ORDER = [
+  'TFe',
+  'SiO2',
+  'CaO',
+  'MgO',
+  'Al2O3',
+  '灰分',
+  '价格',
+];
+
+
 
 @Injectable()
 export class SjEconConfigService {
@@ -65,12 +97,74 @@ export class SjEconConfigService {
 
     return group;
   }
+  private sortFields(
+  source: Record<string, any>,
+  order: string[],
+) {
+  const result: Record<string, any> = {};
+
+  // 1️⃣ 按指定顺序
+  for (const key of order) {
+    if (key in source) {
+      result[key] = source[key];
+    }
+  }
+
+  // 2️⃣ 兜底：没定义顺序的字段放后面
+  for (const key of Object.keys(source)) {
+    if (!(key in result)) {
+      result[key] = source[key];
+    }
+  }
+
+  return result;
+}
+private normalizeEconConfig(config: Record<string, any>) {
+  const clone = _.cloneDeep(config);
+
+  for (const block of Object.values(clone)) {
+    if (!block || typeof block !== 'object') continue;
+
+    /** ===== 原料成分设置 ===== */
+    if (block['原料成分设置']) {
+      const sortedRaw: Record<string, any> = {};
+
+      for (const [name, material] of Object.entries(block['原料成分设置'])) {
+        sortedRaw[name] = this.sortFields(
+          material as Record<string, any>,
+          RAW_MATERIAL_FIELD_ORDER,
+        );
+      }
+
+      block['原料成分设置'] = sortedRaw;
+    }
+
+    /** ===== 焦炭和煤成分设置 ===== */
+    if (block['焦炭和煤成分设置']) {
+      const sortedCoke: Record<string, any> = {};
+
+      for (const [name, material] of Object.entries(block['焦炭和煤成分设置'])) {
+        sortedCoke[name] = this.sortFields(
+          material as Record<string, any>,
+          COKE_FIELD_ORDER,
+        );
+      }
+
+      block['焦炭和煤成分设置'] = sortedCoke;
+    }
+  }
+
+  return clone;
+}
 
   /** 获取最新参数组 */
   async getLatestConfigByName(user: User, moduleName: string) {
-    const group = await this.getOrCreateUserGroup(user, moduleName);
-    return _.cloneDeep(group.config_data);
-  }
+  const group = await this.getOrCreateUserGroup(user, moduleName);
+  const rawConfig = group.config_data || {};
+
+  return this.normalizeEconConfig(rawConfig);
+}
+
 
   /** 保存完整参数组 */
   async saveFullConfig(user: User, moduleName: string, config_data: Record<string, any>) {
@@ -132,12 +226,31 @@ async deleteIngredients(
   group.config_data = configData;
   return this.configRepo.save(group);
 }
+  /** 规范化composition */
+  private normalizeComposition(composition?: Record<string, number>): Record<string, number> {
+    const result: Record<string, number> = {};
+    FIXED_HEADERS.forEach((key) => {
+      result[key] = composition?.[key] ?? 0;
+    });
+    return result;
+  }
+
+  /** 排序字段映射 */
+  private readonly SORT_FIELD_MAP: Record<string, string> = {
+    name: 'raw.name',
+    created_at: 'raw.created_at',
+    'composition.TFe': "JSON_EXTRACT(raw.composition, '$.TFe')",
+    'composition.价格': "JSON_EXTRACT(raw.composition, '$.价格')",
+  };
+
 async getSelectedIngredients(
   user: User,
   moduleName: string,
   page = 1,
   pageSize = 10,
-  name?: string
+  name?: string,
+  sort?: string,
+  order?: 'asc' | 'desc',
 ) {
   const group = await this.getOrCreateUserGroup(user, moduleName);
   const configData = group.config_data || {};
@@ -152,6 +265,16 @@ async getSelectedIngredients(
 
   if (name?.trim()) qb.andWhere('raw.name LIKE :name', { name: `%${name}%` });
 
+  // ⭐ 排序逻辑
+  if (sort && this.SORT_FIELD_MAP[sort]) {
+    qb.orderBy(
+      this.SORT_FIELD_MAP[sort],
+      order === 'desc' ? 'DESC' : 'ASC',
+    );
+  } else {
+    qb.orderBy('raw.id', 'ASC');
+  }
+
   const total = await qb.getCount();
 
   const records = await qb
@@ -159,8 +282,12 @@ async getSelectedIngredients(
     .take(pageSize)
     .getMany();
 
+  // ✅ 统一格式：返回composition对象，不展开
   return {
-    data: records,
+    data: records.map(item => ({
+      ...item,
+      composition: this.normalizeComposition(item.composition),
+    })),
     total,
     page,
     pageSize,

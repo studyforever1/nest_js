@@ -8,6 +8,8 @@ import { BizModule } from '../../database/entities/biz-module.entity';
 import { User } from '../user/entities/user.entity';
 import { GlMaterialInfo } from '../gl-material-info/entities/gl-material-info.entity';
 import { GlFuelInfo } from '../gl-fuel-info/entities/gl-fuel-info.entity';
+import { FIXED_HEADERS as MATERIAL_FIXED_HEADERS } from '../gl-material-info/gl-material-info.service';
+import { FIXED_HEADERS as FUEL_FIXED_HEADERS } from '../gl-fuel-info/gl-fuel-info.service';
 
 @Injectable()
 export class GlConfigService {
@@ -223,156 +225,136 @@ async getLatestConfigByName(user: User, moduleName: string) {
   /** 保存选中原料（支持分类 & 全选模式） */
 
 
-  async getSelectedIngredients(options: {
-    user: User;
-    moduleName: string;
-    page?: number;
-    pageSize?: number;
-    name?: string;
-    type?: string;
-  }) {
-    const { user, moduleName, page = 1, pageSize = 10, name, type } = options;
-
-    const group = await this.getOrCreateUserGroup(user, moduleName);
-    const ingredientParams: number[] = group.config_data?.ingredientParams || [];
-
-    if (!ingredientParams.length) {
-      return { data: [], total: 0, page, pageSize, totalPages: 0 };
-    }
-
-    /** ---- 1. 构建 QueryBuilder，仅查询已选材料 ---- */
-    let qb = this.rawRepo.createQueryBuilder('raw')
-      .where('raw.id IN (:...ids)', { ids: ingredientParams })
-      .orderBy('raw.id', 'ASC'); // 保持用户选择顺序
-
-    /** ---- 2. 追加筛选条件 ---- */
-    if (name) {
-      qb = qb.andWhere('raw.name LIKE :name', { name: `%${name}%` });
-    }
-
-    if (type) {
-      qb = qb.andWhere('raw.category LIKE :type', { type: `${type}%` });
-    }
-
-    /** ---- 3. 执行分页 ---- */
-    const [records, total] = await qb
-      .skip((page - 1) * pageSize)
-      .take(pageSize)
-      .getManyAndCount();
-
-    /** ---- 4. 展开 composition 字段（保持你原来的格式） ---- */
-    const formatRaw = (raw: any) => {
-      const { id, category, name, composition, inventory, remark } = raw;
-      if (!composition)
-        return { id, category, name, inventory, remark };
-
-      const {
-        TFe = null,
-        H2O = null,
-        返矿率 = null,
-        干基价格 = null,
-        返矿价格 = null,
-        ...others
-      } = composition;
-
-      return {
-        id,
-        category,
-        name,
-        TFe,
-        ...others,
-        inventory,
-        remark
-      };
-    };
-
-    return {
-      data: records.map(formatRaw),
-      total,
-      page,
-      pageSize,
-      totalPages: Math.ceil(total / pageSize)
-    };
+  /** 规范化composition（物料） */
+  private normalizeMaterialComposition(composition?: Record<string, number>): Record<string, number> {
+    const result: Record<string, number> = {};
+    MATERIAL_FIXED_HEADERS.forEach((key) => {
+      result[key] = composition?.[key] ?? 0;
+    });
+    return result;
   }
 
-
-
-  async getSelectedFuels(options: {
-    user: User;
-    moduleName: string;
-    page?: number;
-    pageSize?: number;
-    name?: string;
-    type?: string;
-  }) {
-    const { user, moduleName, page = 1, pageSize = 10, name, type } = options;
-
-    const group = await this.getOrCreateUserGroup(user, moduleName);
-    const fuelParams: number[] = group.config_data?.fuelParams || [];
-
-    if (!fuelParams.length) {
-      return { data: [], total: 0, page, pageSize, totalPages: 0 };
-    }
-
-    /** ---- 1. 构建 QueryBuilder ---- */
-    let qb = this.fuelRepo.createQueryBuilder('fuel')
-      .where('fuel.id IN (:...ids)', { ids: fuelParams })
-      .orderBy('fuel.id', 'ASC');
-
-    /** ---- 2. 追加筛选 ---- */
-    if (name) {
-      qb = qb.andWhere('fuel.name LIKE :name', { name: `%${name}%` });
-    }
-
-    if (type) {
-      qb = qb.andWhere('fuel.category LIKE :type', { type: `${type}%` });
-    }
-
-    /** ---- 3. 分页 ---- */
-    const [records, total] = await qb
-      .skip((page - 1) * pageSize)
-      .take(pageSize)
-      .getManyAndCount();
-
-    /** ---- 4. 同样格式化 composition ---- */
-    const formatFuel = (raw: any) => {
-      const { id, category, name, composition, inventory, remark } = raw;
-
-      if (!composition)
-        return { id, category, name, inventory, remark };
-
-      const {
-        TFe = null,
-        H2O = null,
-        返焦率 = null,
-        干基价格 = null,
-        返焦价格 = null,
-        ...others
-      } = composition;
-
-      return {
-        id,
-        category,
-        name,
-        TFe,
-        ...others,
-        H2O,
-        返焦率,
-        返焦价格,
-        干基价格,
-        inventory,
-        remark,
-      };
-    };
-
-    return {
-      data: records.map(formatFuel),
-      total,
-      page,
-      pageSize,
-      totalPages: Math.ceil(total / pageSize)
-    };
+  /** 规范化composition（燃料） */
+  private normalizeFuelComposition(composition?: Record<string, number>): Record<string, number> {
+    const result: Record<string, number> = {};
+    FUEL_FIXED_HEADERS.forEach((key) => {
+      result[key] = composition?.[key] ?? 0;
+    });
+    return result;
   }
+
+  /** 排序字段映射（物料） */
+  private readonly MATERIAL_SORT_FIELD_MAP: Record<string, string> = {
+    name: 'raw.name',
+    category: 'raw.category',
+    inventory: 'raw.inventory',
+    'composition.TFe': "JSON_EXTRACT(raw.composition, '$.TFe')",
+    'composition.返矿价格': "JSON_EXTRACT(raw.composition, '$.返矿价格')",
+    'composition.干基价格': "JSON_EXTRACT(raw.composition, '$.干基价格')",
+  };
+
+  /** 排序字段映射（燃料） */
+  private readonly FUEL_SORT_FIELD_MAP: Record<string, string> = {
+    name: 'fuel.name',
+    category: 'fuel.category',
+    inventory: 'fuel.inventory',
+    'composition.TFe': "JSON_EXTRACT(fuel.composition, '$.TFe')",
+    'composition.返焦价格': "JSON_EXTRACT(fuel.composition, '$.返焦价格')",
+    'composition.干基价格': "JSON_EXTRACT(fuel.composition, '$.干基价格')",
+  };
+
+async getSelectedIngredients(options: {
+  user: User;
+  moduleName: string;
+  page?: number;
+  pageSize?: number;
+  name?: string;
+  type?: string; // 新增 type
+  sort?: string;
+  order?: 'asc' | 'desc';
+}) {
+  const { user, moduleName, page = 1, pageSize = 10, name, type, sort, order } = options;
+
+  const group = await this.getOrCreateUserGroup(user, moduleName);
+  const ingredientParams: number[] = group.config_data?.ingredientParams || [];
+
+  if (!ingredientParams.length) {
+    return { data: [], total: 0, page, pageSize, totalPages: 0 };
+  }
+
+  let qb = this.rawRepo.createQueryBuilder('raw')
+    .where('raw.id IN (:...ids)', { ids: ingredientParams });
+
+  if (name) qb.andWhere('raw.name LIKE :name', { name: `%${name}%` });
+  if (type) qb.andWhere('raw.category LIKE :type', { type: `%${type}%` }); // type 筛选
+
+  if (sort && this.MATERIAL_SORT_FIELD_MAP[sort]) {
+    qb.orderBy(this.MATERIAL_SORT_FIELD_MAP[sort], order === 'desc' ? 'DESC' : 'ASC');
+  } else {
+    qb.orderBy('raw.id', 'ASC');
+  }
+
+  const [records, total] = await qb.skip((page - 1) * pageSize).take(pageSize).getManyAndCount();
+
+  return {
+    data: records.map(item => ({
+      ...item,
+      composition: this.normalizeMaterialComposition(item.composition),
+    })),
+    total,
+    page,
+    pageSize,
+    totalPages: Math.ceil(total / pageSize),
+  };
+}
+
+
+
+async getSelectedFuels(options: {
+  user: User;
+  moduleName: string;
+  page?: number;
+  pageSize?: number;
+  name?: string;
+  type?: string; // 新增 type
+  sort?: string;
+  order?: 'asc' | 'desc';
+}) {
+  const { user, moduleName, page = 1, pageSize = 10, name, type, sort, order } = options;
+
+  const group = await this.getOrCreateUserGroup(user, moduleName);
+  const fuelParams: number[] = group.config_data?.fuelParams || [];
+
+  if (!fuelParams.length) {
+    return { data: [], total: 0, page, pageSize, totalPages: 0 };
+  }
+
+  let qb = this.fuelRepo.createQueryBuilder('fuel')
+    .where('fuel.id IN (:...ids)', { ids: fuelParams });
+
+  if (name) qb.andWhere('fuel.name LIKE :name', { name: `%${name}%` });
+  if (type) qb.andWhere('fuel.category LIKE :type', { type: `%${type}%` }); // type 筛选
+
+  if (sort && this.FUEL_SORT_FIELD_MAP[sort]) {
+    qb.orderBy(this.FUEL_SORT_FIELD_MAP[sort], order === 'desc' ? 'DESC' : 'ASC');
+  } else {
+    qb.orderBy('fuel.id', 'ASC');
+  }
+
+  const [records, total] = await qb.skip((page - 1) * pageSize).take(pageSize).getManyAndCount();
+
+  return {
+    data: records.map(item => ({
+      ...item,
+      composition: this.normalizeFuelComposition(item.composition),
+    })),
+    total,
+    page,
+    pageSize,
+    totalPages: Math.ceil(total / pageSize),
+  };
+}
+
 
 
 
@@ -1072,22 +1054,47 @@ async getGLProcessCostList(
   // 🔢 计算总费用
   const totalCost = this.calcTotalCost(map);
 
+  // 转为列表
   let list = this.toTableArray(map);
-  if (keyword) {
-    list = list.filter(i => i.name.includes(keyword));
+
+  // 关键字过滤
+  if (keyword?.trim()) {
+    const kw = keyword.trim();
+    list = list.filter(item => item.name.includes(kw));
   }
 
-  const total = list.length;
+  // ================= 排序逻辑 =================
+  const categoryOrder = ['动力费用', '制造费用', '其他']; // 固定分类顺序
+  list.sort((a, b) => {
+    const catA = categoryOrder.indexOf(a['项目分类']) >= 0 ? categoryOrder.indexOf(a['项目分类']) : 999;
+    const catB = categoryOrder.indexOf(b['项目分类']) >= 0 ? categoryOrder.indexOf(b['项目分类']) : 999;
+    if (catA !== catB) return catA - catB;
+    return a.name.localeCompare(b.name);
+  });
+
+  // ================= 字段顺序固定 =================
+  const formattedList = list.map(item => ({
+    'name': item['name'],
+    '项目分类': item['项目分类'] ?? '',
+    '单位': item['单位'] ?? '',
+    '价格': item['价格'] ?? '--',
+    '单位用量': item['单位用量'] ?? '--',
+    '单位成本': item['单位成本'] ?? '--',
+  }));
+
+  const total = formattedList.length;
+  const pagedList = formattedList.slice((page - 1) * pageSize, page * pageSize);
 
   return {
-    data: list.slice((page - 1) * pageSize, page * pageSize),
+    data: pagedList,
     total,
     page,
     pageSize,
     totalPages: Math.ceil(total / pageSize),
-    totalCost, // ✅ 新增字段
+    totalCost,
   };
 }
+
 
 private async syncGLProcessCost(
   user: User,

@@ -10,6 +10,8 @@ import { ConfigGroup } from '../../database/entities/config-group.entity';
 import { ApiResponse } from '../../common/response/response.dto';
 import { CoalEconPaginationDto } from './dto/coal-econ-calc.dto';
 import { appConfig } from '../../config/app.config';
+import * as ExcelJS from 'exceljs';
+
 
 @Injectable()
 export class CoalEconCalcService {
@@ -272,4 +274,90 @@ private getNestedValue(obj: any, path: string): any {
     this.logger.error(`${prefix}: ${message}`, (err as any)?.stack);
     return ApiResponse.error(message);
   }
+
+  /** 导出喷吹煤经济性评价结果到 Excel */
+async exportTaskResultToExcel(
+  taskUuid: string,
+  pagination?: CoalEconPaginationDto,
+): Promise<Buffer> {
+  const task = await this.taskRepo.findOne({
+    where: { task_uuid: taskUuid },
+  });
+  if (!task) {
+    throw new Error('任务不存在');
+  }
+
+  /** 1️⃣ 拉取 FastAPI 完整结果 */
+  const res = await this.apiGet(this.ECON_TASK.progressUrl, { taskUuid });
+  const data = res.data?.data;
+  const results = data?.results;
+
+  if (!Array.isArray(results) || results.length === 0) {
+    throw new Error('没有可导出的计算结果');
+  }
+
+  /** 2️⃣ 喷吹煤 ID → 名称映射 */
+  const identifiers = new Set<string>();
+  results.forEach(item => {
+    if (item['喷吹煤名称']) {
+      identifiers.add(String(item['喷吹煤名称']));
+    }
+  });
+
+  let coals: CoalEconInfo[] = [];
+  const numericIds = [...identifiers]
+    .map(v => Number(v))
+    .filter(v => !isNaN(v));
+
+  if (numericIds.length) {
+    coals = await this.coalRepo.find({ where: { id: In(numericIds) } });
+  }
+
+  const nameMap: Record<string, string> = {};
+  coals.forEach(c => {
+    nameMap[c.id] = c.name;
+    nameMap[c.name] = c.name;
+  });
+
+  let mappedResults = results.map(item => ({
+    ...item,
+    喷吹煤名称: nameMap[item['喷吹煤名称']] || item['喷吹煤名称'],
+  }));
+
+  /** 3️⃣ ⭐ 排序（不分页，只排序） */
+  if (pagination?.sort) {
+    const fieldPath = pagination.sort;
+    const order = pagination.order === 'desc' ? -1 : 1;
+
+    mappedResults = [...mappedResults].sort((a, b) => {
+      const va = this.getNestedValue(a, fieldPath);
+      const vb = this.getNestedValue(b, fieldPath);
+
+      const na = Number(va);
+      const nb = Number(vb);
+
+      if (!isNaN(na) && !isNaN(nb)) {
+        return na > nb ? order : na < nb ? -order : 0;
+      }
+      return va > vb ? order : va < vb ? -order : 0;
+    });
+  }
+
+  /** 4️⃣ 生成 Excel */
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet('喷吹煤经济性评价结果');
+
+  const headers = Object.keys(mappedResults[0]);
+  sheet.columns = headers.map(key => ({
+    header: key,
+    key,
+    width: Math.max(14, key.length * 2),
+  }));
+
+  mappedResults.forEach(row => sheet.addRow(row));
+  sheet.getRow(1).font = { bold: true };
+
+  return Buffer.from(await workbook.xlsx.writeBuffer());
+}
+
 }

@@ -7,8 +7,8 @@ export class UpdateMineTypIndDto {
   @IsString()
   name?: string;
 
-  @ApiPropertyOptional({ description: '主要矿山典型指标（JSON）' })
+  @ApiPropertyOptional({ description: '主要矿山典型指标（composition，JSON 对象）' })
   @IsOptional()
   @IsObject()
-  indicators?: Record<string, any>;
+  composition?: Record<string, any>;
 }

@@ -31,6 +31,8 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { Response } from 'express';
 import * as multer from 'multer';
 import { RawPaginationDto } from './dto/pagination.dto';
+import { MaterialResponseInterceptor } from '../../common/interceptors/material-response.interceptor';
+
 
 @ApiTags('物料信息-烧结物料信息')
 @ApiBearerAuth('JWT')
@@ -53,6 +55,7 @@ export class SjRawMaterialController {
    * 原来的 /search 和 /search-by-type 仍可使用（兼容前端），但建议统一请求到这里。
    */
 @Get()
+// @UseInterceptors(MaterialResponseInterceptor)
 @ApiOperation({
   summary: '查询原料（支持分页、名称模糊、类型筛选、排序）',
   description: `

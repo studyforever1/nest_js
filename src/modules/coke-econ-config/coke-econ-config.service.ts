@@ -7,6 +7,7 @@ import { ConfigGroup } from '../../database/entities/config-group.entity';
 import { BizModule } from '../../database/entities/biz-module.entity';
 import { User } from '../user/entities/user.entity';
 import { CokeEconInfo } from '../coke-econ-info/entities/coke-econ-info.entity';
+import { FIXED_HEADERS } from '../coke-econ-info/coke-econ-info.service';
 
 @Injectable()
 export class CokeEconConfigService {
@@ -155,6 +156,22 @@ async saveFullConfig(
     return this.configRepo.save(group);
   }
 
+  /** 规范化composition */
+  private normalizeComposition(composition?: Record<string, number>): Record<string, number> {
+    const result: Record<string, number> = {};
+    FIXED_HEADERS.forEach((key) => {
+      result[key] = composition?.[key] ?? 0;
+    });
+    return result;
+  }
+
+  /** 排序字段映射 */
+  private readonly SORT_FIELD_MAP: Record<string, string> = {
+    name: 'coke.name',
+    created_at: 'coke.created_at',
+    'composition.焦炭含税到厂价': "JSON_EXTRACT(coke.composition, '$.焦炭含税到厂价')",
+  };
+
   /** 获取已选焦炭 */
   async getSelectedCoke(
     user: User,
@@ -162,6 +179,8 @@ async saveFullConfig(
     page = 1,
     pageSize = 10,
     name?: string,
+    sort?: string,
+    order?: 'asc' | 'desc',
   ) {
     const group = await this.getOrCreateUserGroup(user, moduleName);
     const configData = group.config_data || {};
@@ -179,14 +198,28 @@ async saveFullConfig(
       qb.andWhere('coke.name LIKE :name', { name: `%${name}%` });
     }
 
+    // ⭐ 排序逻辑
+    if (sort && this.SORT_FIELD_MAP[sort]) {
+      qb.orderBy(
+        this.SORT_FIELD_MAP[sort],
+        order === 'desc' ? 'DESC' : 'ASC',
+      );
+    } else {
+      qb.orderBy('coke.id', 'ASC');
+    }
+
     const total = await qb.getCount();
     const records = await qb
       .skip((page - 1) * pageSize)
       .take(pageSize)
       .getMany();
 
+    // ✅ 统一格式：返回composition对象，不展开
     return {
-      data: records,
+      data: records.map(item => ({
+        ...item,
+        composition: this.normalizeComposition(item.composition),
+      })),
       total,
       page,
       pageSize,

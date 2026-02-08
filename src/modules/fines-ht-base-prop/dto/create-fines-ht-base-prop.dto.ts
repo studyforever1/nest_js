@@ -7,7 +7,7 @@ export class CreateFinesHtBasePropDto {
   name: string;
 
   @ApiProperty({
-    description: '高温基础特性（JSON）',
+    description: '高温基础特性（composition，JSON 对象）',
     required: false,
     example: {
       软化开始温度: 1180,
@@ -19,5 +19,5 @@ export class CreateFinesHtBasePropDto {
   })
   @IsOptional()
   @IsObject()
-  properties?: Record<string, any>;
+  composition?: Record<string, any>;
 }

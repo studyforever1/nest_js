@@ -11,6 +11,8 @@ import { ApiResponse } from '../../common/response/response.dto';
 import { PelletEconPaginationDto } from './dto/pellet-econ-calc.dto';
 import { appConfig } from 'src/config/app.config';
 import { PortPelletLumpInfo } from '../port-pellet-lump-info/entities/port-pellet-lump-info.entity';
+import * as ExcelJS from 'exceljs';
+
 
 @Injectable()
 export class PelletEconCalcService {
@@ -434,4 +436,152 @@ async fetchAndSavePortPelletLumpProgress(
     this.logger.error(`${prefix}: ${message}`, (err as any)?.stack);
     return ApiResponse.error(message);
   }
+
+async exportPelletTaskResultToExcel(
+  taskUuid: string,
+  pagination?: PelletEconPaginationDto,
+): Promise<Buffer> {
+  const task = await this.taskRepo.findOne({ where: { task_uuid: taskUuid } });
+  if (!task) throw new Error('任务不存在');
+
+  /** 1️⃣ 拉取 FastAPI 全量结果 */
+  const res = await this.apiGet(this.ECON_TASK.progressUrl, { taskUuid });
+  const data = res.data?.data;
+  const results = data?.results;
+
+  if (!Array.isArray(results) || results.length === 0) {
+    throw new Error('没有可导出的计算结果');
+  }
+
+  /** 2️⃣ 矿粉 ID → 名称映射 */
+  const identifiers = new Set<string>();
+  results.forEach(item => {
+    if (item['矿粉名称']) identifiers.add(String(item['矿粉名称']));
+  });
+
+  let pellets: PelletEconInfo[] = [];
+  const numericIds = [...identifiers].map(v => Number(v)).filter(v => !isNaN(v));
+  if (numericIds.length) {
+    pellets = await this.pelletRepo.find({ where: { id: In(numericIds) } });
+  }
+
+  const nameMap: Record<string, string> = {};
+  pellets.forEach(p => {
+    nameMap[p.id] = p.name;
+    nameMap[p.name] = p.name;
+  });
+
+  let mappedResults = results.map(item => ({
+    ...item,
+    矿粉名称: nameMap[item['矿粉名称']] || item['矿粉名称'],
+  }));
+
+  /** 3️⃣ 排序（不分页） */
+  if (pagination?.sort) {
+    const fieldPath = pagination.sort;
+    const order = pagination.order === 'desc' ? -1 : 1;
+
+    mappedResults = [...mappedResults].sort((a, b) => {
+      const va = this.getNestedValue(a, fieldPath);
+      const vb = this.getNestedValue(b, fieldPath);
+
+      const na = Number(va);
+      const nb = Number(vb);
+
+      if (!isNaN(na) && !isNaN(nb)) {
+        return na > nb ? order : na < nb ? -order : 0;
+      }
+      return va > vb ? order : va < vb ? -order : 0;
+    });
+  }
+
+  /** 4️⃣ 生成 Excel */
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet('球团经济性评价结果');
+
+  const headers = Object.keys(mappedResults[0]);
+  sheet.columns = headers.map(key => ({
+    header: key,
+    key,
+    width: Math.max(14, key.length * 2),
+  }));
+
+  mappedResults.forEach(row => sheet.addRow(row));
+  sheet.getRow(1).font = { bold: true };
+
+  return Buffer.from(await workbook.xlsx.writeBuffer());
+}
+
+async exportPortPelletLumpTaskResultToExcel(
+  taskUuid: string,
+  pagination?: PelletEconPaginationDto,
+): Promise<Buffer> {
+  const task = await this.taskRepo.findOne({ where: { task_uuid: taskUuid } });
+  if (!task) throw new Error('任务不存在');
+
+  const res = await this.apiGet(this.ECON_TASK.progressUrl, { taskUuid });
+  const data = res.data?.data;
+  const results = data?.results;
+
+  if (!Array.isArray(results) || results.length === 0) {
+    throw new Error('没有可导出的计算结果');
+  }
+
+  const identifiers = new Set<string>();
+  results.forEach(item => {
+    if (item['矿粉名称']) identifiers.add(String(item['矿粉名称']));
+  });
+
+  let pellets: PortPelletLumpInfo[] = [];
+  const numericIds = [...identifiers].map(v => Number(v)).filter(v => !isNaN(v));
+  if (numericIds.length) {
+    pellets = await this.portPelletLumpRepo.find({ where: { id: In(numericIds) } });
+  }
+
+  const nameMap: Record<string, string> = {};
+  pellets.forEach(p => {
+    nameMap[p.id] = p.name;
+    nameMap[p.name] = p.name;
+  });
+
+  let mappedResults = results.map(item => ({
+    ...item,
+    矿粉名称: nameMap[item['矿粉名称']] || item['矿粉名称'],
+  }));
+
+  /** 排序 */
+  if (pagination?.sort) {
+    const fieldPath = pagination.sort;
+    const order = pagination.order === 'desc' ? -1 : 1;
+
+    mappedResults = [...mappedResults].sort((a, b) => {
+      const va = this.getNestedValue(a, fieldPath);
+      const vb = this.getNestedValue(b, fieldPath);
+
+      const na = Number(va);
+      const nb = Number(vb);
+
+      if (!isNaN(na) && !isNaN(nb)) {
+        return na > nb ? order : na < nb ? -order : 0;
+      }
+      return va > vb ? order : va < vb ? -order : 0;
+    });
+  }
+
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet('港口球团块矿资源库评价结果');
+
+  const headers = Object.keys(mappedResults[0]);
+  sheet.columns = headers.map(key => ({
+    header: key,
+    key,
+    width: Math.max(14, key.length * 2),
+  }));
+
+  mappedResults.forEach(row => sheet.addRow(row));
+  sheet.getRow(1).font = { bold: true };
+
+  return Buffer.from(await workbook.xlsx.writeBuffer());
+}
+
 }

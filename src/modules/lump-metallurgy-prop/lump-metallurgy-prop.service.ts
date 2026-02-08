@@ -13,21 +13,20 @@ import { UpdateLumpMetallurgyPropDto } from './dto/update-lump-metallurgy-prop.d
 const SORT_FIELD_MAP: Record<string, string> = {
   name: 'l.name',
   created_at: 'l.created_at',
-  'properties.TFe': "JSON_EXTRACT(l.properties, '$.TFe')",
+  'composition.TFe': "JSON_EXTRACT(l.composition, '$.TFe')",
 };
 
 /**
  * ✅ 固定表头（唯一标准）
  * - 查询 / 导入 / 导出 / 前端展示 都以此为准
- * - 注意：properties 中不包含"块矿名称"
+ * - 注意：composition 中不包含"矿粉名称"
  */
 export const FIXED_HEADERS = [
-  '块矿名称',
-  'TFe', 'SiO2', 'Al2O3', 'P', 'S', 'MnO', 'H2O',
-  '粉率', '车板价', '运费', '干粉价格',
-  '厂内筛分搬到等费用', '干基不含税',
-  'CaO', 'MgO', 'TiO2', 'Zn', 'K2O', 'Na2O',
-  'Cr', 'Cu', 'As', '烧损', 'Ni',
+  '矿粉名称','种类',
+  'TFe', 'FeO','SiO2','CaO','MgO','Al2O3','P','S',
+  '块矿热爆性能DI_63','块矿热爆性能DI_315','块矿热爆性能_05',
+  '还原性能RI','软化性能T10','软化性能T40','软化性能T40_10',
+  '熔滴性能Ts','熔滴性能Td','熔滴性能Tds','熔滴性能PMax','熔滴性能S特性'
 ];
 
 type FixedHeader = (typeof FIXED_HEADERS)[number];
@@ -40,18 +39,14 @@ export class LumpMetallurgyPropService {
   ) {}
 
   /** =========================
-   *  核心：规范化 properties（按 FIXED_HEADERS 顺序，排除"块矿名称"）
+   *  核心：规范化 composition（按 FIXED_HEADERS 顺序，排除"矿粉名称"）
    * ========================= */
-  private normalizeProperties(
-    properties?: Record<string, any>,
-  ): Record<string, any> {
+  private normalizeComposition(composition?: Record<string, any>): Record<string, any> {
     const result: Record<string, any> = {};
-
     FIXED_HEADERS.forEach((key) => {
-      if (key === '块矿名称') return; // 排除"块矿名称"
-      result[key] = properties?.[key] ?? 0;
+      if (key === '矿粉名称') return; // 排除“矿粉名称”
+      result[key] = composition?.[key] ?? (typeof composition?.[key] === 'number' ? 0 : '');
     });
-
     return result;
   }
 
@@ -59,7 +54,7 @@ export class LumpMetallurgyPropService {
   async create(dto: CreateLumpMetallurgyPropDto, username: string) {
     const entity = this.repo.create({
       ...dto,
-      properties: this.normalizeProperties(dto.properties),
+      composition: this.normalizeComposition(dto.composition),
       modifier: username,
       enabled: true,
     });
@@ -73,42 +68,36 @@ export class LumpMetallurgyPropService {
 
     Object.assign(entity, {
       ...dto,
-      properties: dto.properties ? this.normalizeProperties(dto.properties) : entity.properties,
+      composition: dto.composition ? this.normalizeComposition(dto.composition) : entity.composition,
       modifier: username,
     });
-
     return this.repo.save(entity);
   }
 
-  /** ========================= 查询（核心修改点） ========================= */
-  async query(options: { page: number; pageSize: number; name?: string; type?: string; sort?: string; order?: 'asc' | 'desc' }) {
-    const { page = 1, pageSize = 10, name, type, sort, order } = options;
+  /** ========================= 查询 ========================= */
+  async query(options: { page: number; pageSize: number; name?: string; sort?: string; order?: 'asc' | 'desc' }) {
+    const { page = 1, pageSize = 10, name, sort, order } = options;
     const qb = this.repo.createQueryBuilder('l');
 
     if (name) {
       qb.andWhere('l.name LIKE :name', { name: `%${name}%` });
     }
 
-    const sortField = sort && SORT_FIELD_MAP[sort]
-      ? SORT_FIELD_MAP[sort]
-      : 'l.id';
-
+    const sortField = sort && SORT_FIELD_MAP[sort] ? SORT_FIELD_MAP[sort] : 'l.id';
     qb.orderBy(sortField, order === 'desc' ? 'DESC' : 'ASC');
     qb.skip((page - 1) * pageSize).take(pageSize);
 
     const [list, total] = await qb.getManyAndCount();
 
-    /**
-     * ✅ 规范化 properties，确保按 FIXED_HEADERS 顺序
-     */
     const mapped = list.map(item => ({
       ...item,
-      properties: this.normalizeProperties(item.properties),
+      composition: this.normalizeComposition(item.composition),
     }));
 
     return { data: mapped, total, page, pageSize, totalPages: Math.ceil(total / pageSize) };
   }
 
+  /** ========================= 删除 ========================= */
   async remove(ids: number[]) {
     const list = await this.repo.findBy({ id: In(ids) });
     if (!list.length) throw new NotFoundException('数据不存在');
@@ -128,17 +117,13 @@ export class LumpMetallurgyPropService {
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('块矿冶金性能');
 
-    // ✅ 按 FIXED_HEADERS 顺序导出
     sheet.addRow(FIXED_HEADERS);
 
     list.forEach(item => {
-      const properties = this.normalizeProperties(item.properties);
-
+      const composition = this.normalizeComposition(item.composition);
       sheet.addRow([
         item.name,
-        ...FIXED_HEADERS
-          .filter(h => h !== '块矿名称')
-          .map(h => properties[h]),
+        ...FIXED_HEADERS.filter(h => h !== '矿粉名称').map(h => composition[h]),
       ]);
     });
 
@@ -157,41 +142,66 @@ export class LumpMetallurgyPropService {
     const headerRow = sheet.getRow(1);
     const headerMap: Record<string, number> = {};
 
-    // ✅ 严格校验表头：每个列名必须在 FIXED_HEADERS 中
     headerRow.eachCell((cell, col) => {
-      const val = String(cell.value ?? '').trim();
-      if (!val) return;
-      if (!FIXED_HEADERS.includes(val as FixedHeader)) {
-        throw new BadRequestException(`非法列名：${val}`);
+      let val: any = cell.value;
+
+      // 兼容 richText / 公式 / 对象类型
+      if (val && typeof val === 'object') {
+        if ('richText' in val) val = val.richText.map((r: any) => r.text).join('');
+        else if ('formula' in val) val = val.result;
+        else val = String(val);
       }
+
+      if (val == null) return;
+      val = String(val).trim();
+      if (!val) return;
+
+      if (!FIXED_HEADERS.includes(val as FixedHeader)) {
+        throw new BadRequestException(`非法列名：${val} (第 ${col} 列)`);
+      }
+
       headerMap[val] = col;
     });
 
-    if (!headerMap['块矿名称']) {
-      throw new BadRequestException('缺少必要列：块矿名称');
+    if (!headerMap['矿粉名称']) {
+      throw new BadRequestException('缺少必要列：矿粉名称');
     }
 
     const result: LumpMetallurgyProp[] = [];
+    const NUMERIC_COLUMNS = FIXED_HEADERS.filter(h => h !== '矿粉名称' && h !== '种类');
 
     sheet.eachRow({ includeEmpty: true }, (row, index) => {
       if (index === 1) return;
 
-      const name = String(row.getCell(headerMap['块矿名称'])?.value ?? '').trim();
+      const nameCell = row.getCell(headerMap['矿粉名称']);
+      const name = nameCell?.value != null ? String(nameCell.value).trim() : '';
       if (!name) return;
 
-      const properties: Record<string, any> = {};
+      const composition: Record<string, any> = {};
 
-      // ✅ 遍历 FIXED_HEADERS，缺失列自动补0
       FIXED_HEADERS.forEach(key => {
-        if (key === '块矿名称') return;
+        if (key === '矿粉名称') return;
+
         const col = headerMap[key];
-        const val = col ? parseFloat(String(row.getCell(col)?.value ?? '')) : 0;
-        properties[key] = Number.isFinite(val) ? val : 0;
+        let val: any = col ? row.getCell(col)?.value : null;
+
+        if (val && typeof val === 'object') {
+          if ('richText' in val) val = val.richText.map((r: any) => r.text).join('');
+          else if ('formula' in val) val = val.result;
+          else val = String(val);
+        }
+
+        if (NUMERIC_COLUMNS.includes(key)) {
+          const num = Number(val);
+          composition[key] = Number.isFinite(num) ? num : 0;
+        } else {
+          composition[key] = val != null ? String(val).trim() : '';
+        }
       });
 
       result.push(this.repo.create({
         name,
-        properties: this.normalizeProperties(properties),
+        composition: this.normalizeComposition(composition),
         modifier: username,
         enabled: true,
       }));
