@@ -83,34 +83,63 @@ export class PortIronOreInfoService {
   }
 
   /** ========================= 查询（核心修改点） ========================= */
-  async query(params: PortIronOrePaginationDto) {
-    const { page = 1, pageSize = 10, name, type, sort, order } = params;
-    const qb = this.repo.createQueryBuilder('ore');
+async query(params: PortIronOrePaginationDto) {
+  const { page = 1, pageSize = 10, name, type, sort, order } = params;
+  const qb = this.repo.createQueryBuilder('ore');
 
-    if (name) {
-      qb.andWhere('ore.name LIKE :name', { name: `%${name}%` });
-    }
-
-    const sortField = sort && SORT_FIELD_MAP[sort]
-      ? SORT_FIELD_MAP[sort]
-      : 'ore.id';
-
-    qb.orderBy(sortField, order === 'desc' ? 'DESC' : 'ASC');
-    qb.skip((page - 1) * pageSize).take(pageSize);
-
-    const [list, total] = await qb.getManyAndCount();
-
-    /**
-     * ✅ 规范化 composition，确保按 FIXED_HEADERS 顺序
-     * ✅ 统一返回 data 而不是 list
-     */
-    const mapped = list.map(item => ({
-      ...item,
-      composition: this.normalizeComposition(item.composition),
-    }));
-
-    return { data: mapped, total, page, pageSize, totalPages: Math.ceil(total / pageSize) };
+  // ================= 1️⃣ 名称模糊 =================
+  if (name) {
+    qb.andWhere('ore.name LIKE :name', { name: `%${name}%` });
   }
+
+  // ================= 2️⃣ 类型筛选 =================
+  if (type) {
+    qb.andWhere('ore.category LIKE :type', { type: `%${type}%` });
+  }
+
+  // ================= 3️⃣ 排序 =================
+  if (sort) {
+    if (sort.startsWith('composition.')) {
+      // 排序字段在 composition JSON 内
+      const key = sort.replace('composition.', '');
+      qb.orderBy(
+        `CAST(JSON_EXTRACT(ore.composition, '$."${key}"') AS DECIMAL)`,
+        order === 'desc' ? 'DESC' : 'ASC',
+      );
+    } else if (SORT_FIELD_MAP[sort]) {
+      // 普通字段排序
+      qb.orderBy(
+        SORT_FIELD_MAP[sort],
+        order === 'desc' ? 'DESC' : 'ASC',
+      );
+    } else {
+      // fallback 默认排序
+      qb.orderBy('ore.id', 'ASC');
+    }
+  } else {
+    qb.orderBy('ore.id', 'ASC');
+  }
+
+  // ================= 4️⃣ 分页 =================
+  qb.skip((page - 1) * pageSize).take(pageSize);
+
+  const [list, total] = await qb.getManyAndCount();
+
+  // ================= 5️⃣ 格式化 composition =================
+  const mapped = list.map(item => ({
+    ...item,
+    composition: this.normalizeComposition(item.composition),
+  }));
+
+  return {
+    data: mapped,
+    total,
+    page,
+    pageSize,
+    totalPages: Math.ceil(total / pageSize),
+  };
+}
+
 
   async remove(ids: number[]) {
     const list = await this.repo.findBy({ id: In(ids) });

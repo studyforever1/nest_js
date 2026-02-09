@@ -78,51 +78,62 @@ export class SjEconInfoService {
   }
 
   /** 查询（分页 + 名称模糊 + 排序） */
-  async query(options: {
-    page: number;
-    pageSize: number;
-    name?: string;
-    sort?: string;
-    order?: 'asc' | 'desc';
-  }) {
-    const { page, pageSize, name, sort, order } = options;
+async query(options: {
+  page?: number;
+  pageSize?: number;
+  name?: string;
+  sort?: string;
+  order?: 'asc' | 'desc';
+}) {
+  const { page = 1, pageSize = 10, name, sort, order } = options;
 
-    const qb = this.econRepo.createQueryBuilder('e');
+  const qb = this.econRepo.createQueryBuilder('e');
 
-    if (name) {
-      qb.andWhere('e.name LIKE :name', { name: `%${name}%` });
-    }
+  // ================= 1️⃣ 名称模糊 =================
+  if (name) {
+    qb.andWhere('e.name LIKE :name', { name: `%${name}%` });
+  }
 
-    // ⭐ 排序逻辑
-    if (sort && this.SORT_FIELD_MAP[sort]) {
+  // ================= 2️⃣ 排序 =================
+  if (sort) {
+    if (sort.startsWith('composition.')) {
+      const key = sort.replace('composition.', '');
+      qb.orderBy(
+        `CAST(JSON_EXTRACT(e.composition, '$."${key}"') AS DECIMAL)`,
+        order === 'desc' ? 'DESC' : 'ASC',
+      );
+    } else if (this.SORT_FIELD_MAP[sort]) {
       qb.orderBy(
         this.SORT_FIELD_MAP[sort],
         order === 'desc' ? 'DESC' : 'ASC',
       );
     } else {
-      // 默认排序
       qb.orderBy('e.id', 'ASC');
     }
-
-    const [records, total] = await qb
-      .skip((page - 1) * pageSize)
-      .take(pageSize)
-      .getManyAndCount();
-
-    // ✅ 规范化 composition，确保按 FIXED_HEADERS 顺序
-    const mapped = records.map(item => ({
-      ...item,
-      composition: this.normalizeComposition(item.composition),
-    }));
-
-    return {
-      data: mapped,
-      total,
-      page,
-      pageSize,
-      totalPages: Math.ceil(total / pageSize),
-    };
+  } else {
+    qb.orderBy('e.id', 'ASC');
   }
+
+  // ================= 3️⃣ 分页 =================
+  qb.skip((page - 1) * pageSize).take(pageSize);
+
+  const [records, total] = await qb.getManyAndCount();
+
+  // ================= 4️⃣ 格式化 composition =================
+  const mapped = records.map(item => ({
+    ...item,
+    composition: this.normalizeComposition(item.composition),
+  }));
+
+  return {
+    data: mapped,
+    total,
+    page,
+    pageSize,
+    totalPages: Math.ceil(total / pageSize),
+  };
+}
+
 
   /** 批量删除 */
   async remove(ids: number[]) {

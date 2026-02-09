@@ -78,29 +78,69 @@ export class GlFuelInfoService {
     return this.rawRepo.save(raw);
   }
 
-  async query(options: { page?: number; pageSize?: number; name?: string; type?: string; sort?: string; order?: 'asc'|'desc' }) {
-    const { page = 1, pageSize = 10, name, type, sort, order } = options;
-    const qb = this.rawRepo.createQueryBuilder('raw');
+async query(options: {
+  page?: number;
+  pageSize?: number;
+  name?: string;
+  type?: string;
+  sort?: string;
+  order?: 'asc' | 'desc';
+}) {
+  const { page = 1, pageSize = 10, name, type, sort, order } = options;
 
-    if (name) qb.andWhere('raw.name LIKE :name', { name: `%${name}%` });
-    if (type) qb.andWhere('raw.category LIKE :type', { type: `%${type}%` });
+  const qb = this.rawRepo.createQueryBuilder('raw');
 
-    if (sort && this.SORT_FIELD_MAP[sort]) {
-      qb.orderBy(this.SORT_FIELD_MAP[sort], order === 'desc' ? 'DESC' : 'ASC');
+  // ================= 1️⃣ 名称模糊 =================
+  if (name) {
+    qb.andWhere('raw.name LIKE :name', { name: `%${name}%` });
+  }
+
+  // ================= 2️⃣ 分类筛选 =================
+  if (type) {
+    qb.andWhere('raw.category LIKE :type', { type: `%${type}%` });
+  }
+
+  // ================= 3️⃣ 排序 =================
+  if (sort) {
+    if (sort.startsWith('composition.')) {
+      // 排序字段在 composition JSON 内
+      const key = sort.replace('composition.', '');
+
+      // MySQL 8.0: CAST JSON_EXTRACT 为 DECIMAL，支持中文字段
+      qb.orderBy(
+        `CAST(JSON_EXTRACT(raw.composition, '$."${key}"') AS DECIMAL)`,
+        order === 'desc' ? 'DESC' : 'ASC',
+      );
+    } else if (this.SORT_FIELD_MAP[sort]) {
+      // 普通字段排序
+      qb.orderBy(
+        this.SORT_FIELD_MAP[sort],
+        order === 'desc' ? 'DESC' : 'ASC',
+      );
     } else {
+      // fallback 默认排序
       qb.orderBy('raw.id', 'ASC');
     }
-
-    const [records, total] = await qb.skip((page - 1) * pageSize).take(pageSize).getManyAndCount();
-
-    return {
-      data: records.map(r => this.formatRaw(r)),
-      total,
-      page,
-      pageSize,
-      totalPages: Math.ceil(total / pageSize),
-    };
+  } else {
+    qb.orderBy('raw.id', 'ASC');
   }
+
+  // ================= 4️⃣ 分页 =================
+  const [records, total] = await qb
+    .skip((page - 1) * pageSize)
+    .take(pageSize)
+    .getManyAndCount();
+
+  // ================= 5️⃣ 格式化返回 =================
+  return {
+    data: records.map(r => this.formatRaw(r)),
+    total,
+    page,
+    pageSize,
+    totalPages: Math.ceil(total / pageSize),
+  };
+}
+
 
   async findOne(id: number) {
     const raw = await this.rawRepo.findOne({ where: { id } });

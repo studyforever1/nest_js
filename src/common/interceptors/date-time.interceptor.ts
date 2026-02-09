@@ -1,5 +1,9 @@
-// common/interceptors/date-time.interceptor.ts
-import { Injectable, NestInterceptor, ExecutionContext, CallHandler } from '@nestjs/common';
+import {
+  Injectable,
+  NestInterceptor,
+  ExecutionContext,
+  CallHandler,
+} from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 import dayjs from 'dayjs';
@@ -11,39 +15,53 @@ dayjs.extend(timezone);
 
 @Injectable()
 export class DateTimeInterceptor implements NestInterceptor {
-  intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
+  intercept(
+    context: ExecutionContext,
+    next: CallHandler,
+  ): Observable<any> {
     return next.handle().pipe(
-      map(data => this.convertDates(data))
+      map((res) => {
+        /**
+         * ✅ 只处理统一响应结构里的 data
+         * ❌ 绝不重新包装整个响应
+         */
+        if (res && typeof res === 'object' && 'data' in res) {
+          return {
+            ...res,
+            data: this.convertDates(res.data),
+          };
+        }
+
+        // 兜底：非统一结构（极少数场景）
+        return this.convertDates(res);
+      }),
     );
   }
 
-  private convertDates(obj: any): any {
-    if (obj === null || obj === undefined) return obj;
+  private convertDates(value: any): any {
+    if (value === null || value === undefined) return value;
 
-    // 处理数组
-    if (Array.isArray(obj)) {
-      return obj.map(item => this.convertDates(item));
+    // Date 对象 → 北京时间字符串
+    if (value instanceof Date) {
+      return dayjs(value)
+        .tz('Asia/Shanghai')
+        .format('YYYY-MM-DD HH:mm:ss');
     }
 
-    // 处理对象
-    if (typeof obj === 'object') {
-      const result: any = {};
-      for (const key of Object.keys(obj)) {
-        const value = obj[key];
-
-        if (value instanceof Date) {
-          // 转北京时间字符串
-          result[key] = dayjs(value).tz('Asia/Shanghai').format('YYYY-MM-DD HH:mm:ss');
-        } else if (typeof value === 'object') {
-          result[key] = this.convertDates(value);
-        } else {
-          result[key] = value;
-        }
-      }
-      return result;
+    // 数组递归处理
+    if (Array.isArray(value)) {
+      return value.map((item) => this.convertDates(item));
     }
 
-    // 非对象直接返回
-    return obj;
+    // 普通对象递归处理（原地修改，不 clone）
+    if (typeof value === 'object') {
+      Object.keys(value).forEach((key) => {
+        value[key] = this.convertDates(value[key]);
+      });
+      return value;
+    }
+
+    // 基本类型
+    return value;
   }
 }

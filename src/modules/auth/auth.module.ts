@@ -18,7 +18,7 @@ import { ImModule } from '../im/im.module';
     ImModule,
     JwtModule.register({
       secret: appConfig.jwt.secret, // 建议放到 .env
-      signOptions: { expiresIn: '1h' },
+      signOptions: { expiresIn: '2h' },
     }),
   ],
   providers: [AuthService, JwtStrategy],

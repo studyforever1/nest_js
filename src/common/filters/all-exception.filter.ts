@@ -3,6 +3,7 @@ import {
   Catch,
   ArgumentsHost,
   HttpException,
+  HttpStatus,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { ApiResponse } from '../response/response.dto';
@@ -16,30 +17,34 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     const url = request.url || '';
 
-    // 🚫 1️⃣ Swagger / OpenAPI 相关请求，完全交给 Nest 原生处理
-    if (
-      url.startsWith('/api-docs') ||
-      url.includes('swagger')
-    ) {
+    // 🚫 Swagger / OpenAPI 请求，交给 Nest 原生处理
+    if (url.startsWith('/api-docs') || url.includes('swagger')) {
       throw exception;
     }
 
-    // ================= 正常业务异常处理 =================
+    // ================= 统一异常处理 =================
 
     const status =
       exception instanceof HttpException
         ? exception.getStatus()
-        : 500;
+        : HttpStatus.INTERNAL_SERVER_ERROR;
 
-    const message =
-      exception instanceof HttpException
-        ? exception.getResponse()
-        : exception?.message || 'Internal Server Error';
+    let message = 'Internal Server Error';
 
-    response.status(200).json(
-      ApiResponse.error(
-        typeof message === 'string' ? message : JSON.stringify(message),
-      ),
+    if (exception instanceof HttpException) {
+      const res = exception.getResponse();
+      if (typeof res === 'string') {
+        message = res;
+      } else if (typeof res === 'object' && (res as any).message) {
+        message = (res as any).message;
+      }
+    } else if (exception?.message) {
+      message = exception.message;
+    }
+
+    // ❗关键：HTTP 状态码 = 异常状态码
+    response.status(status).json(
+      ApiResponse.error(message, status),
     );
   }
 }

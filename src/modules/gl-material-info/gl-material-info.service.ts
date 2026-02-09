@@ -89,35 +89,62 @@ export class GlMaterialInfoService {
   }
 
   /** ========================= 分页查询 ========================= */
-  async query(options: {
-    page?: number;
-    pageSize?: number;
-    name?: string;
-    type?: string;
-    sort?: string;
-    order?: 'asc' | 'desc';
-  }) {
-    const { page = 1, pageSize = 10, name, type, sort, order } = options;
-    const qb = this.rawRepo.createQueryBuilder('raw');
+async query(options: {
+  page?: number;
+  pageSize?: number;
+  name?: string;
+  type?: string;
+  sort?: string;
+  order?: 'asc' | 'desc';
+}) {
+  const { page = 1, pageSize = 10, name, type, sort, order } = options;
+  const qb = this.rawRepo.createQueryBuilder('raw');
 
-    if (name) qb.andWhere('raw.name LIKE :name', { name: `%${name}%` });
-    if (type) qb.andWhere('raw.category LIKE :type', { type: `%${type}%` });
+  // ================= 1️⃣ 名称模糊 =================
+  if (name) qb.andWhere('raw.name LIKE :name', { name: `%${name}%` });
 
-    if (sort && this.SORT_FIELD_MAP[sort]) {
-      qb.orderBy(this.SORT_FIELD_MAP[sort], order === 'desc' ? 'DESC' : 'ASC');
+  // ================= 2️⃣ 分类筛选 =================
+  if (type) qb.andWhere('raw.category LIKE :type', { type: `%${type}%` });
+
+  // ================= 3️⃣ 排序 =================
+  if (sort) {
+    if (sort.startsWith('composition.')) {
+      // 排序字段在 composition JSON 内
+      const key = sort.replace('composition.', '');
+      qb.orderBy(
+        `CAST(JSON_EXTRACT(raw.composition, '$."${key}"') AS DECIMAL)`,
+        order === 'desc' ? 'DESC' : 'ASC',
+      );
+    } else if (this.SORT_FIELD_MAP[sort]) {
+      // 普通字段排序
+      qb.orderBy(
+        this.SORT_FIELD_MAP[sort],
+        order === 'desc' ? 'DESC' : 'ASC',
+      );
     } else {
+      // 默认排序 fallback
       qb.orderBy('raw.id', 'ASC');
     }
-
-    const [records, total] = await qb.skip((page - 1) * pageSize).take(pageSize).getManyAndCount();
-    return {
-      data: records.map(item => this.formatRaw(item)),
-      total,
-      page,
-      pageSize,
-      totalPages: Math.ceil(total / pageSize),
-    };
+  } else {
+    qb.orderBy('raw.id', 'ASC');
   }
+
+  // ================= 4️⃣ 分页 =================
+  const [records, total] = await qb
+    .skip((page - 1) * pageSize)
+    .take(pageSize)
+    .getManyAndCount();
+
+  // ================= 5️⃣ 数据映射 =================
+  return {
+    data: records.map(item => this.formatRaw(item)),
+    total,
+    page,
+    pageSize,
+    totalPages: Math.ceil(total / pageSize),
+  };
+}
+
 
   /** ========================= 单条查询 ========================= */
   async findOne(id: number) {

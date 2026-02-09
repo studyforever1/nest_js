@@ -121,31 +121,47 @@ async query(params: RawPaginationDto) {
 
   const qb = this.rawRepo.createQueryBuilder('raw');
 
-  // 名称模糊
+  // ================= 1️⃣ 名称模糊搜索 =================
   if (name) {
     qb.andWhere('raw.name LIKE :name', { name: `%${name}%` });
   }
 
-  // 分类筛选
+  // ================= 2️⃣ 分类筛选 =================
   if (type) {
     qb.andWhere('raw.category LIKE :type', { type: `%${type}%` });
   }
 
-  // ⭐ 排序逻辑
-  if (sort && SORT_FIELD_MAP[sort]) {
-    qb.orderBy(
-      SORT_FIELD_MAP[sort],
-      order === 'desc' ? 'DESC' : 'ASC',
-    );
+  // ================= 3️⃣ 排序 =================
+  if (sort) {
+    if (sort.startsWith('composition.')) {
+      // 排序字段在 composition JSON 内
+      const key = sort.replace('composition.', '');
+
+      // MySQL 8.0: JSON_EXTRACT 返回 JSON，需要 CAST 成 DECIMAL
+      qb.orderBy(
+        `CAST(JSON_EXTRACT(raw.composition, '$."${key}"') AS DECIMAL)`,
+        order === 'desc' ? 'DESC' : 'ASC',
+      );
+    } else if (SORT_FIELD_MAP[sort]) {
+      // 普通字段排序
+      qb.orderBy(
+        SORT_FIELD_MAP[sort],
+        order === 'desc' ? 'DESC' : 'ASC',
+      );
+    } else {
+      // 默认排序 fallback
+      qb.orderBy('raw.id', 'ASC');
+    }
   } else {
-    // 默认顺序（非常重要）
     qb.orderBy('raw.id', 'ASC');
   }
 
+  // ================= 4️⃣ 分页 =================
   qb.skip((page - 1) * pageSize).take(pageSize);
 
   const [list, total] = await qb.getManyAndCount();
 
+  // ================= 5️⃣ 数据映射 =================
   const mapped = list.map(item => ({
     ...item,
     composition: this.normalizeComposition(item.composition),
@@ -159,6 +175,7 @@ async query(params: RawPaginationDto) {
     totalPages: Math.ceil(total / pageSize),
   };
 }
+
 
 
   async findOne(id: number) {

@@ -97,33 +97,71 @@ export class LumpEconInfoService {
   }
 
   /** ========================= 查询（核心修改点） ========================= */
-  async query(options: { page: number; pageSize: number; name?: string; type?: string; sort?: string; order?: 'asc' | 'desc' }) {
-    const { page = 1, pageSize = 10, name, type, sort, order } = options;
-    const qb = this.repo.createQueryBuilder('l');
+async query(options: {
+  page?: number;
+  pageSize?: number;
+  name?: string;
+  type?: string;
+  sort?: string;
+  order?: 'asc' | 'desc';
+}) {
+  const { page = 1, pageSize = 10, name, type, sort, order } = options;
 
-    if (name) {
-      qb.andWhere('l.name LIKE :name', { name: `%${name}%` });
-    }
+  const qb = this.repo.createQueryBuilder('l');
 
-    const sortField = sort && SORT_FIELD_MAP[sort]
-      ? SORT_FIELD_MAP[sort]
-      : 'l.id';
-
-    qb.orderBy(sortField, order === 'desc' ? 'DESC' : 'ASC');
-    qb.skip((page - 1) * pageSize).take(pageSize);
-
-    const [list, total] = await qb.getManyAndCount();
-
-    /**
-     * ✅ 规范化 composition，确保按 FIXED_HEADERS 顺序
-     */
-    const mapped = list.map(item => ({
-      ...item,
-      composition: this.normalizeComposition(item.composition),
-    }));
-
-    return { data: mapped, total, page, pageSize, totalPages: Math.ceil(total / pageSize) };
+  // ================= 1️⃣ 名称模糊 =================
+  if (name) {
+    qb.andWhere('l.name LIKE :name', { name: `%${name}%` });
   }
+
+  // ================= 2️⃣ 分类筛选 =================
+  if (type) {
+    qb.andWhere('l.category LIKE :type', { type: `%${type}%` });
+  }
+
+  // ================= 3️⃣ 排序 =================
+  if (sort) {
+    if (sort.startsWith('composition.')) {
+      // composition 内字段排序
+      const key = sort.replace('composition.', '');
+      qb.orderBy(
+        `CAST(JSON_EXTRACT(l.composition, '$."${key}"') AS DECIMAL)`,
+        order === 'desc' ? 'DESC' : 'ASC',
+      );
+    } else if (SORT_FIELD_MAP[sort]) {
+      // 普通字段排序
+      qb.orderBy(
+        SORT_FIELD_MAP[sort],
+        order === 'desc' ? 'DESC' : 'ASC',
+      );
+    } else {
+      // fallback 默认排序
+      qb.orderBy('l.id', 'ASC');
+    }
+  } else {
+    qb.orderBy('l.id', 'ASC');
+  }
+
+  // ================= 4️⃣ 分页 =================
+  qb.skip((page - 1) * pageSize).take(pageSize);
+
+  const [list, total] = await qb.getManyAndCount();
+
+  // ================= 5️⃣ 格式化 composition =================
+  const mapped = list.map(item => ({
+    ...item,
+    composition: this.normalizeComposition(item.composition),
+  }));
+
+  return {
+    data: mapped,
+    total,
+    page,
+    pageSize,
+    totalPages: Math.ceil(total / pageSize),
+  };
+}
+
 
   /** 批量删除 */
   async remove(ids: number[]) {

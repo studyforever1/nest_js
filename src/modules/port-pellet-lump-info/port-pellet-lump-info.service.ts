@@ -72,34 +72,60 @@ export class PortPelletLumpInfoService {
   }
 
   /** ========================= 查询（核心修改点） ========================= */
-  async query(params: PortPelletLumpPaginationDto) {
-    const { page = 1, pageSize = 10, name, type, sort, order } = params;
-    const qb = this.repo.createQueryBuilder('ore');
+async query(params: PortPelletLumpPaginationDto) {
+  const { page = 1, pageSize = 10, name, type, sort, order } = params;
+  const qb = this.repo.createQueryBuilder('ore');
 
-    if (name) {
-      qb.andWhere('ore.name LIKE :name', { name: `%${name}%` });
-    }
-
-    const sortField = sort && SORT_FIELD_MAP[sort]
-      ? SORT_FIELD_MAP[sort]
-      : 'ore.id';
-
-    qb.orderBy(sortField, order === 'desc' ? 'DESC' : 'ASC');
-    qb.skip((page - 1) * pageSize).take(pageSize);
-
-    const [list, total] = await qb.getManyAndCount();
-
-    /**
-     * ✅ 只重排 composition
-     * ❌ 不再返回 fixedRow
-     */
-    const mapped = list.map(item => ({
-      ...item,
-      composition: this.normalizeComposition(item.composition),
-    }));
-
-    return { data: mapped, total, page, pageSize, totalPages: Math.ceil(total / pageSize) };
+  // ================= 1️⃣ 名称模糊 =================
+  if (name) {
+    qb.andWhere('ore.name LIKE :name', { name: `%${name}%` });
   }
+
+  // ================= 2️⃣ 类型筛选 =================
+  if (type) {
+    qb.andWhere('ore.category LIKE :type', { type: `%${type}%` });
+  }
+
+  // ================= 3️⃣ 排序 =================
+  if (sort) {
+    if (sort.startsWith('composition.')) {
+      const key = sort.replace('composition.', '');
+      qb.orderBy(
+        `CAST(JSON_EXTRACT(ore.composition, '$."${key}"') AS DECIMAL)`,
+        order === 'desc' ? 'DESC' : 'ASC',
+      );
+    } else if (SORT_FIELD_MAP[sort]) {
+      qb.orderBy(
+        SORT_FIELD_MAP[sort],
+        order === 'desc' ? 'DESC' : 'ASC',
+      );
+    } else {
+      qb.orderBy('ore.id', 'ASC');
+    }
+  } else {
+    qb.orderBy('ore.id', 'ASC');
+  }
+
+  // ================= 4️⃣ 分页 =================
+  qb.skip((page - 1) * pageSize).take(pageSize);
+
+  const [list, total] = await qb.getManyAndCount();
+
+  // ================= 5️⃣ 格式化 composition =================
+  const mapped = list.map(item => ({
+    ...item,
+    composition: this.normalizeComposition(item.composition),
+  }));
+
+  return {
+    data: mapped,
+    total,
+    page,
+    pageSize,
+    totalPages: Math.ceil(total / pageSize),
+  };
+}
+
 
   /** ========================= 删除 ========================= */
   async remove(ids: number[]) {

@@ -77,36 +77,68 @@ export class CokeEconInfoService {
   }
 
   /** ========================= 查询（核心修改点） ========================= */
-  async query(options: { page: number; pageSize: number; name?: string; sort?: string; order?: 'asc' | 'desc' }) {
-    const { page, pageSize, name, sort, order } = options;
-    const qb = this.repo.createQueryBuilder('c');
-    if (name) qb.andWhere('c.name LIKE :name', { name: `%${name}%` });
-    
-    // ⭐ 排序逻辑
-    if (sort && this.SORT_FIELD_MAP[sort]) {
+async query(options: {
+  page: number;
+  pageSize: number;
+  name?: string;
+  sort?: string;
+  order?: 'asc' | 'desc';
+}) {
+  const { page, pageSize, name, sort, order } = options;
+
+  const qb = this.repo.createQueryBuilder('c');
+
+  // ================= 1️⃣ 名称模糊 =================
+  if (name) {
+    qb.andWhere('c.name LIKE :name', { name: `%${name}%` });
+  }
+
+  // ================= 2️⃣ 排序 =================
+  if (sort) {
+    if (sort.startsWith('composition.')) {
+      // 排序字段在 composition JSON 内
+      const key = sort.replace('composition.', '');
+
+      // MySQL 8.0 JSON_EXTRACT + CAST 排序，支持中文字段
+      qb.orderBy(
+        `CAST(JSON_EXTRACT(c.composition, '$."${key}"') AS DECIMAL)`,
+        order === 'desc' ? 'DESC' : 'ASC',
+      );
+    } else if (this.SORT_FIELD_MAP[sort]) {
+      // 普通字段排序
       qb.orderBy(
         this.SORT_FIELD_MAP[sort],
         order === 'desc' ? 'DESC' : 'ASC',
       );
     } else {
+      // fallback 默认排序
       qb.orderBy('c.id', 'ASC');
     }
-    
-    const [records, total] = await qb.skip((page - 1) * pageSize).take(pageSize).getManyAndCount();
-
-    const mapped = records.map(item => ({
-      ...item,
-      composition: this.normalizeComposition(item.composition),
-    }));
-
-    return {
-      data: mapped,
-      total,
-      page,
-      pageSize,
-      totalPages: Math.ceil(total / pageSize),
-    };
+  } else {
+    qb.orderBy('c.id', 'ASC');
   }
+
+  // ================= 3️⃣ 分页 =================
+  const [records, total] = await qb
+    .skip((page - 1) * pageSize)
+    .take(pageSize)
+    .getManyAndCount();
+
+  // ================= 4️⃣ 格式化 composition =================
+  const mapped = records.map(item => ({
+    ...item,
+    composition: this.normalizeComposition(item.composition),
+  }));
+
+  return {
+    data: mapped,
+    total,
+    page,
+    pageSize,
+    totalPages: Math.ceil(total / pageSize),
+  };
+}
+
 
   async remove(ids: number[]) {
     if (!ids?.length) throw new Error('未提供删除 ID');

@@ -19,26 +19,31 @@ export class TransformInterceptor<T>
     const req = context.switchToHttp().getRequest();
     const url: string = req?.url || '';
 
-    // 🚫 1️⃣ Swagger / OpenAPI 相关请求直接放行（核心）
-    if (
-      url.startsWith('/api-docs') ||
-      url.includes('swagger')
-    ) {
+    // 🚫 Swagger / OpenAPI
+    if (url.startsWith('/api-docs') || url.includes('swagger')) {
       return next.handle();
     }
 
-    // 🚫 2️⃣ 静态资源直接放行（如头像、文件）
+    // 🚫 静态资源
     if (url.startsWith('/uploads')) {
       return next.handle();
     }
 
-    // ✅ 3️⃣ 业务接口统一封装
     return next.handle().pipe(
-      map((data) => {
-        if (data instanceof ApiResponse) {
-          return data; // 已经是统一格式
+      map((data: any) => {
+        // ✅ 已经是统一响应结构，直接放行（关键）
+        if (
+          data &&
+          typeof data === 'object' &&
+          'code' in data &&
+          'message' in data &&
+          'data' in data
+        ) {
+          return data;
         }
-        return ApiResponse.success(data); // 自动封装
+
+        // ✅ 否则才封装
+        return ApiResponse.success(data);
       }),
     );
   }
