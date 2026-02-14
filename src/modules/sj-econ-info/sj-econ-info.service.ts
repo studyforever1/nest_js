@@ -15,8 +15,8 @@ import type { Express } from 'express';
  * - 根据数据库实际数据提取的composition字段
  */
 export const FIXED_HEADERS = [
-  'P', 'S', 'As', 'Pb', 'Zn', 'CaO', 'K2O', 'MgO', 'TFe', 'Na2O',
-  'SiO2', 'TiO2', 'V2O5', 'Al2O3', '价格', '烧损',
+  'TFe', 'CaO', 'SiO2', 'MgO', 'Al2O3', 'P', 'S', 'TiO2', 'K2O', 'Na2O', 'Zn',
+  'Pb','As','V2O5', '烧损', '价格'
 ];
 
 type FixedHeader = (typeof FIXED_HEADERS)[number];

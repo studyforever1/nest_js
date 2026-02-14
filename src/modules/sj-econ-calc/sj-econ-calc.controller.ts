@@ -169,4 +169,112 @@ async exportSummaryExcel(
   }
 }
 
+
+@Post('material-library-summary/export')
+@Permissions('sj:calc')
+@ApiOperation({ summary: '导出烧结物料信息库评价汇总到 Excel' })
+async exportMaterialLibrarySummaryExcel(
+  @Body() dto: EconSummaryDto,
+  @Res() res: Response,
+) {
+  try {
+    const summaryResp =
+      await this.econService.buildMaterialLibrarySummaryFromTaskRefs(
+        dto.taskUuids,
+      );
+
+    if (summaryResp.code !== 0) {
+      return res.status(400).json(summaryResp);
+    }
+
+    const summaryData: Record<string, any>[] =
+      summaryResp.data?.results || [];
+
+    if (!summaryData.length) {
+      return res.status(400).json({ code: 400, message: '没有可导出的数据' });
+    }
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('烧结物料信息库评价汇总');
+
+    worksheet.columns = Object.keys(summaryData[0]).map(key => ({
+      header: key,
+      key,
+      width: 20,
+    }));
+
+    summaryData.forEach(item => worksheet.addRow(item));
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const filename = encodeURIComponent('烧结物料信息库评价汇总.xlsx');
+
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${filename}"`,
+    );
+    res.setHeader('Content-Length', buffer.byteLength);
+
+    res.end(buffer);
+  } catch (err: any) {
+    res.status(400).json({ code: 400, message: err.message || '导出失败' });
+  }
+}
+
+@Post('port-iron-summary/export')
+@Permissions('sj:calc')
+@ApiOperation({ summary: '导出港口矿粉资源库评价汇总到 Excel' })
+async exportPortIronOreSummaryExcel(
+  @Body() dto: EconSummaryDto,
+  @Res() res: Response,
+) {
+  try {
+    const summaryResp =
+      await this.econService.buildPortIronOreSummaryFromTaskRefs(
+        dto.taskUuids,
+      );
+
+    if (summaryResp.code !== 0) {
+      return res.status(400).json(summaryResp);
+    }
+
+    const summaryData: Record<string, any>[] =
+      summaryResp.data?.results || [];
+
+    if (!summaryData.length) {
+      return res.status(400).json({ code: 400, message: '没有可导出的数据' });
+    }
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('港口矿粉资源库评价汇总');
+
+    worksheet.columns = Object.keys(summaryData[0]).map(key => ({
+      header: key,
+      key,
+      width: 20,
+    }));
+
+    summaryData.forEach(item => worksheet.addRow(item));
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const filename = encodeURIComponent('港口矿粉资源库评价汇总.xlsx');
+
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${filename}"`,
+    );
+    res.setHeader('Content-Length', buffer.byteLength);
+
+    res.end(buffer);
+  } catch (err: any) {
+    res.status(400).json({ code: 400, message: err.message || '导出失败' });
+  }
+}
 }

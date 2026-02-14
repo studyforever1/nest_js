@@ -11,6 +11,7 @@ import { GlConfigService } from '../gl-config/gl-config.service' // 可共用配
 import { GlFuelInfo } from '../gl-fuel-info/entities/gl-fuel-info.entity';
 import ExcelJS from 'exceljs';
 import { GLExportSchemeDto } from './dto/export-scheme.dto';
+import { appConfig } from 'src/config/app.config';
 
 export interface PaginationDto {
   page?: number;
@@ -31,7 +32,7 @@ function getNestedValue(obj: any, path: string): any {
 @Injectable()
 export class GlCalcService {
   private readonly logger = new Logger(GlCalcService.name);
-  private readonly fastApiUrl = process.env.FASTAPI_URL;
+  private readonly fastApiUrl = appConfig.api.fastApiUrl;
   private taskCache: Map<string, TaskCache> = new Map();
 
   constructor(
@@ -255,6 +256,7 @@ async fetchAndSaveProgress(taskUuid: string, pagination?: PaginationDto): Promis
     }
 
     let results: any[] = [];
+    const cache = this.taskCache.get(taskUuid) || { results: [], lastUpdated: Date.now() };
 
     if (task.status !== TaskStatus.FINISHED) {
       // 调用 FastAPI 获取增量结果
@@ -280,42 +282,30 @@ async fetchAndSaveProgress(taskUuid: string, pagination?: PaginationDto): Promis
       raws.forEach(r => idNameMap[String(r.id)] = r.name);
       fuels.forEach(f => idNameMap[String(f.id)] = f.name);
 
-      // 过滤空对象 & 只保留有主要参数的方案
+      // 过滤有效方案
       const validResults = (data.results || []).filter(
         item => item && item["主要参数"] && typeof item["主要参数"].成本 === "number"
       );
 
-      // 1️⃣ 成本排名（按成本升序）
-      validResults.sort((a, b) => a["主要参数"].成本 - b["主要参数"].成本);
-      validResults.forEach((item, index) => item.成本排名 = index + 1);
-
-      // 2️⃣ 映射原料和燃料配比
-      results = validResults.map(item => {
+      // 映射原料和燃料配比
+      const mappedResults = validResults.map(item => {
         const mapped = { ...item };
 
-        // 原料配比和矿耗
         if (item["原料配比和矿耗"]) {
           const newRaw: Record<string, any> = {};
           Object.entries(item["原料配比和矿耗"]).forEach(([id, val]: [string, any]) => {
             if (val && val.矿耗 != null && val.配比 != null) {
-              newRaw[id] = {
-                ...val,
-                name: idNameMap[id] || id,
-              };
+              newRaw[id] = { ...val, name: idNameMap[id] || id };
             }
           });
           mapped["原料配比和矿耗"] = newRaw;
         }
 
-        // 燃料配比和矿耗
         if (item["燃料配比和矿耗"]) {
           const newFuel: Record<string, any> = {};
           Object.entries(item["燃料配比和矿耗"]).forEach(([id, val]: [string, any]) => {
             if (val && val.矿耗 != null && val.配比 != null) {
-              newFuel[id] = {
-                ...val,
-                name: idNameMap[id] || id,
-              };
+              newFuel[id] = { ...val, name: idNameMap[id] || id };
             }
           });
           mapped["燃料配比和矿耗"] = newFuel;
@@ -324,9 +314,19 @@ async fetchAndSaveProgress(taskUuid: string, pagination?: PaginationDto): Promis
         return mapped;
       });
 
+      // ✅ 合并缓存和新增结果（按方案序号去重）
+      const combinedMap: Record<number, any> = {};
+      cache.results.forEach(r => { combinedMap[r["方案序号"]] = r; });
+      mappedResults.forEach(r => { combinedMap[r["方案序号"]] = r; });
+
+      results = Object.values(combinedMap);
+
+      // 成本排名
+      results.sort((a, b) => a["主要参数"].成本 - b["主要参数"].成本);
+      results.forEach((item, index) => item.成本排名 = index + 1);
+
       // 更新缓存
-      const cache = this.taskCache.get(taskUuid) || { results: [], lastUpdated: Date.now() };
-      cache.results = results; // 覆盖缓存，保证成本排名正确
+      cache.results = results;
       cache.lastUpdated = Date.now();
       this.taskCache.set(taskUuid, cache);
 
@@ -341,11 +341,10 @@ async fetchAndSaveProgress(taskUuid: string, pagination?: PaginationDto): Promis
         await this.saveResults(task, results);
         this.taskCache.delete(taskUuid);
       }
+
     } else {
       // 任务已完成，从数据库获取最终结果
-      const resultEntity = await this.resultRepo.findOne({
-        where: { task: { task_uuid: taskUuid } },
-      });
+      const resultEntity = await this.resultRepo.findOne({ where: { task: { task_uuid: taskUuid } } });
       results = resultEntity?.output_data || [];
     }
 
@@ -368,6 +367,7 @@ async fetchAndSaveProgress(taskUuid: string, pagination?: PaginationDto): Promis
     return this.handleError(err, '获取任务进度失败');
   }
 }
+
 
 
   private applyPaginationAndSort(results: any[], pagination?: PaginationDto) {

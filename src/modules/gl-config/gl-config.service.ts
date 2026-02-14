@@ -391,10 +391,54 @@ private async syncAcrossModules(
   }
 }
 
-// ===================== 原料 =====================
-// ===================== 原料 =====================
-// ===================== 原料 =====================
-// ===================== 原料 =====================
+private async calibrateVariableSelection(
+  moduleName: string,
+  newParams: number[],
+  otherSettings: Record<string, any>,
+): Promise<string | undefined> {
+
+  const targetModules = [
+    '铁前一体化配料计算I',
+    '铁前一体化配料计算II',
+    '利润一体化配料计算',
+  ];
+
+  if (!targetModules.includes(moduleName)) {
+    return undefined;
+  }
+
+  if (!newParams?.length) {
+    return undefined;
+  }
+
+  const raws = await this.rawRepo.find({
+    where: { id: In(newParams) },
+  });
+
+  // ⭐ 1️⃣ 优先烧结矿（强制覆盖）
+  const sj = raws.find(r => r.name?.includes('烧结矿'));
+  if (sj) {
+    return String(sj.id);
+  }
+
+  const current = otherSettings?.['变量选择'];
+
+  // ⭐ 2️⃣ 当前变量选择仍合法就保留
+  if (current && newParams.includes(Number(current))) {
+    return String(current);
+  }
+
+  // ⭐ 3️⃣ S 类
+  const sCat = raws.find(r => r.category?.startsWith('S'));
+  if (sCat) {
+    return String(sCat.id);
+  }
+
+  // ⭐ 4️⃣ 第一个
+  return String(newParams[0]);
+}
+
+
 // ===================== 保存选中原料 =====================
 async saveSelectedIngredients(
   user: User,
@@ -501,6 +545,16 @@ async saveSelectedIngredients(
       newOtherSettings['块矿'] = raws.filter(r => r.category?.startsWith('K')).map(r => r.id);
     }
   }
+  // ⭐ 自动校准变量选择
+  const calibratedValue = await this.calibrateVariableSelection(
+    moduleName,
+    newParams,
+    newOtherSettings,
+  );
+
+  if (calibratedValue !== undefined) {
+    newOtherSettings['变量选择'] = calibratedValue;
+  }
 
   // 4️⃣ 清理固定配比中已被移除的原料
   if (Array.isArray(newOtherSettings['固定配比'])) {
@@ -517,57 +571,77 @@ async saveSelectedIngredients(
   await this.configRepo.save(group);
 
   // 6️⃣ 同步到其他模块（含 生铁固定配料计算特殊处理）
-  const allModules = [
-    '单独高炉配料计算',
+  // 6️⃣ 同步到其他模块（含 生铁固定配料计算特殊处理）
+const allModules = [
+  '单独高炉配料计算',
+  '铁前一体化配料计算I',
+  '铁前一体化配料计算II',
+  '利润一体化配料计算',
+  '生铁固定配料计算',
+];
+const otherModules = allModules.filter(m => m !== moduleName);
+
+for (const other of otherModules) {
+  const otherGroup = await this.getOrCreateUserGroup(user, other);
+  const otherData = _.cloneDeep(otherGroup.config_data || {});
+
+  // ⭐ 复制一份 otherSettings，避免污染
+  const syncedOtherSettings = {
+    ...(otherData.otherSettings || {}),
+    '块矿': newOtherSettings['块矿'],
+    '固定配比': newOtherSettings['固定配比'],
+  };
+
+  // ⭐ 仅对这三个模块同步变量选择
+  const needSyncVariableModules = [
     '铁前一体化配料计算I',
     '铁前一体化配料计算II',
     '利润一体化配料计算',
-    '生铁固定配料计算',
   ];
-  const otherModules = allModules.filter(m => m !== moduleName);
 
-  for (const other of otherModules) {
-    const otherGroup = await this.getOrCreateUserGroup(user, other);
-    const otherData = _.cloneDeep(otherGroup.config_data || {});
+  if (needSyncVariableModules.includes(other)) {
+    const calibrated = await this.calibrateVariableSelection(
+      other,
+      newParams,
+      syncedOtherSettings,
+    );
 
-    if (other === '生铁固定配料计算') {
-      const oldResults: Record<string, number> = otherData.ingredientResults || {};
-      const newResults: Record<string, number> = {};
-
-      for (const id of newParams) {
-        const key = String(id);
-        newResults[key] = oldResults[key] !== undefined ? oldResults[key] : newLimits[id]?.low_limit ?? 0;
-      }
-
-      otherGroup.config_data = {
-        ...otherData,
-        ingredientParams: newParams,
-        ingredientLimits: newLimits,
-        ingredientResults: newResults,
-        otherSettings: {
-          ...(otherData.otherSettings || {}),
-          '块矿': newOtherSettings['块矿'],
-          '固定配比': newOtherSettings['固定配比'],
-        },
-      };
-
-    } else {
-      otherGroup.config_data = {
-        ...otherData,
-        ingredientParams: newParams,
-        ingredientLimits: newLimits,
-        otherSettings: {
-          ...(otherData.otherSettings || {}),
-          '块矿': newOtherSettings['块矿'],
-          '固定配比': newOtherSettings['固定配比'],
-        },
-      };
+    if (calibrated !== undefined) {
+      syncedOtherSettings['变量选择'] = calibrated;
     }
-
-    await this.configRepo.save(otherGroup);
   }
 
-  return { data: group.config_data };
+  if (other === '生铁固定配料计算') {
+    const oldResults: Record<string, number> = otherData.ingredientResults || {};
+    const newResults: Record<string, number> = {};
+
+    for (const id of newParams) {
+      const key = String(id);
+      newResults[key] =
+        oldResults[key] !== undefined
+          ? oldResults[key]
+          : newLimits[id]?.low_limit ?? 0;
+    }
+
+    otherGroup.config_data = {
+      ...otherData,
+      ingredientParams: newParams,
+      ingredientLimits: newLimits,
+      ingredientResults: newResults,
+      otherSettings: syncedOtherSettings,
+    };
+
+  } else {
+    otherGroup.config_data = {
+      ...otherData,
+      ingredientParams: newParams,
+      ingredientLimits: newLimits,
+      otherSettings: syncedOtherSettings,
+    };
+  }
+
+  await this.configRepo.save(otherGroup);
+}
 }
 
 
