@@ -65,13 +65,10 @@ async startTask(
     const config = await this.sjconfigService.getLatestConfigByName(user, moduleName);
     if (!config) throw new Error(`未找到模块 ${moduleName} 的配置`);
     console.log('获取到的配置:', config);
-    const ingredientIds = config.ingredientParams || [];
-    const raws = await this.sjRawMaterialRepo.find({
-      where: { id: In(ingredientIds), enabled: true },
-    });
+    const ingredientData = config.ingredientData || [];
 
     const ingredientParams: Record<number, any> = {};
-    raws.forEach(raw => {
+    ingredientData.forEach(raw => {
       ingredientParams[raw.id] = {
         ...raw.composition,
         TFe: raw.composition?.TFe ?? 0,

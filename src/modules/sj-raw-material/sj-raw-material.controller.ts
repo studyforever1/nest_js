@@ -32,6 +32,7 @@ import type { Response } from 'express';
 import * as multer from 'multer';
 import { RawPaginationDto } from './dto/pagination.dto';
 import { MaterialResponseInterceptor } from '../../common/interceptors/material-response.interceptor';
+import { User } from '../user/entities/user.entity';
 
 
 @ApiTags('物料信息-烧结物料信息')
@@ -54,33 +55,17 @@ export class SjRawMaterialController {
    * 保留原来 /sj-raw-material (分页)
    * 原来的 /search 和 /search-by-type 仍可使用（兼容前端），但建议统一请求到这里。
    */
+
 @Get()
-// @UseInterceptors(MaterialResponseInterceptor)
 @ApiOperation({
   summary: '查询原料（支持分页、名称模糊、类型筛选、排序）',
-  description: `
-  对应烧结物料信息中的查询、刷新、外购含铁料、循环含铁料、溶剂、燃料按钮  
-  外购含铁料：T  
-  循环含铁料：X  
-  溶剂：R  
-  燃料：F
-  `,
 })
-findAll(@Query() query: RawPaginationDto) {
-  return this.rawService.query(query);
+async findAll(
+  @CurrentUser() user: User,
+  @Query() query: RawPaginationDto,
+) {
+  return this.rawService.query(user, query);
 }
-
-  /** 更新原料 */
-  @Put(':id')
-  @ApiOperation({ summary: '保存按钮' })
-  update(
-    @Param('id') id: string,
-    @Body() dto: UpdateSjRawMaterialDto,
-    @CurrentUser() user: { username: string },
-  ) {
-    return this.rawService.update(+id, dto, user.username);
-  }
-
   /** 删除原料（支持单个或多个） */
   @Delete()
   @ApiOperation({ summary: '删除原料（支持单个或多个）' })

@@ -1,5 +1,5 @@
 // sjconfig.service.ts
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger , NotFoundException} from '@nestjs/common';
 import { Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 
@@ -11,6 +11,7 @@ import { FIXED_HEADERS } from '../sj-raw-material/sj-raw-material.service';
 import _ from 'lodash';
 import { In } from 'typeorm';
 import { BadRequestException } from '@nestjs/common/exceptions';
+import { UpdateSelectedIngredientDataDto } from './dto/update-selected-ingredient-data.dto';
 
 @Injectable()
 export class SjconfigService {
@@ -204,9 +205,6 @@ async saveSelectedIngredients(
   category?: string,
   name?: string,
 ) {
-  // ===============================
-  // 1️⃣ 当前模块原有逻辑（保持不变）
-  // ===============================
   const group = await this.getOrCreateUserGroup(user, moduleName);
   const configData = _.cloneDeep(group.config_data || {});
   const oldParams: number[] = configData.ingredientParams || [];
@@ -224,7 +222,6 @@ async saveSelectedIngredients(
     (name && name.trim() !== '');
 
   if (isCategoryMode) {
-    // ---------- 分类同步模式 ----------
     let qb = this.rawRepo
       .createQueryBuilder('raw')
       .where('raw.id IN (:...ids)', { ids: oldParams });
@@ -241,51 +238,30 @@ async saveSelectedIngredients(
     const toAdd = selectedIds.filter(id => !categoryIdsInDB.includes(id));
 
     toRemove.forEach(id => delete newLimits[id]);
-    
-    // ⭐ 获取内置矿粉配比数据（BuiltinPowder），用于在选择烧结矿时自动设置上下限
+
     const builtinPowderMap: Record<string, any> = configData.BuiltinPowder || {};
-    
-    // 获取新增原料的详细信息，用于匹配物料名称
     const rawsToAdd = await this.rawRepo.findByIds(toAdd);
-    const rawNameMap: Record<number, string> = {};
+
     rawsToAdd.forEach(raw => {
-      rawNameMap[raw.id] = raw.name;
-    });
-    
-    toAdd.forEach(id => {
-      if (!newLimits[id]) {
-        const rawName = rawNameMap[id];
-        // 安全检查：如果原料名称不存在，使用默认值
-        if (!rawName) {
-          newLimits[id] = { low_limit: 0, top_limit: 100, lose_index: 1 };
-          return;
-        }
-        // 检查是否在内置矿粉配比中
-        const builtinPowder = builtinPowderMap[rawName];
-        if (builtinPowder) {
-          // 如果在内置矿粉配比中，使用其上下限
-          newLimits[id] = {
-            low_limit: builtinPowder.low_limit ?? 0,
-            top_limit: builtinPowder.top_limit ?? 100,
-            lose_index: 1,
-          };
-        } else {
-          // 否则使用默认值
-          newLimits[id] = { low_limit: 0, top_limit: 100, lose_index: 1 };
-        }
+      if (!newLimits[raw.id]) {
+        const builtinPowder = builtinPowderMap[raw.name];
+        newLimits[raw.id] = builtinPowder
+          ? {
+              low_limit: builtinPowder.low_limit ?? 0,
+              top_limit: builtinPowder.top_limit ?? 100,
+              lose_index: 1,
+            }
+          : { low_limit: 0, top_limit: 100, lose_index: 1 };
+      }
+
+      if (raw.category?.startsWith('T1')) {
+        configData.otherSettings['精粉'].push(String(raw.id));
       }
     });
 
     newParams = Array.from(
       new Set([...oldParams.filter(id => !toRemove.includes(id)), ...toAdd]),
     );
-
-    // rawsToAdd 已经在上面获取过了，这里不需要重复查询
-    rawsToAdd.forEach(raw => {
-      if (raw.category?.startsWith('T1')) {
-        configData.otherSettings['精粉'].push(String(raw.id));
-      }
-    });
 
     configData.otherSettings['精粉'] = Array.from(
       new Set(
@@ -303,7 +279,6 @@ async saveSelectedIngredients(
       ),
     );
   } else {
-    // ---------- 全选模式 ----------
     Object.keys(newLimits).forEach(idStr => {
       const id = Number(idStr);
       if (!selectedIds.includes(id)) {
@@ -311,46 +286,27 @@ async saveSelectedIngredients(
       }
     });
 
-    // ⭐ 获取内置矿粉配比数据（BuiltinPowder），用于在选择烧结矿时自动设置上下限
     const builtinPowderMap: Record<string, any> = configData.BuiltinPowder || {};
-    
-    // 获取所有选中原料的详细信息，用于匹配物料名称
     const raws = await this.rawRepo.findByIds(selectedIds);
-    const rawNameMap: Record<number, string> = {};
-    raws.forEach(raw => {
-      rawNameMap[raw.id] = raw.name;
-    });
-    
-    selectedIds.forEach(id => {
-      if (!newLimits[id]) {
-        const rawName = rawNameMap[id];
-        // 安全检查：如果原料名称不存在，使用默认值
-        if (!rawName) {
-          newLimits[id] = { low_limit: 0, top_limit: 100, lose_index: 1 };
-          return;
-        }
-        // 检查是否在内置矿粉配比中
-        const builtinPowder = builtinPowderMap[rawName];
-        if (builtinPowder) {
-          // 如果在内置矿粉配比中，使用其上下限
-          newLimits[id] = {
-            low_limit: builtinPowder.low_limit ?? 0,
-            top_limit: builtinPowder.top_limit ?? 100,
-            lose_index: 1,
-          };
-        } else {
-          // 否则使用默认值
-          newLimits[id] = { low_limit: 0, top_limit: 100, lose_index: 1 };
-        }
-      }
-    });
 
-    newParams = Array.from(new Set(selectedIds));
     raws.forEach(raw => {
+      if (!newLimits[raw.id]) {
+        const builtinPowder = builtinPowderMap[raw.name];
+        newLimits[raw.id] = builtinPowder
+          ? {
+              low_limit: builtinPowder.low_limit ?? 0,
+              top_limit: builtinPowder.top_limit ?? 100,
+              lose_index: 1,
+            }
+          : { low_limit: 0, top_limit: 100, lose_index: 1 };
+      }
+
       if (raw.category?.startsWith('T1')) {
         configData.otherSettings['精粉'].push(String(raw.id));
       }
     });
+
+    newParams = Array.from(new Set(selectedIds));
 
     configData.otherSettings['精粉'] = Array.from(
       new Set(
@@ -369,47 +325,55 @@ async saveSelectedIngredients(
     );
   }
 
-  // ===============================
-  // 2️⃣ 保存当前模块
-  // ===============================
+  // ⭐ 生成快照
+  const raws = await this.rawRepo.findByIds(newParams);
+  const ingredientData = raws.map(raw => ({
+    id: raw.id,
+    name: raw.name,
+    category: raw.category,
+    composition: raw.composition,
+    inventory: raw.inventory,
+    origin: raw.origin,
+    modifier: raw.modifier,
+    enabled: raw.enabled,
+    remark: raw.remark,
+    created_at: raw.created_at,
+    updated_at: raw.updated_at,
+  }));
+
   group.config_data = {
     ...configData,
     ingredientParams: newParams,
     ingredientLimits: newLimits,
+    ingredientData, // ⭐ 新增
   };
+
   await this.configRepo.save(group);
 
-  // ===============================
-  // 3️⃣ ⭐ 同步到固定配比 & 硫平衡（只同步 Params / Limits）
-  // ===============================
- const syncModules = ['烧结固定配料计算', '硫平衡计算'];
+  // ⭐ 同步模块
+  const syncModules = ['烧结固定配料计算', '硫平衡计算'];
 
-for (const syncModule of syncModules) {
-  const otherGroup = await this.getOrCreateUserGroup(user, syncModule);
-  const otherConfigData = _.cloneDeep(otherGroup.config_data || {});
+  for (const syncModule of syncModules) {
+    const otherGroup = await this.getOrCreateUserGroup(user, syncModule);
+    const otherConfigData = _.cloneDeep(otherGroup.config_data || {});
 
-  // 同步 Params / Limits
-  otherConfigData.ingredientParams = newParams;
-  otherConfigData.ingredientLimits = newLimits;
+    otherConfigData.ingredientParams = newParams;
+    otherConfigData.ingredientLimits = newLimits;
+    otherConfigData.ingredientData = ingredientData;
 
-  // ⭐ 生成 ingredientResults（默认 = 下限）
-  const ingredientResults: Record<number, number> = {};
+    const ingredientResults: Record<number, number> = {};
+    newParams.forEach(id => {
+      ingredientResults[id] = newLimits[id]?.low_limit ?? 0;
+    });
 
-  newParams.forEach(id => {
-    ingredientResults[id] = newLimits[id]?.low_limit ?? 0;
-  });
+    otherConfigData.ingredientResults = ingredientResults;
 
-  otherConfigData.ingredientResults = ingredientResults;
+    otherGroup.config_data = otherConfigData;
+    await this.configRepo.save(otherGroup);
+  }
 
-  otherGroup.config_data = otherConfigData;
-  await this.configRepo.save(otherGroup);
-}
   return group;
 }
-
-
-
-
 
 
   /** 删除选中的原料（同步更新精粉 + 固定配比） */
@@ -419,14 +383,12 @@ async deleteIngredientParams(
   moduleName: string,
   removeParams: number[],
 ) {
-  // ===============================
-  // 1️⃣ 当前模块删除（原有逻辑）
-  // ===============================
   const group = await this.getOrCreateUserGroup(user, moduleName);
-
   const configData = _.cloneDeep(group.config_data || {});
+
   const oldParams: number[] = configData.ingredientParams || [];
   const oldLimits: Record<string, any> = configData.ingredientLimits || {};
+  const oldData: any[] = configData.ingredientData || [];
 
   const newParams = oldParams.filter(id => !removeParams.includes(id));
 
@@ -437,51 +399,29 @@ async deleteIngredientParams(
     }
   });
 
-  // 删除精粉 & 固定配比
-  if (configData.otherSettings) {
-    if (Array.isArray(configData.otherSettings['精粉'])) {
-      configData.otherSettings['精粉'] =
-        configData.otherSettings['精粉'].filter(
-          (id: number | string) => !removeParams.includes(Number(id)),
-        );
-    }
-
-    if (Array.isArray(configData.otherSettings['固定配比'])) {
-      configData.otherSettings['固定配比'] =
-        configData.otherSettings['固定配比'].filter(
-          (id: number | string) => !removeParams.includes(Number(id)),
-        );
-    }
-  }
+  const newData = oldData.filter(
+    item => !removeParams.includes(item.id),
+  );
 
   group.config_data = {
     ...configData,
     ingredientParams: newParams,
     ingredientLimits: newLimits,
+    ingredientData: newData,
   };
 
   await this.configRepo.save(group);
 
-  // ===============================
-  // 2️⃣ ⭐ 同步删除到其他模块
-  // ===============================
   const syncModules = ['烧结固定配料计算', '硫平衡计算'];
 
   for (const syncModule of syncModules) {
     const otherGroup = await this.getOrCreateUserGroup(user, syncModule);
     const otherConfigData = _.cloneDeep(otherGroup.config_data || {});
 
-    // 同步 Params
     otherConfigData.ingredientParams = newParams;
+    otherConfigData.ingredientLimits = newLimits;
+    otherConfigData.ingredientData = newData;
 
-    // 同步 Limits
-    const otherLimits: Record<string, any> = {};
-    Object.keys(newLimits).forEach(id => {
-      otherLimits[id] = newLimits[id];
-    });
-    otherConfigData.ingredientLimits = otherLimits;
-
-    // ⭐ 同步 Results（只保留剩余原料）
     const oldResults = otherConfigData.ingredientResults || {};
     const newResults: Record<number, number> = {};
 
@@ -534,67 +474,58 @@ async getSelectedIngredients(
   sort?: string,
   order?: 'asc' | 'desc',
 ) {
-  /** ---- 0. 获取用户分组配置 ---- */
   const group = await this.getOrCreateUserGroup(user, moduleName);
   const configData = group.config_data || {};
-  const ingredientParams: number[] = configData.ingredientParams || [];
 
-  /** ---- 用户尚未选择任何原料，直接返回 ---- */
-  if (!ingredientParams.length) {
-    return {
-      data: [],
-      total: 0,
-      page,
-      pageSize,
-      totalPages: 0,
-    };
+  let ingredientData: any[] = configData.ingredientData || [];
+
+  // ⭐ 兼容老数据（没有 snapshot 时自动生成）
+  if (!ingredientData.length && configData.ingredientParams?.length) {
+    const raws = await this.rawRepo.findByIds(configData.ingredientParams);
+    ingredientData = raws;
   }
 
-  /** ---- 1. 构建 QueryBuilder（限定用户已选原料） ---- */
-  const qb = this.rawRepo
-    .createQueryBuilder('raw')
-    .where('raw.id IN (:...ids)', { ids: ingredientParams });
+  if (!ingredientData.length) {
+    return { data: [], total: 0, page, pageSize, totalPages: 0 };
+  }
 
-  /** ---- 2. 名称模糊搜索 ---- */
+  let list = [...ingredientData];
+
   if (name) {
-    qb.andWhere('raw.name LIKE :name', { name: `%${name}%` });
+    list = list.filter(i => i.name?.includes(name));
   }
 
-  /** ---- 3. 分类 / 类型筛选（⭐ 新增） ---- */
   if (type) {
-    qb.andWhere('raw.category LIKE :type', { type: `%${type}%` });
-    // 如果你的字段不是 category，这里改成真实字段即可
+    list = list.filter(i => i.category?.includes(type));
   }
 
-  /** ---- 4. 排序逻辑 ---- */
-  if (sort && this.SORT_FIELD_MAP[sort]) {
-    qb.orderBy(
-      this.SORT_FIELD_MAP[sort],
-      order === 'desc' ? 'DESC' : 'ASC',
-    );
-  } else {
-    // ⚠️ 默认排序一定要有，防止分页结果抖动
-    qb.orderBy('raw.id', 'ASC');
+  if (sort) {
+    list.sort((a, b) => {
+      const valA = sort.startsWith('composition.')
+        ? a.composition?.[sort.split('.')[1]] ?? 0
+        : a[sort] ?? 0;
+
+      const valB = sort.startsWith('composition.')
+        ? b.composition?.[sort.split('.')[1]] ?? 0
+        : b[sort] ?? 0;
+
+      if (valA === valB) return 0;
+
+      return order === 'desc'
+        ? valB > valA ? 1 : -1
+        : valA > valB ? 1 : -1;
+    });
   }
 
-  /** ---- 5. 获取总数（⚠️ 在 skip / take 之前） ---- */
-  const total = await qb.getCount();
+  const total = list.length;
+  const start = (page - 1) * pageSize;
+  const pageData = list.slice(start, start + pageSize);
 
-  /** ---- 6. 分页查询 ---- */
-  const records = await qb
-    .skip((page - 1) * pageSize)
-    .take(pageSize)
-    .getMany();
-
-  /** ---- 7. 统一返回结构（composition 规范化） ---- */
-  const list = records.map(item => ({
-    ...item,
-    composition: this.normalizeComposition(item.composition),
-  }));
-
-  /** ---- 8. 返回分页结果 ---- */
   return {
-    data: list,
+    data: pageData.map(item => ({
+      ...item,
+      composition: this.normalizeComposition(item.composition),
+    })),
     total,
     page,
     pageSize,
@@ -602,10 +533,89 @@ async getSelectedIngredients(
   };
 }
 
+/** 批量恢复已选原料数据，与原料库保持一致 */
+async restoreSelectedIngredients(
+  user: User,
+  moduleName: string,
+  ids: number[],
+) {
+  const group = await this.getOrCreateUserGroup(user, moduleName);
+  const configData = _.cloneDeep(group.config_data || {});
+  const ingredientParams: number[] = configData.ingredientParams || [];
 
+  // 如果传空数组，则恢复全部已选原料
+  const restoreIds = ids.length ? ids : ingredientParams;
 
-// sjconfig.service.ts
+  if (!restoreIds.length) return group;
 
+  // 查询原料库数据
+  const raws = await this.rawRepo.findByIds(restoreIds);
+
+  // ingredientData 可能原本是数组
+  const ingredientData: any[] = configData.ingredientData || [];
+
+  raws.forEach(raw => {
+    // 查找是否已存在该 id
+    const index = ingredientData.findIndex(item => item.id === raw.id);
+    const newData = {
+      ...raw,
+      composition: this.normalizeComposition(raw.composition),
+    };
+
+    if (index >= 0) {
+      ingredientData[index] = newData; // 替换
+    } else {
+      ingredientData.push(newData); // 添加
+    }
+  });
+
+  configData.ingredientData = ingredientData;
+  group.config_data = configData;
+  await this.configRepo.save(group);
+
+  return ingredientData.filter(item => restoreIds.includes(item.id));
+}
+async updateSelectedIngredientData(
+  user: User,
+  moduleName: string,
+  id: number,
+  dto: UpdateSelectedIngredientDataDto,
+  username: string,
+) {
+  const group = await this.getOrCreateUserGroup(user, moduleName);
+  const configData = _.cloneDeep(group.config_data || {});
+
+  const ingredientDataArray = configData.ingredientData || [];
+  const ingredientData: Record<number, any> = {};
+  ingredientDataArray.forEach(item => {
+    ingredientData[item.id] = item;
+  });
+
+  const existing = ingredientData[id];
+  if (!existing) {
+    throw new NotFoundException('原料未被选中，无法修改');
+  }
+
+  ingredientData[id] = {
+    ...existing,
+    name: dto.name ?? existing.name,
+    category: dto.category ?? existing.category,
+    origin: dto.origin ?? existing.origin,
+    remark: dto.remark ?? existing.remark,
+    inventory: dto.inventory ?? existing.inventory,
+    composition: dto.composition
+      ? this.normalizeComposition({ ...existing.composition, ...dto.composition })
+      : existing.composition,
+    modifier: username,
+    updated_at: new Date(),
+  };
+
+  configData.ingredientData = Object.values(ingredientData);
+  group.config_data = configData;
+  await this.configRepo.save(group);
+
+  return ingredientData[id];
+}
 async addSJProcessCost(
   user: User,
   items: Record<string, any>,

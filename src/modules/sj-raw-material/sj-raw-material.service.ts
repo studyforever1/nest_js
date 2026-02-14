@@ -9,6 +9,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { Express } from 'express';
 import { RawPaginationDto } from './dto/pagination.dto';
+import { User } from '../user/entities/user.entity';
+import { ConfigGroup } from 'src/database/entities/config-group.entity';
 
 /**
  * ✅ 固定表头（唯一标准）
@@ -40,6 +42,7 @@ export class SjRawMaterialService {
   constructor(
     @InjectRepository(SjRawMaterial)
     private readonly rawRepo: Repository<SjRawMaterial>,
+
   ) {}
 
   /** =========================
@@ -109,63 +112,83 @@ async update(id: number, dto: UpdateSjRawMaterialDto, username: string) {
    * 合并查询接口（返回分页 + 总数 + data）
    * 支持 name 模糊、type 前缀匹配（严格以 type 开头）
    */
-async query(params: RawPaginationDto) {
-  const {
-    page = 1,
-    pageSize = 10,
-    name,
-    type,
-    sort,
-    order,
-  } = params;
+  private readonly MODULE_NAME = '烧结配料计算';
+
+async query(user: User, params: RawPaginationDto) {
+  const { page = 1, pageSize = 10, name, type, sort, order } = params;
 
   const qb = this.rawRepo.createQueryBuilder('raw');
 
   // ================= 1️⃣ 名称模糊搜索 =================
-  if (name) {
-    qb.andWhere('raw.name LIKE :name', { name: `%${name}%` });
-  }
+  if (name) qb.andWhere('raw.name LIKE :name', { name: `%${name}%` });
 
   // ================= 2️⃣ 分类筛选 =================
-  if (type) {
-    qb.andWhere('raw.category LIKE :type', { type: `%${type}%` });
-  }
+  if (type) qb.andWhere('raw.category LIKE :type', { type: `%${type}%` });
 
-  // ================= 3️⃣ 排序 =================
+  // ================= 3️⃣ 排序（数据库字段排序） =================
   if (sort) {
     if (sort.startsWith('composition.')) {
-      // 排序字段在 composition JSON 内
       const key = sort.replace('composition.', '');
-
-      // MySQL 8.0: JSON_EXTRACT 返回 JSON，需要 CAST 成 DECIMAL
       qb.orderBy(
         `CAST(JSON_EXTRACT(raw.composition, '$."${key}"') AS DECIMAL)`,
-        order === 'desc' ? 'DESC' : 'ASC',
+        order === 'desc' ? 'DESC' : 'ASC'
       );
     } else if (SORT_FIELD_MAP[sort]) {
-      // 普通字段排序
-      qb.orderBy(
-        SORT_FIELD_MAP[sort],
-        order === 'desc' ? 'DESC' : 'ASC',
-      );
+      qb.orderBy(SORT_FIELD_MAP[sort], order === 'desc' ? 'DESC' : 'ASC');
     } else {
-      // 默认排序 fallback
       qb.orderBy('raw.id', 'ASC');
     }
   } else {
     qb.orderBy('raw.id', 'ASC');
   }
 
-  // ================= 4️⃣ 分页 =================
   qb.skip((page - 1) * pageSize).take(pageSize);
 
   const [list, total] = await qb.getManyAndCount();
 
-  // ================= 5️⃣ 数据映射 =================
-  const mapped = list.map(item => ({
-    ...item,
-    composition: this.normalizeComposition(item.composition),
-  }));
+  // ================= 4️⃣ 获取已选原料 =================
+  let selectedSet = new Set<number>();
+  try {
+    const configRepo = this.rawRepo.manager.getRepository(ConfigGroup);
+    const config = await configRepo
+      .createQueryBuilder('cg')
+      .leftJoin('cg.user', 'user')
+      .leftJoin('cg.module', 'module')
+      .where('user.user_id = :userId', { userId: user.user_id })
+      .andWhere('module.name = :moduleName', { moduleName: this.MODULE_NAME })
+      .orderBy('cg.updated_at', 'DESC')
+      .getOne();
+
+    // ✅ 解析 config_data
+    let configData: any = {};
+    if (config?.config_data) {
+      configData =
+        typeof config.config_data === 'string'
+          ? JSON.parse(config.config_data)
+          : config.config_data;
+    }
+
+    const ingredientParams: number[] = configData.ingredientParams ?? [];
+    if (ingredientParams.length) {
+      selectedSet = new Set(ingredientParams.map((id) => Number(id)));
+    }
+  } catch (err) {
+    console.warn('获取模块配置失败，不影响原料查询', err);
+  }
+
+  // ================= 5️⃣ 数据映射 & 内存排序 =================
+  const mapped = list
+    .map((item) => ({
+      ...item,
+      composition: this.normalizeComposition(item.composition),
+      selected: selectedSet.has(Number(item.id)),
+    }))
+    // ✅ 默认把已选的放前面
+    .sort((a, b) => {
+      if (a.selected && !b.selected) return -1;
+      if (!a.selected && b.selected) return 1;
+      return 0; // 保持原有顺序
+    });
 
   return {
     data: mapped,
@@ -175,7 +198,6 @@ async query(params: RawPaginationDto) {
     totalPages: Math.ceil(total / pageSize),
   };
 }
-
 
 
   async findOne(id: number) {

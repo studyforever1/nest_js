@@ -7,6 +7,7 @@ import {
   Query,
   Put,
   Delete,
+  Param
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -40,6 +41,8 @@ import { BuiltinPowderAddDto } from './dto/builtin-powder-add.dto';
 import { BuiltinPowderUpdateDto } from './dto/builtin-powder-update.dto';
 import { BuiltinPowderDeleteDto } from './dto/builtin-powder-delete.dto';
 import { BuiltinPowderListDto } from './dto/builtin-powder-list.dto';
+import { SJRestoreIngredientsDto } from './dto/sj-restore-ingredients.dto';
+import { UpdateSelectedIngredientDataDto } from './dto/update-selected-ingredient-data.dto';
 
 @ApiTags('烧结参数配置接口')
 @ApiBearerAuth('JWT')
@@ -139,7 +142,33 @@ async getSelectedIngredients(
   );
 }
 
-
+@Put('selected-ingredient/:id')
+@ApiOperation({ summary: '修改已选原料的数据（ingredientData 内）' })
+async updateSelectedIngredient(
+  @CurrentUser() user: User,
+  @Param('id') id: string,
+  @Body() dto: UpdateSelectedIngredientDataDto,
+) {
+  return this.sjconfigService.updateSelectedIngredientData(
+    user,
+    this.MODULE_NAME,
+    +id,
+    dto,
+    user.username,
+  );
+}
+@Post('restore-ingredients')
+@ApiOperation({ summary: '批量恢复选中原料数据（ingredientData 与原料库保持一致）' })
+async restoreIngredients(
+  @CurrentUser() user: User,
+  @Body() body: SJRestoreIngredientsDto,
+) {
+  return this.sjconfigService.restoreSelectedIngredients(
+    user,
+    this.MODULE_NAME,
+    body.ids,
+  );
+}
   // =====================================================
 // 🔥 烧结工序成本（重点）
 // =====================================================
