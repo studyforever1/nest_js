@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, Put, Delete, Query, UseGuards } from '@nestjs/common';
+import { Controller, Post, Body, Get, Put, Delete, Query, UseGuards,Param } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth,ApiQuery } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
@@ -20,6 +20,11 @@ import { BuiltinPowderAddDto } from '../sj-config/dto/builtin-powder-add.dto';
 import { BuiltinPowderUpdateDto } from '../sj-config/dto/builtin-powder-update.dto';
 import { BuiltinPowderDeleteDto } from '../sj-config/dto/builtin-powder-delete.dto';
 import { BuiltinPowderListDto } from '../sj-config/dto/builtin-powder-list.dto';
+import { UpdateSelectedIngredientDataDto } from './dto/update-selected-ingredient-data.dto';
+import { UpdateSelectedFuelDataDto } from './dto/update-selected-fuel-data.dto';
+import { GLRestoreIngredientsDto } from './dto/gl-restore-ingredients.dto';
+import { GLRestoreFuelsDto } from './dto/gl-restore-fuels.dto';
+
 
 @ApiTags('高炉参数配置接口')
 @ApiBearerAuth('JWT')
@@ -164,6 +169,76 @@ async getSelectedIngredients(
   async deleteFuel(@CurrentUser() user: User, @Body() body: GLDeleteFuelDto) {
     return this.glConfigService.deleteSelectedFuels(user, this.MODULE_NAME, body.removeParams);
   }
+
+// ===================== 修改单条已选原料 =====================
+@Put('selected-ingredient/:id')
+@ApiOperation({ summary: '修改已选原料的数据（ingredientData 内）' })
+async updateSelectedIngredient(
+  @CurrentUser() user: User,
+  @Param('id') id: string,
+  @Body() dto: UpdateSelectedIngredientDataDto,
+) {
+  return this.glConfigService.updateSelectedIngredientData(
+    user,
+    this.MODULE_NAME,
+    +id,
+    dto,
+    user.username,
+  );
+}
+
+// ===================== 批量恢复已选原料 =====================
+@Post('restore-ingredients')
+@ApiOperation({ summary: '批量恢复选中原料数据（ingredientData 与原料库保持一致）' })
+async restoreIngredients(
+  @CurrentUser() user: User,
+  @Body() body: GLRestoreIngredientsDto,
+) {
+  return this.glConfigService.restoreSelectedIngredients(
+    user,
+    this.MODULE_NAME,
+    body.ids,
+  );
+}
+
+
+// ===================== 修改单条已选燃料 =====================
+@Put('selected-fuel/:id')
+@ApiOperation({ summary: '修改已选燃料的数据（fuelData 内）' })
+async updateSelectedFuel(
+  @CurrentUser() user: User,
+  @Param('id') id: string,
+  @Body() dto: UpdateSelectedFuelDataDto,
+) {
+  return this.glConfigService.updateSelectedFuelData(
+    user,
+    this.MODULE_NAME,
+    +id,
+    dto,
+    user.username,
+  );
+}
+
+// ===================== 批量恢复已选燃料 =====================
+@Post('restore-fuels')
+@ApiOperation({ summary: '批量恢复选中燃料数据（fuelData 与燃料库保持一致）' })
+async restoreFuels(
+  @CurrentUser() user: User,
+  @Body() body: GLRestoreFuelsDto,
+) {
+  return this.glConfigService.restoreSelectedFuels(
+    user,
+    this.MODULE_NAME,
+    body.ids,
+  );
+}
+
+
+
+
+
+
+
 
 
 // =====================================================

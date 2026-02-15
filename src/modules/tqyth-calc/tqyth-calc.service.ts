@@ -57,12 +57,13 @@ async startTask(
 
     const safeNumber = (v: any, d = 0) => (v != null && !isNaN(Number(v)) ? Number(v) : d);
 
-    // ---------------- 原料处理 ----------------
+    // ---------------- 原料处理（快照） ----------------
+    const ingredientData = config.ingredientData || [];
     const ingredientIds = config.ingredientParams || [];
-    const raws = await this.glMaterialRepo.find({ where: { id: In(ingredientIds), enabled: true } });
 
     const ingredientParams: Record<string, any> = {};
-    raws.forEach(raw => {
+    ingredientData.forEach(raw => {
+      if (!ingredientIds.includes(raw.id)) return;
       const composition = typeof raw.composition === 'string' ? JSON.parse(raw.composition) : raw.composition || {};
       ingredientParams[String(raw.id)] = Object.fromEntries(
         Object.entries({
@@ -80,20 +81,20 @@ async startTask(
     const ingredientLimits: Record<string, any> = {};
     Object.keys(config.ingredientLimits || {}).forEach(id => {
       const limit = config.ingredientLimits[id];
-      const raw = raws.find(r => r.id === Number(id));
-      if (!raw) return;
+      if (!ingredientIds.includes(Number(id))) return;
       ingredientLimits[id] = {
         low_limit: safeNumber(limit.low_limit),
         top_limit: safeNumber(limit.top_limit),
       };
     });
 
-    // ---------------- 燃料处理 ----------------
+    // ---------------- 燃料处理（快照） ----------------
+    const fuelData = config.fuelData || [];
     const fuelIds: number[] = config.fuelParams || [];
-    const fuels = fuelIds.length ? await this.glFuelRepo.find({ where: { id: In(fuelIds), enabled: true } }) : [];
 
     const fuelParams: Record<string, any> = {};
-    fuels.forEach(fuel => {
+    fuelData.forEach(fuel => {
+      if (!fuelIds.includes(fuel.id)) return;
       const composition = typeof fuel.composition === 'string' ? JSON.parse(fuel.composition) : fuel.composition || {};
       fuelParams[String(fuel.id)] = Object.fromEntries(
         Object.entries({
@@ -110,69 +111,66 @@ async startTask(
     const fuelLimits: Record<string, any> = {};
     fuelIds.forEach(id => {
       const limit = config.fuelLimits?.[id];
-      const fuel = fuels.find(f => f.id === id);
-      if (fuel && limit) {
-        fuelLimits[String(id)] = {
-          low_limit: safeNumber(limit.low_limit),
-          top_limit: safeNumber(limit.top_limit),
-        };
-      }
+      if (!fuelIds.includes(id) || !limit) return;
+      fuelLimits[String(id)] = {
+        low_limit: safeNumber(limit.low_limit),
+        top_limit: safeNumber(limit.top_limit),
+      };
     });
+
     // ---------------- 整理 SJPlan ----------------
-const candidates = await this.sjCandidateRepo.find({
-  where: { 
-    user: { user_id: user.user_id },
-    module_type: '烧结配料计算',
-  },
-  relations: ['task', 'user'],
-});
+    const candidates = await this.sjCandidateRepo.find({
+      where: { 
+        user: { user_id: user.user_id },
+        module_type: '烧结配料计算',
+      },
+      relations: ['task', 'user'],
+    });
 
-const sjPlan: Record<string, any> = {};
-
-candidates.forEach(candidate => {
-  const resultData = candidate.result;
-  if (!resultData || !resultData['化学成分']) return;
-
-  // ✅ 使用 sj_candidate 表中的唯一主键 id
-  const planId = candidate.id.toString();
-
-  sjPlan[planId] = {
-    ...resultData['化学成分'],
-    ...(resultData['主要参数']?.成本 != null
-      ? { 成本: resultData['主要参数'].成本 }
-      : {}),
-  };
-});
+    const sjPlan: Record<string, any> = {};
+    candidates.forEach(candidate => {
+      const resultData = candidate.result;
+      if (!resultData || !resultData['化学成分']) return;
+      const planId = candidate.id.toString();
+      sjPlan[planId] = {
+        ...resultData['化学成分'],
+        ...(resultData['主要参数']?.成本 != null ? { 成本: resultData['主要参数'].成本 } : {}),
+      };
+    });
 
     // ---------------- 其他参数 ----------------
     const safeOtherSettings = {
-  ...config.otherSettings,
-  固定配比: Array.isArray(config.otherSettings?.["固定配比"]) ? config.otherSettings["固定配比"] : [],
-  块矿: Array.isArray(config.otherSettings?.["块矿"]) ? config.otherSettings["块矿"] : [],
-};
-
-
-    const fullParams = {
-      calculateType: moduleName,
-      SJPlan: sjPlan, 
-      ingredientParams,
-      ingredientLimits,
-      fuelParams,
-      fuelLimits,
-      slagLimits: Object.fromEntries(
-        Object.entries(config.slagLimits || {}).map(([k, v]: any) => [k, { low_limit: safeNumber(v.low_limit), top_limit: safeNumber(v.top_limit) }])
-      ),
-      hotMetalRatio: Object.fromEntries(
-        Object.entries(config.hotMetalRatio || {}).map(([k, v]) => [k, safeNumber(v)])
-      ),
-      loadTopLimits: Object.fromEntries(
-        Object.entries(config.loadTopLimits || {}).map(([k, v]) => [k, safeNumber(v)])
-      ),
-      ironWaterTopLimits: Object.fromEntries(
-        Object.entries(config.ironWaterTopLimits || {}).map(([k, v]) => [k, safeNumber(v)])
-      ),
-      otherSettings: safeOtherSettings,
+      ...config.otherSettings,
+      固定配比: Array.isArray(config.otherSettings?.["固定配比"]) ? config.otherSettings["固定配比"] : [],
+      块矿: Array.isArray(config.otherSettings?.["块矿"]) ? config.otherSettings["块矿"] : [],
     };
+
+   const fullParams = {
+  calculateType: moduleName,
+  SJPlan: sjPlan,
+  ingredientData,           // ✅ 原始原料快照
+  fuelData,                 // ✅ 原始燃料快照
+  ingredientParams,
+  ingredientLimits,
+  fuelParams,
+  fuelLimits,
+  slagLimits: Object.fromEntries(
+    Object.entries(config.slagLimits || {}).map(([k, v]: any) => [
+      k,
+      { low_limit: safeNumber(v.low_limit), top_limit: safeNumber(v.top_limit) }
+    ])
+  ),
+  hotMetalRatio: Object.fromEntries(
+    Object.entries(config.hotMetalRatio || {}).map(([k, v]) => [k, safeNumber(v)])
+  ),
+  loadTopLimits: Object.fromEntries(
+    Object.entries(config.loadTopLimits || {}).map(([k, v]) => [k, safeNumber(v)])
+  ),
+  ironWaterTopLimits: Object.fromEntries(
+    Object.entries(config.ironWaterTopLimits || {}).map(([k, v]) => [k, safeNumber(v)])
+  ),
+  otherSettings: safeOtherSettings,
+};
 
     this.logger.debug('=== Full Params for FastAPI ===');
     this.logger.debug(JSON.stringify(fullParams, null, 2));
@@ -193,10 +191,10 @@ candidates.forEach(candidate => {
     await this.taskRepo.save(task);
     this.taskCache.set(taskUuid, { results: [], lastUpdated: Date.now() });
 
-    // 映射 ID → Name
+    // ---------------- ID → Name 映射（快照） ----------------
     const idNameMap: Record<number, string> = {};
-    raws.forEach(r => idNameMap[r.id] = r.name);
-    fuels.forEach(f => idNameMap[f.id] = f.name);
+    ingredientData.forEach(r => idNameMap[r.id] = r.name);
+    fuelData.forEach(f => idNameMap[f.id] = f.name);
 
     const resultMap: Record<string, any> = {};
     if (resultsById) {
@@ -254,7 +252,10 @@ async stopTask(
 
 
   /** 查询任务进度 */
-  async fetchAndSaveProgress(taskUuid: string, pagination?: PaginationDto): Promise<ApiResponse<any>> {
+async fetchAndSaveProgress(
+  taskUuid: string,
+  pagination?: PaginationDto
+): Promise<ApiResponse<any>> {
   try {
     const task = await this.findTask(taskUuid);
     if (!task) {
@@ -274,6 +275,21 @@ async stopTask(
     let results: any[] = [];
     const cache = this.taskCache.get(taskUuid) || { results: [], lastUpdated: Date.now() };
 
+    // ---------------- 构建快照映射（分开原料和燃料） ----------------
+    const params = task.parameters || {};
+    const ingredientData = params.ingredientData || [];
+    const fuelData = params.fuelData || [];
+
+    const ingredientIdNameMap: Record<string, string> = {};
+    ingredientData.forEach(item => {
+      if (item.id != null && item.name) ingredientIdNameMap[String(item.id)] = item.name;
+    });
+
+    const fuelIdNameMap: Record<string, string> = {};
+    fuelData.forEach(item => {
+      if (item.id != null && item.name) fuelIdNameMap[String(item.id)] = item.name;
+    });
+
     if (task.status !== TaskStatus.FINISHED) {
       const res = await this.apiGet('/tqyth/progress/', { taskUuid });
       const { code, message, data } = res.data;
@@ -281,41 +297,33 @@ async stopTask(
 
       const incoming = (data.results || []).filter(r => r && typeof r === 'object' && Object.keys(r).length > 0);
 
-      // 收集所有原料和燃料 id
-      const idSet = new Set<number>();
-      for (const item of incoming) {
-        const rawMix = item["原料配比和矿耗"] || {};
-        Object.keys(rawMix).forEach(idStr => idSet.add(Number(idStr)));
-        const fuelMix = item["燃料配比和矿耗"] || {};
-        Object.keys(fuelMix).forEach(idStr => idSet.add(Number(idStr)));
-      }
-
-      // 查询数据库
-      const raws = await this.glMaterialRepo.find({ where: { id: In([...idSet]) } });
-      const fuels = await this.glFuelRepo.find({ where: { id: In([...idSet]) } });
-      const idNameMap: Record<string, string> = {};
-      raws.forEach(r => idNameMap[String(r.id)] = r.name);
-      fuels.forEach(f => idNameMap[String(f.id)] = f.name);
-
-      // 过滤出有成本的方案
+      // ---------------- 过滤出有成本的方案 ----------------
       const validResults = incoming.filter(item => item["主要参数"] && typeof item["主要参数"].成本 === "number");
 
-      // 映射原料和燃料名称
+      // ---------------- 映射原料和燃料名称 ----------------
       const mappedResults = validResults.map(item => {
-        const mapped = { ...item };
+        const mapped: Record<string, any> = { ...item };
 
+        // 原料
         if (item["原料配比和矿耗"]) {
           const newRaw: Record<string, any> = {};
           Object.entries(item["原料配比和矿耗"]).forEach(([id, val]: [string, any]) => {
-            if (val && val.矿耗 != null && val.配比 != null) newRaw[id] = { ...val, name: idNameMap[id] || id };
+            if (val && val.矿耗 != null && val.配比 != null) {
+              const idStr = String(id);
+              newRaw[idStr] = { ...val, name: ingredientIdNameMap[idStr] || idStr };
+            }
           });
           mapped["原料配比和矿耗"] = newRaw;
         }
 
+        // 燃料
         if (item["燃料配比和矿耗"]) {
           const newFuel: Record<string, any> = {};
           Object.entries(item["燃料配比和矿耗"]).forEach(([id, val]: [string, any]) => {
-            if (val && val.矿耗 != null && val.配比 != null) newFuel[id] = { ...val, name: idNameMap[id] || id };
+            if (val && val.矿耗 != null && val.配比 != null) {
+              const idStr = String(id);
+              newFuel[idStr] = { ...val, name: fuelIdNameMap[idStr] || idStr };
+            }
           });
           mapped["燃料配比和矿耗"] = newFuel;
         }
@@ -323,39 +331,40 @@ async stopTask(
         return mapped;
       });
 
-      // ✅ 合并缓存 + 去重（按方案序号）
+      // ---------------- 合并缓存 + 去重（按方案序号） ----------------
       const combinedMap: Record<number, any> = {};
       cache.results.forEach(r => { combinedMap[r["方案序号"]] = r; });
       mappedResults.forEach(r => { combinedMap[r["方案序号"]] = r; });
       results = Object.values(combinedMap);
 
-      // 成本排名
+      // ---------------- 成本排名 ----------------
       results.sort((a, b) => a["主要参数"].成本 - b["主要参数"].成本);
       results.forEach((item, index) => item.成本排名 = index + 1);
 
-      // 更新缓存
+      // ---------------- 更新缓存 ----------------
       cache.results = results;
       cache.lastUpdated = Date.now();
       this.taskCache.set(taskUuid, cache);
 
-      // 更新任务状态
+      // ---------------- 更新任务状态 ----------------
       task.status = data.status === 'finished' ? TaskStatus.FINISHED : TaskStatus.RUNNING;
       task.progress = data.progress;
       task.total = data.total;
       await this.taskRepo.save(task);
 
-      // 任务完成 → 持久化并清理缓存
+      // ---------------- 任务完成 → 持久化并清理缓存 ----------------
       if (task.status === TaskStatus.FINISHED && results.length) {
         await this.saveResults(task, results);
         this.taskCache.delete(taskUuid);
       }
 
     } else {
-      // 已完成 → 从数据库获取
+      // ---------------- 已完成 → 从数据库获取 ----------------
       const resultEntity = await this.resultRepo.findOne({ where: { task: { task_uuid: taskUuid } } });
       results = resultEntity?.output_data || [];
     }
 
+    // ---------------- 分页 + 排序 ----------------
     const { pagedResults, totalResults, totalPages } = this.applyPaginationAndSort(results, pagination);
 
     return ApiResponse.success({
