@@ -8,6 +8,8 @@ import * as ExcelJS from 'exceljs';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { Express } from 'express';
+import { User } from '../user/entities/user.entity';
+import { ConfigGroup } from 'src/database/entities/config-group.entity';
 
 /**
  * ✅ 固定表头（唯一标准）
@@ -79,13 +81,14 @@ export class SjEconInfoService {
 
   /** 查询（分页 + 名称模糊 + 排序） */
 async query(options: {
+  user: User;                 // ✅ 新增 user
   page?: number;
   pageSize?: number;
   name?: string;
   sort?: string;
   order?: 'asc' | 'desc';
 }) {
-  const { page = 1, pageSize = 10, name, sort, order } = options;
+  const { user, page = 1, pageSize = 10, name, sort, order } = options;
 
   const qb = this.econRepo.createQueryBuilder('e');
 
@@ -100,12 +103,12 @@ async query(options: {
       const key = sort.replace('composition.', '');
       qb.orderBy(
         `CAST(JSON_EXTRACT(e.composition, '$."${key}"') AS DECIMAL)`,
-        order === 'desc' ? 'DESC' : 'ASC',
+        order === 'desc' ? 'DESC' : 'ASC'
       );
     } else if (this.SORT_FIELD_MAP[sort]) {
       qb.orderBy(
         this.SORT_FIELD_MAP[sort],
-        order === 'desc' ? 'DESC' : 'ASC',
+        order === 'desc' ? 'DESC' : 'ASC'
       );
     } else {
       qb.orderBy('e.id', 'ASC');
@@ -116,13 +119,38 @@ async query(options: {
 
   // ================= 3️⃣ 分页 =================
   qb.skip((page - 1) * pageSize).take(pageSize);
-
   const [records, total] = await qb.getManyAndCount();
 
-  // ================= 4️⃣ 格式化 composition =================
+  // ================= 4️⃣ 获取用户已选 ingredientParams =================
+  let selectedSet = new Set<number>();
+  try {
+    const group = await this.econRepo.manager.getRepository(ConfigGroup)
+      .createQueryBuilder('cg')
+      .leftJoin('cg.user', 'user')
+      .leftJoin('cg.module', 'module')
+      .where('user.user_id = :userId', { userId: user.user_id })
+      .andWhere('module.name = :moduleName', { moduleName: '烧结原料经济性评价' })
+      .orderBy('cg.updated_at', 'DESC')
+      .getOne();
+
+    if (group?.config_data) {
+      const configData =
+        typeof group.config_data === 'string'
+          ? JSON.parse(group.config_data)
+          : group.config_data;
+
+      const ingredientParams: number[] = configData.ingredientParams ?? [];
+      selectedSet = new Set(ingredientParams.map(id => Number(id)));
+    }
+  } catch (err) {
+    console.warn('获取用户烧结配置失败', err);
+  }
+
+  // ================= 5️⃣ 映射 composition + selected =================
   const mapped = records.map(item => ({
     ...item,
     composition: this.normalizeComposition(item.composition),
+    selected: selectedSet.has(Number(item.id)), // ✅ 标记是否已选
   }));
 
   return {
@@ -133,7 +161,6 @@ async query(options: {
     totalPages: Math.ceil(total / pageSize),
   };
 }
-
 
   /** 批量删除 */
   async remove(ids: number[]) {

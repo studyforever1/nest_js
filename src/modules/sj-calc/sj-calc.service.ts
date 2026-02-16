@@ -86,6 +86,7 @@ async startTask(
 
     const fullParams = {
       calculateType: moduleName,
+      ingredientData,
       ingredientParams,
       ingredientLimits: ingredientLimitsClean,
       chemicalLimits: config.chemicalLimits || {},
@@ -198,17 +199,15 @@ async fetchAndSaveProgress(taskUuid: string, pagination?: PaginationDto): Promis
       const { code, message, data } = res.data;
       if (code !== 0 || !data) throw new Error(message || 'FastAPI 返回异常');
 
-      // 收集所有原料代号
-      const idSet = new Set<number>();
-      for (const result of data.results || []) {
-        const rawMix = result["原料配比"] || {};
-        Object.keys(rawMix).forEach(idStr => idSet.add(Number(idStr)));
-      }
+      // ================= 使用任务快照映射原料 =================
 
-      // 获取数据库原料信息
-      const raws = await this.sjRawMaterialRepo.find({ where: { id: In([...idSet]) } });
+      const ingredientData: any[] = task.parameters?.ingredientData || [];
+
       const idNameMap: Record<string, string> = {};
-      raws.forEach(raw => idNameMap[String(raw.id)] = raw.name);
+
+      ingredientData.forEach(item => {
+        idNameMap[String(item.id)] = item.name;
+      });
 
       const ingredientLimits: Record<string, any> = task.parameters?.ingredientLimits || {};
 

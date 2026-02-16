@@ -31,6 +31,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { Response } from 'express';
 import * as multer from 'multer';
 import { GLPaginationDto } from './dto/pagination.dto';
+import { User } from '../user/entities/user.entity';
 
 @ApiTags('物料信息-高炉物料信息')
 @ApiBearerAuth('JWT')
@@ -56,14 +57,16 @@ export class GlMaterialInfoController {
    * 查询（统一接口）
    * 支持：分页 / 名称模糊 / 类型筛选 / 排序
    */
-  @Get()
-  @ApiOperation({
-    summary: '查询原料（支持分页、名称模糊、类型筛选、排序）',
-  })
-  findAll(@Query() query: GLPaginationDto) {
-    // ⭐ 和 SJ 完全一致：直接把 DTO 丢给 service
-    return this.rawService.query(query);
-  }
+@Get()
+@ApiOperation({
+  summary: '查询原料（支持分页、名称模糊、类型筛选、排序）',
+})
+async findAll(
+  @CurrentUser() user: User,
+  @Query() query: GLPaginationDto,
+) {
+  return this.rawService.query(user, query);
+}
 
   /** 更新原料 */
   @Put(':id')

@@ -32,6 +32,7 @@ import { CreateCokeEconInfoDto } from './dto/create-coke-econ-info.dto';
 import { UpdateCokeEconInfoDto } from './dto/update-coke-econ-info.dto';
 import { RemoveCokeEconInfoDto } from './dto/remove-coke-econ-info.dto';
 import { PaginationDto } from './dto/pagination.dto';
+import { User } from '../user/entities/user.entity';
 
 @ApiTags('焦炭经济性评价-焦炭信息库')
 @ApiBearerAuth('JWT')
@@ -51,22 +52,26 @@ export class CokeEconInfoController {
   }
 
   /** 查询（分页 + 名称模糊 + 类型筛选） */
-  @Get()
-  @ApiOperation({ summary: '查询焦炭经济性信息（支持分页、名称模糊、排序）' })
-  @ApiQuery({ name: 'page', required: false })
-  @ApiQuery({ name: 'pageSize', required: false })
-  @ApiQuery({ name: 'name', required: false })
-  @ApiQuery({ name: 'sort', required: false })
-  @ApiQuery({ name: 'order', required: false })
-  findAll(@Query() pagination: PaginationDto) {
-    return this.service.query({
-      page: pagination.page ?? 1,
-      pageSize: pagination.pageSize ?? 10,
-      name: pagination.name,
-      sort: pagination.sort,
-      order: pagination.order,
-    });
-  }
+ @Get()
+@ApiOperation({ summary: '查询焦炭经济性信息（支持分页、名称模糊、排序）' })
+@ApiQuery({ name: 'page', required: false })
+@ApiQuery({ name: 'pageSize', required: false })
+@ApiQuery({ name: 'name', required: false })
+@ApiQuery({ name: 'sort', required: false })
+@ApiQuery({ name: 'order', required: false })
+async findAll(
+  @CurrentUser() user: User,          // ✅ 获取当前用户
+  @Query() pagination: PaginationDto
+) {
+  return this.service.query({
+    user,                              // ✅ 传递 user
+    page: pagination.page ?? 1,
+    pageSize: pagination.pageSize ?? 10,
+    name: pagination.name,
+    sort: pagination.sort,
+    order: pagination.order,
+  });
+}
 
   /** 更新 */
   @Put(':id')

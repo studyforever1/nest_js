@@ -31,6 +31,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { Response } from 'express';
 import * as multer from 'multer';
 import { PaginationDto } from './dto/pagination.dto';
+import { User } from '../user/entities/user.entity';
 
 @ApiTags('物料信息-高炉燃料信息')
 @ApiBearerAuth('JWT')
@@ -52,10 +53,13 @@ export class GlFuelInfoController {
    * 保留原来 /sj-raw-material (分页)
    * 原来的 /search 和 /search-by-type 仍可使用（兼容前端），但建议统一请求到这里。
    */
-  @Get()
+@Get()
 @ApiOperation({ summary: '查询原料（支持分页、名称模糊、类型筛选、排序）' })
-findAll(@Query() query: PaginationDto) {
-  return this.rawService.query({
+async findAll(
+  @CurrentUser() user: User,
+  @Query() query: PaginationDto,
+) {
+  return this.rawService.query(user, {
     page: query.page,
     pageSize: query.pageSize,
     name: query.name,

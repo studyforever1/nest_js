@@ -8,6 +8,8 @@ import * as ExcelJS from 'exceljs';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { Express } from 'express';
+import { User } from '../user/entities/user.entity';
+import { ConfigGroup } from 'src/database/entities/config-group.entity';
 
 /**
  * ✅ 固定表头（唯一标准）
@@ -87,42 +89,47 @@ export class GlMaterialInfoService {
       ...rest,
     };
   }
-
+private readonly MODULE_NAME = '单独高炉配料计算';
   /** ========================= 分页查询 ========================= */
-async query(options: {
-  page?: number;
-  pageSize?: number;
-  name?: string;
-  type?: string;
-  sort?: string;
-  order?: 'asc' | 'desc';
-}) {
+async query(
+  user: User,
+  options: {
+    page?: number;
+    pageSize?: number;
+    name?: string;
+    type?: string;
+    sort?: string;
+    order?: 'asc' | 'desc';
+  },
+) {
   const { page = 1, pageSize = 10, name, type, sort, order } = options;
+
   const qb = this.rawRepo.createQueryBuilder('raw');
 
   // ================= 1️⃣ 名称模糊 =================
-  if (name) qb.andWhere('raw.name LIKE :name', { name: `%${name}%` });
+  if (name) {
+    qb.andWhere('raw.name LIKE :name', { name: `%${name}%` });
+  }
 
   // ================= 2️⃣ 分类筛选 =================
-  if (type) qb.andWhere('raw.category LIKE :type', { type: `%${type}%` });
+  if (type) {
+    qb.andWhere('raw.category LIKE :type', { type: `%${type}%` });
+  }
 
   // ================= 3️⃣ 排序 =================
   if (sort) {
     if (sort.startsWith('composition.')) {
-      // 排序字段在 composition JSON 内
       const key = sort.replace('composition.', '');
       qb.orderBy(
         `CAST(JSON_EXTRACT(raw.composition, '$."${key}"') AS DECIMAL)`,
         order === 'desc' ? 'DESC' : 'ASC',
       );
     } else if (this.SORT_FIELD_MAP[sort]) {
-      // 普通字段排序
       qb.orderBy(
         this.SORT_FIELD_MAP[sort],
         order === 'desc' ? 'DESC' : 'ASC',
       );
     } else {
-      // 默认排序 fallback
       qb.orderBy('raw.id', 'ASC');
     }
   } else {
@@ -135,16 +142,66 @@ async query(options: {
     .take(pageSize)
     .getManyAndCount();
 
-  // ================= 5️⃣ 数据映射 =================
+  // ================= 5️⃣ 查询用户配置（fuelParams） =================
+  let selectedSet = new Set<number>();
+
+  try {
+    const configRepo = this.rawRepo.manager.getRepository(ConfigGroup);
+
+    const config = await configRepo
+      .createQueryBuilder('cg')
+      .leftJoin('cg.user', 'user')
+      .leftJoin('cg.module', 'module')
+      .where('user.user_id = :userId', { userId: user.user_id })
+      .andWhere('module.name = :moduleName', {
+        moduleName: this.MODULE_NAME,
+      })
+      .orderBy('cg.updated_at', 'DESC')
+      .getOne();
+
+    let configData: any = {};
+
+    if (config?.config_data) {
+      configData =
+        typeof config.config_data === 'string'
+          ? JSON.parse(config.config_data)
+          : config.config_data;
+    }
+
+    const ingredientParams: number[] = configData.ingredientParams ?? [];
+
+    if (ingredientParams.length) {
+      selectedSet = new Set(ingredientParams.map(id => Number(id)));
+    }
+  } catch (err) {
+    console.warn('获取模块配置失败，不影响原料查询', err);
+  }
+
+  // ================= 6️⃣ 数据映射 + selected 字段 =================
+  const mapped = records
+    .map(item => {
+      const formatted = this.formatRaw(item);
+
+      return {
+        ...formatted,
+        selected: selectedSet.has(Number(item.id)),
+      };
+    })
+    // 默认把已选排前面
+    .sort((a, b) => {
+      if (a.selected && !b.selected) return -1;
+      if (!a.selected && b.selected) return 1;
+      return 0;
+    });
+
   return {
-    data: records.map(item => this.formatRaw(item)),
+    data: mapped,
     total,
     page,
     pageSize,
     totalPages: Math.ceil(total / pageSize),
   };
 }
-
 
   /** ========================= 单条查询 ========================= */
   async findOne(id: number) {

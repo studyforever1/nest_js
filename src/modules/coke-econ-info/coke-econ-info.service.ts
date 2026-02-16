@@ -9,6 +9,8 @@ import type { Express } from 'express';
 import { CokeEconInfo } from './entities/coke-econ-info.entity';
 import { CreateCokeEconInfoDto } from './dto/create-coke-econ-info.dto';
 import { UpdateCokeEconInfoDto } from './dto/update-coke-econ-info.dto';
+import { ConfigGroup } from 'src/database/entities/config-group.entity';
+import { User } from '../user/entities/user.entity';
 
 /**
  * ✅ 固定表头（唯一标准）
@@ -75,16 +77,17 @@ export class CokeEconInfoService {
     });
     return this.repo.save(entity);
   }
-
+private readonly MODULE_NAME = '焦炭经济性评价';
   /** ========================= 查询（核心修改点） ========================= */
 async query(options: {
+  user: User;                // ✅ 新增 user
   page: number;
   pageSize: number;
   name?: string;
   sort?: string;
   order?: 'asc' | 'desc';
 }) {
-  const { page, pageSize, name, sort, order } = options;
+  const { user, page, pageSize, name, sort, order } = options;
 
   const qb = this.repo.createQueryBuilder('c');
 
@@ -96,22 +99,17 @@ async query(options: {
   // ================= 2️⃣ 排序 =================
   if (sort) {
     if (sort.startsWith('composition.')) {
-      // 排序字段在 composition JSON 内
       const key = sort.replace('composition.', '');
-
-      // MySQL 8.0 JSON_EXTRACT + CAST 排序，支持中文字段
       qb.orderBy(
         `CAST(JSON_EXTRACT(c.composition, '$."${key}"') AS DECIMAL)`,
-        order === 'desc' ? 'DESC' : 'ASC',
+        order === 'desc' ? 'DESC' : 'ASC'
       );
     } else if (this.SORT_FIELD_MAP[sort]) {
-      // 普通字段排序
       qb.orderBy(
         this.SORT_FIELD_MAP[sort],
-        order === 'desc' ? 'DESC' : 'ASC',
+        order === 'desc' ? 'DESC' : 'ASC'
       );
     } else {
-      // fallback 默认排序
       qb.orderBy('c.id', 'ASC');
     }
   } else {
@@ -124,21 +122,53 @@ async query(options: {
     .take(pageSize)
     .getManyAndCount();
 
-  // ================= 4️⃣ 格式化 composition =================
-  const mapped = records.map(item => ({
-    ...item,
-    composition: this.normalizeComposition(item.composition),
-  }));
+  // ================= 4️⃣ 获取用户已选 cokeParams =================
+  let selectedSet = new Set<number>();
+  try {
+    const configRepo = this.repo.manager.getRepository(ConfigGroup);
+    const config = await configRepo
+      .createQueryBuilder('cg')
+      .leftJoin('cg.user', 'user')
+      .leftJoin('cg.module', 'module')
+      .where('user.user_id = :userId', { userId: user.user_id })
+      .andWhere('module.name = :moduleName', { moduleName: this.MODULE_NAME }) // 默认焦炭模块名
+      .orderBy('cg.updated_at', 'DESC')
+      .getOne();
 
-  return {
-    data: mapped,
-    total,
-    page,
-    pageSize,
-    totalPages: Math.ceil(total / pageSize),
-  };
+    if (config?.config_data) {
+      const configData =
+        typeof config.config_data === 'string'
+          ? JSON.parse(config.config_data)
+          : config.config_data;
+
+      const cokeParams: number[] = configData.cokeParams ?? [];
+      selectedSet = new Set(cokeParams.map(id => Number(id)));
+    }
+  } catch (err) {
+    console.warn('获取模块配置失败，不影响查询', err);
+  }
+
+  // ================= 5️⃣ 映射 composition + selected =================
+let mapped = records.map(item => ({
+  ...item,
+  composition: this.normalizeComposition(item.composition),
+  selected: selectedSet.has(Number(item.id)), // ✅ 标记是否已选
+}));
+
+// ================= 6️⃣ 已选优先排序 =================
+mapped.sort((a, b) => {
+  if (a.selected === b.selected) return 0; // 相同 selected 状态保持原顺序
+  return a.selected ? -1 : 1; // selected=true 的排在前面
+});
+
+return {
+  data: mapped,
+  total,
+  page,
+  pageSize,
+  totalPages: Math.ceil(total / pageSize),
+};
 }
-
 
   async remove(ids: number[]) {
     if (!ids?.length) throw new Error('未提供删除 ID');

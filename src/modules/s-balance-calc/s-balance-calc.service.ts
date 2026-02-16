@@ -23,7 +23,7 @@ export class SBalanceCalcService {
     @InjectRepository(User) private readonly userRepo: Repository<User>,
     @InjectRepository(SjRawMaterial) private readonly sjRawMaterialRepo: Repository<SjRawMaterial>,
     private readonly sjconfigService: SjconfigService,
-  ) {}
+  ) { }
 
   // ============================
   // FastAPI POST 统一封装
@@ -61,16 +61,15 @@ export class SBalanceCalcService {
         v != null && !isNaN(Number(v)) ? Number(v) : d;
 
       // ============================
-      // 原料参数
+      // 使用配置快照 ingredientData
       // ============================
-      const ingredientIds = config.ingredientParams || [];
-      const raws = await this.sjRawMaterialRepo.find({
-        where: { id: In(ingredientIds), enabled: true },
-      });
+      const ingredientData: any[] = config.ingredientData || [];
 
       const ingredientParams: Record<string, any> = {};
-      raws.forEach(raw => {
+
+      ingredientData.forEach(raw => {
         const comp = raw.composition || {};
+
         ingredientParams[raw.id] = {
           ...comp,
           TFe: comp.TFe ?? 0,
@@ -84,6 +83,7 @@ export class SBalanceCalcService {
       // 配料上下限
       // ============================
       const ingredientLimitsClean: Record<string, any> = {};
+
       Object.keys(config.ingredientLimits || {}).forEach(id => {
         const { name, ...limits } = config.ingredientLimits[id];
         ingredientLimitsClean[id] = {
@@ -97,6 +97,7 @@ export class SBalanceCalcService {
       // ingredientResults
       // ============================
       const ingredientResultsConverted: Record<string, number> = {};
+
       Object.entries(config.ingredientResults || {}).forEach(([key, item]: any) => {
         ingredientResultsConverted[key] =
           item?.value != null ? Number(item.value) : 0;
@@ -107,6 +108,7 @@ export class SBalanceCalcService {
       // ============================
       const fullParams = {
         calculateType,
+        ingredientData, // 🔥 保存快照
         otherSExp: config.otherSExp || {},
         extMaterial: config.extMaterial || {},
         otherSettings: config.otherSettings || {},
@@ -115,12 +117,6 @@ export class SBalanceCalcService {
         ingredientResults: ingredientResultsConverted,
       };
 
-      this.logger.debug('=== Full Params for FastAPI ===');
-      this.logger.debug(JSON.stringify(fullParams, null, 2));
-
-      // ============================
-      // 调用 FastAPI（统一入口）
-      // ============================
       const res = await this.apiPost('s-balance/start/', fullParams);
       const taskUuid = res.data?.data?.taskUuid;
 
@@ -132,9 +128,10 @@ export class SBalanceCalcService {
         task_uuid: taskUuid,
         module_type: calculateType,
         status: TaskStatus.RUNNING,
-        parameters: fullParams,
+        parameters: fullParams, // 🔥 存完整快照
         user,
       });
+
       await this.taskRepo.save(task);
 
       return ApiResponse.success(
@@ -176,15 +173,15 @@ export class SBalanceCalcService {
         if (fastApiResults.length) {
           const rawResult = { ...fastApiResults[0] };
 
+          // 🔥 从任务快照中获取名称映射
+          const ingredientData: any[] = task.parameters?.ingredientData || [];
+
+          const idToName: Record<string, string> = {};
+          ingredientData.forEach(item => {
+            idToName[String(item.id)] = item.name;
+          });
+
           if (rawResult['详细数据']) {
-            const rawIds = Object.keys(rawResult['详细数据']);
-            const raws = await this.sjRawMaterialRepo.findBy({
-              id: In(rawIds.map(Number)),
-            });
-
-            const idToName: Record<string, string> = {};
-            raws.forEach(r => (idToName[r.id.toString()] = r.name || r.id.toString()));
-
             Object.entries(rawResult['详细数据']).forEach(([id, val]: any) => {
               rawResult['详细数据'][id] = {
                 ...val,

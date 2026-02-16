@@ -31,6 +31,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { Response } from 'express';
 import * as multer from 'multer';
 import { PaginationDto } from './dto/pagination.dto';
+import { User } from '../user/entities/user.entity';
 
 @ApiTags('烧结原料经济性评价-烧结原料信息库')
 @ApiBearerAuth('JWT')
@@ -50,22 +51,27 @@ export class SjEconInfoController {
   }
 
   /** 查询（分页 + 名称模糊 + 排序） */
-  @Get()
-  @ApiOperation({ summary: '查询烧结原料信息（支持分页、名称模糊、排序）' })
-  @ApiQuery({ name: 'page', required: false })
-  @ApiQuery({ name: 'pageSize', required: false })
-  @ApiQuery({ name: 'name', required: false })
-  @ApiQuery({ name: 'sort', required: false })
-  @ApiQuery({ name: 'order', required: false })
-  findAll(@Query() pagination: PaginationDto) {
-    return this.econService.query({
-      page: pagination.page ?? 1,
-      pageSize: pagination.pageSize ?? 10,
-      name: pagination.name,
-      sort: pagination.sort,
-      order: pagination.order,
-    });
-  }
+  /** 查询（分页 + 名称模糊 + 排序 + selected） */
+@Get()
+@ApiOperation({ summary: '查询烧结原料信息（支持分页、名称模糊、排序）' })
+@ApiQuery({ name: 'page', required: false })
+@ApiQuery({ name: 'pageSize', required: false })
+@ApiQuery({ name: 'name', required: false })
+@ApiQuery({ name: 'sort', required: false })
+@ApiQuery({ name: 'order', required: false })
+async findAll(
+  @CurrentUser() user: User,           // ✅ 获取当前用户
+  @Query() pagination: PaginationDto
+) {
+  return this.econService.query({
+    user,                               // ✅ 传递 user
+    page: pagination.page ?? 1,
+    pageSize: pagination.pageSize ?? 10,
+    name: pagination.name,
+    sort: pagination.sort,
+    order: pagination.order,
+  });
+}
 
   /** 更新 */
   @Put(':id')

@@ -8,6 +8,8 @@ import type { Express } from 'express';
 import { CoalEconInfo } from './entities/coal-econ-info.entity';
 import { CreateCoalEconInfoDto } from './dto/create-coal-econ-info.dto';
 import { UpdateCoalEconInfoDto } from './dto/update-coal-econ-info.dto';
+import { ConfigGroup } from 'src/database/entities/config-group.entity';
+import { User } from '../user/entities/user.entity';
 
 /**
  * ✅ 固定表头（唯一标准）
@@ -74,16 +76,17 @@ export class CoalEconInfoService {
     });
     return this.repo.save(entity);
   }
-
+private readonly MODULE_NAME = '喷吹煤经济性评价';
   /** ========================= 查询（核心修改点） ========================= */
 async query(options: {
+   user: User,   
   page: number;
   pageSize: number;
   name?: string;
   sort?: string;
   order?: 'asc' | 'desc';
 }) {
-  const { page, pageSize, name, sort, order } = options;
+  const {user, page, pageSize, name, sort, order } = options;
 
   const qb = this.repo.createQueryBuilder('c');
 
@@ -95,20 +98,17 @@ async query(options: {
   // ================= 2️⃣ 排序 =================
   if (sort) {
     if (sort.startsWith('composition.')) {
-      // composition 内字段排序
       const key = sort.replace('composition.', '');
       qb.orderBy(
         `CAST(JSON_EXTRACT(c.composition, '$."${key}"') AS DECIMAL)`,
         order === 'desc' ? 'DESC' : 'ASC',
       );
     } else if (this.SORT_FIELD_MAP[sort]) {
-      // 普通字段排序
       qb.orderBy(
         this.SORT_FIELD_MAP[sort],
         order === 'desc' ? 'DESC' : 'ASC',
       );
     } else {
-      // fallback 默认排序
       qb.orderBy('c.id', 'ASC');
     }
   } else {
@@ -121,11 +121,47 @@ async query(options: {
     .take(pageSize)
     .getManyAndCount();
 
-  // ================= 4️⃣ 格式化 composition =================
-  const mapped = records.map(item => ({
-    ...item,
-    composition: this.normalizeComposition(item.composition),
-  }));
+  // ================= 4️⃣ 获取已选原料（coalParams） =================
+  let selectedSet = new Set<number>();
+  try {
+    const configRepo = this.repo.manager.getRepository(ConfigGroup);
+    const config = await configRepo
+      .createQueryBuilder('cg')
+      .leftJoin('cg.user', 'user')
+      .leftJoin('cg.module', 'module')
+      .where('user.user_id = :userId', {  userId: user.user_id})
+      .andWhere('module.name = :moduleName', { moduleName: this.MODULE_NAME })
+      .orderBy('cg.updated_at', 'DESC')
+      .getOne();
+
+    if (config?.config_data) {
+      const configData =
+        typeof config.config_data === 'string'
+          ? JSON.parse(config.config_data)
+          : config.config_data;
+
+      const coalParams: number[] = configData.coalParams ?? [];
+      if (coalParams.length) {
+        selectedSet = new Set(coalParams.map(id => Number(id)));
+      }
+    }
+  } catch (err) {
+    console.warn('获取模块配置失败，不影响查询', err);
+  }
+
+  // ================= 5️⃣ 格式化 composition + selected =================
+  const mapped = records
+    .map(item => ({
+      ...item,
+      composition: this.normalizeComposition(item.composition),
+      selected: selectedSet.has(Number(item.id)),
+    }))
+    // ✅ 默认把已选的放前面
+    .sort((a, b) => {
+      if (a.selected && !b.selected) return -1;
+      if (!a.selected && b.selected) return 1;
+      return 0; // 保持原顺序
+    });
 
   return {
     data: mapped,

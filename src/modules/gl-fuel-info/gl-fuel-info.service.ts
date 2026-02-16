@@ -8,6 +8,8 @@ import * as ExcelJS from 'exceljs';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { Express } from 'express';
+import { ConfigGroup } from 'src/database/entities/config-group.entity';
+import { User } from '../user/entities/user.entity';
 
 export const FIXED_HEADERS = [
   'TFe','CaO','SiO2','MgO', 'Al2O3','S','P','TiO2','MnO', 'Cr', 'Pb', 'Zn', 'K2O','Na2O','Ni'
@@ -77,8 +79,8 @@ export class GlFuelInfoService {
     });
     return this.rawRepo.save(raw);
   }
-
-async query(options: {
+private readonly MODULE_NAME = '单独高炉配料计算';
+async query(user: User, options: {
   page?: number;
   pageSize?: number;
   name?: string;
@@ -103,37 +105,81 @@ async query(options: {
   // ================= 3️⃣ 排序 =================
   if (sort) {
     if (sort.startsWith('composition.')) {
-      // 排序字段在 composition JSON 内
       const key = sort.replace('composition.', '');
 
-      // MySQL 8.0: CAST JSON_EXTRACT 为 DECIMAL，支持中文字段
       qb.orderBy(
         `CAST(JSON_EXTRACT(raw.composition, '$."${key}"') AS DECIMAL)`,
         order === 'desc' ? 'DESC' : 'ASC',
       );
     } else if (this.SORT_FIELD_MAP[sort]) {
-      // 普通字段排序
       qb.orderBy(
         this.SORT_FIELD_MAP[sort],
         order === 'desc' ? 'DESC' : 'ASC',
       );
     } else {
-      // fallback 默认排序
       qb.orderBy('raw.id', 'ASC');
     }
   } else {
     qb.orderBy('raw.id', 'ASC');
   }
 
-  // ================= 4️⃣ 分页 =================
+  // ================= 4️⃣ 分页查询 =================
   const [records, total] = await qb
     .skip((page - 1) * pageSize)
     .take(pageSize)
     .getManyAndCount();
 
-  // ================= 5️⃣ 格式化返回 =================
+  // ================= 5️⃣ 获取已选 fuelParams =================
+  let selectedSet = new Set<number>();
+
+  try {
+    const configRepo = this.rawRepo.manager.getRepository(ConfigGroup);
+
+    const config = await configRepo
+      .createQueryBuilder('cg')
+      .leftJoin('cg.user', 'user')
+      .leftJoin('cg.module', 'module')
+      .where('user.user_id = :userId', { userId: user.user_id })
+      .andWhere('module.name = :moduleName', { moduleName: this.MODULE_NAME })
+      .orderBy('cg.updated_at', 'DESC')
+      .getOne();
+
+    let configData: any = {};
+
+    if (config?.config_data) {
+      configData =
+        typeof config.config_data === 'string'
+          ? JSON.parse(config.config_data)
+          : config.config_data;
+    }
+
+    const fuelParams: number[] = configData.fuelParams ?? [];
+
+    if (fuelParams.length) {
+      selectedSet = new Set(fuelParams.map(id => Number(id)));
+    }
+  } catch (err) {
+    console.warn('获取模块配置失败，不影响燃料查询', err);
+  }
+
+  // ================= 6️⃣ 映射 + selected 字段 =================
+  const mapped = records
+    .map(r => {
+      const formatted = this.formatRaw(r);
+      return {
+        ...formatted,
+        selected: selectedSet.has(Number(r.id)),
+      };
+    })
+    // ✅ 默认把已选的排前面
+    .sort((a, b) => {
+      if (a.selected && !b.selected) return -1;
+      if (!a.selected && b.selected) return 1;
+      return 0;
+    });
+
   return {
-    data: records.map(r => this.formatRaw(r)),
+    data: mapped,
     total,
     page,
     pageSize,

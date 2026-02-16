@@ -23,6 +23,7 @@ import { CoalEconInfoService } from './coal-econ-info.service';
 import { CreateCoalEconInfoDto } from './dto/create-coal-econ-info.dto';
 import { UpdateCoalEconInfoDto } from './dto/update-coal-econ-info.dto';
 import { PaginationDto } from './dto/pagination.dto';
+import { User } from '../user/entities/user.entity';
 
 @ApiTags('喷吹煤经济性评价-喷吹煤信息库')
 @ApiBearerAuth('JWT')
@@ -37,22 +38,26 @@ export class CoalEconInfoController {
     return this.service.create(dto, user.username);
   }
 
-  @Get()
-  @ApiOperation({ summary: '查询煤炭经济性信息（支持分页、名称模糊、排序）' })
-  @ApiQuery({ name: 'page', required: false })
-  @ApiQuery({ name: 'pageSize', required: false })
-  @ApiQuery({ name: 'name', required: false })
-  @ApiQuery({ name: 'sort', required: false })
-  @ApiQuery({ name: 'order', required: false })
-  findAll(@Query() pagination: PaginationDto) {
-    return this.service.query({
-      page: pagination.page ?? 1,
-      pageSize: pagination.pageSize ?? 10,
-      name: pagination.name,
-      sort: pagination.sort,
-      order: pagination.order,
-    });
-  }
+ @Get()
+@ApiOperation({ summary: '查询煤炭经济性信息（支持分页、名称模糊、排序）' })
+@ApiQuery({ name: 'page', required: false })
+@ApiQuery({ name: 'pageSize', required: false })
+@ApiQuery({ name: 'name', required: false })
+@ApiQuery({ name: 'sort', required: false })
+@ApiQuery({ name: 'order', required: false })
+async findAll(
+  @CurrentUser() user: User,           // ✅ 添加用户
+  @Query() pagination: PaginationDto
+) {
+  return this.service.query({
+    user,                                // ✅ 传递 user
+    page: pagination.page ?? 1,
+    pageSize: pagination.pageSize ?? 10,
+    name: pagination.name,
+    sort: pagination.sort,
+    order: pagination.order,
+  });
+}
 
   @Put(':id')
   @ApiOperation({ summary: '更新煤炭经济性信息' })

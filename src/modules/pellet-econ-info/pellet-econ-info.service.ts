@@ -9,6 +9,8 @@ import type { Express } from 'express';
 import { PelletEconInfo } from './entities/pellet-econ-info.entity';
 import { CreatePelletEconInfoDto } from './dto/create-pellet-econ-info.dto';
 import { UpdatePelletEconInfoDto } from './dto/update-pellet-econ-info.dto';
+import { ConfigGroup } from 'src/database/entities/config-group.entity';
+import { User } from '../user/entities/user.entity';
 
 /**
  * ✅ 固定表头（唯一标准）
@@ -83,65 +85,91 @@ export class PelletEconInfoService {
   }
 
   /** ========================= 查询（核心修改点） ========================= */
- async query(options: {
+async query(options: {
+  user: User;                 // 当前用户
   page?: number;
   pageSize?: number;
   name?: string;
   sort?: string;
   order?: 'asc' | 'desc';
 }) {
-  const { page = 1, pageSize = 10, name, sort, order } = options;
+  const { user, page = 1, pageSize = 10, name, sort, order } = options;
 
+  // ================= 1️⃣ 构建查询 =================
   const qb = this.repo.createQueryBuilder('p');
 
-  // ================= 1️⃣ 名称模糊 =================
   if (name) {
     qb.andWhere('p.name LIKE :name', { name: `%${name}%` });
   }
 
-  // ================= 2️⃣ 排序 =================
   if (sort) {
     if (sort.startsWith('composition.')) {
-      // composition 内字段排序
       const key = sort.replace('composition.', '');
       qb.orderBy(
         `CAST(JSON_EXTRACT(p.composition, '$."${key}"') AS DECIMAL)`,
-        order === 'desc' ? 'DESC' : 'ASC',
+        order === 'desc' ? 'DESC' : 'ASC'
       );
     } else if (this.SORT_FIELD_MAP[sort]) {
-      // 普通字段排序
       qb.orderBy(
         this.SORT_FIELD_MAP[sort],
-        order === 'desc' ? 'DESC' : 'ASC',
+        order === 'desc' ? 'DESC' : 'ASC'
       );
     } else {
-      // fallback 默认排序
       qb.orderBy('p.id', 'ASC');
     }
   } else {
     qb.orderBy('p.id', 'ASC');
   }
 
-  // ================= 3️⃣ 分页 =================
   qb.skip((page - 1) * pageSize).take(pageSize);
 
   const [records, total] = await qb.getManyAndCount();
 
-  // ================= 4️⃣ 格式化 composition =================
+  // ================= 2️⃣ 获取用户最新配置 =================
+  let selectedSet = new Set<number>();
+  try {
+    const group = await this.repo.manager.getRepository(ConfigGroup)
+      .createQueryBuilder('cg')
+      .leftJoin('cg.user', 'user')
+      .leftJoin('cg.module', 'module')
+      .where('user.user_id = :userId', { userId: user.user_id })
+      .andWhere('module.name = :moduleName', { moduleName: '外购球团块矿经济性评价' }) // 模块名
+      .orderBy('cg.updated_at', 'DESC')
+      .getOne();
+
+    if (group?.config_data) {
+      const configData =
+        typeof group.config_data === 'string'
+          ? JSON.parse(group.config_data)
+          : group.config_data;
+
+      // ✅ 尝试 pelletParams > ingredientParams
+      const pelletParams: number[] = configData.pelletParams ?? configData.ingredientParams ?? [];
+      selectedSet = new Set(pelletParams.map(id => Number(id)));
+    }
+  } catch (err) {
+    console.warn('获取用户球团块矿配置失败', err);
+  }
+
+  // ================= 3️⃣ 映射 composition + selected =================
   const mapped = records.map(item => ({
     ...item,
     composition: this.normalizeComposition(item.composition),
+    selected: selectedSet.has(Number(item.id)),
   }));
 
+  // ================= 4️⃣ 已选优先 =================
+  const mappedSorted = mapped.sort((a, b) => (a.selected === b.selected ? 0 : a.selected ? -1 : 1));
+
+  // ================= 5️⃣ 返回 =================
   return {
-    data: mapped,
+    data: mappedSorted,
     total,
     page,
     pageSize,
     totalPages: Math.ceil(total / pageSize),
   };
 }
-
 
   async remove(ids: number[]) {
     if (!ids?.length) throw new Error('未提供删除 ID');

@@ -32,6 +32,7 @@ import { CreatePelletEconInfoDto } from './dto/create-pellet-econ-info.dto';
 import { UpdatePelletEconInfoDto } from './dto/update-pellet-econ-info.dto';
 import { RemovePelletEconInfoDto } from './dto/remove-pellet-econ-info.dto';
 import { PaginationDto } from './dto/pagination.dto';
+import { User } from '../user/entities/user.entity';
 
 @ApiTags('外购球团块矿经济性评价-信息库')
 @ApiBearerAuth('JWT')
@@ -46,22 +47,27 @@ export class PelletEconInfoController {
     return this.service.create(dto, user.username);
   }
 
-  @Get()
-  @ApiOperation({ summary: '查询球团块矿经济性信息（支持分页、名称模糊、排序）' })
-  @ApiQuery({ name: 'page', required: false })
-  @ApiQuery({ name: 'pageSize', required: false })
-  @ApiQuery({ name: 'name', required: false })
-  @ApiQuery({ name: 'sort', required: false })
-  @ApiQuery({ name: 'order', required: false })
-  findAll(@Query() pagination: PaginationDto) {
-    return this.service.query({
-      page: pagination.page ?? 1,
-      pageSize: pagination.pageSize ?? 10,
-      name: pagination.name,
-      sort: pagination.sort,
-      order: pagination.order,
-    });
-  }
+ /** 查询球团块矿（分页 + 名称模糊 + 排序 + selected） */
+@Get()
+@ApiOperation({ summary: '查询球团块矿经济性信息（支持分页、名称模糊、排序）' })
+@ApiQuery({ name: 'page', required: false })
+@ApiQuery({ name: 'pageSize', required: false })
+@ApiQuery({ name: 'name', required: false })
+@ApiQuery({ name: 'sort', required: false })
+@ApiQuery({ name: 'order', required: false })
+async findAll(
+  @CurrentUser() user: User,           // ✅ 获取当前用户
+  @Query() pagination: PaginationDto
+) {
+  return this.service.query({
+    user,                               // ✅ 传递 user
+    page: pagination.page ?? 1,
+    pageSize: pagination.pageSize ?? 10,
+    name: pagination.name,
+    sort: pagination.sort,
+    order: pagination.order,
+  });
+}
 
   @Put(':id')
   @ApiOperation({ summary: '更新球团块矿经济性信息' })
