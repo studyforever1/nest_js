@@ -63,7 +63,17 @@ export class CokeEconCalcController {
   ) {
     return this.cokeService.fetchAndSaveProgress(taskId, pagination);
   }
-
+@Get('export/:task_id')
+@Permissions('coke:calc')
+@ApiOperation({ summary: '导出焦炭经济性任务结果为Excel（支持排序）' })
+async exportTaskResult(
+  @Param('task_id') taskId: string,
+  @Query() pagination: CokeEconPaginationDto,   // ✅ 加上
+  @Res() res: Response,
+) {
+  return this.cokeService.exportTaskResult(taskId, pagination, res);
+}
+  
   /** 结果汇总 */
   @Post('summary')
   @Permissions('coke:calc')

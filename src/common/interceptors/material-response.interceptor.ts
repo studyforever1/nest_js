@@ -27,6 +27,7 @@ export class MaterialResponseInterceptor implements NestInterceptor {
             inventory,
             origin,
             remark,
+            port,   // 新增解构 port
             ...rest
           } = item;
 
@@ -36,6 +37,7 @@ export class MaterialResponseInterceptor implements NestInterceptor {
             分类编号: category,
             库存: inventory,
             产地: origin,
+            港口: port,    // 映射 port → 港口
             备注: remark,
           };
         });

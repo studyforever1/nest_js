@@ -31,7 +31,6 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { Response } from 'express';
 import * as multer from 'multer';
 import { RawPaginationDto } from './dto/pagination.dto';
-import { MaterialResponseInterceptor } from '../../common/interceptors/material-response.interceptor';
 import { User } from '../user/entities/user.entity';
 
 
@@ -66,6 +65,20 @@ async findAll(
 ) {
   return this.rawService.query(user, query);
 }
+
+
+  /** 更新原料 */
+  @Put(':id')
+  @ApiOperation({ summary: '保存按钮' })
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateSjRawMaterialDto,
+    @CurrentUser() user: { username: string },
+  ) {
+    return this.rawService.update(+id, dto, user.username);
+  }
+
+
   /** 删除原料（支持单个或多个） */
   @Delete()
   @ApiOperation({ summary: '删除原料（支持单个或多个）' })

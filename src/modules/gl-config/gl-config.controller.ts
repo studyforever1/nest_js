@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, Put, Delete, Query, UseGuards,Param } from '@nestjs/common';
+import { Controller, Post, Body, Get, Put, Delete, Query, UseGuards,Param,UseInterceptors } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth,ApiQuery } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
@@ -24,7 +24,6 @@ import { UpdateSelectedIngredientDataDto } from './dto/update-selected-ingredien
 import { UpdateSelectedFuelDataDto } from './dto/update-selected-fuel-data.dto';
 import { GLRestoreIngredientsDto } from './dto/gl-restore-ingredients.dto';
 import { GLRestoreFuelsDto } from './dto/gl-restore-fuels.dto';
-
 
 @ApiTags('高炉参数配置接口')
 @ApiBearerAuth('JWT')

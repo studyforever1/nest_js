@@ -7,7 +7,8 @@ import {
   Query,
   Put,
   Delete,
-  Param
+  Param,
+  UseInterceptors
 } from '@nestjs/common';
 import {
   ApiTags,

@@ -11,6 +11,7 @@ import { ApiResponse } from '../../common/response/response.dto';
 import { CoalEconPaginationDto } from './dto/coal-econ-calc.dto';
 import { appConfig } from '../../config/app.config';
 import * as ExcelJS from 'exceljs';
+import { Response } from 'express';
 
 
 @Injectable()
@@ -276,88 +277,71 @@ private getNestedValue(obj: any, path: string): any {
   }
 
   /** 导出喷吹煤经济性评价结果到 Excel */
-async exportTaskResultToExcel(
+async exportTaskResult(
   taskUuid: string,
-  pagination?: CoalEconPaginationDto,
-): Promise<Buffer> {
-  const task = await this.taskRepo.findOne({
-    where: { task_uuid: taskUuid },
-  });
-  if (!task) {
-    throw new Error('任务不存在');
-  }
+  pagination: CoalEconPaginationDto,
+  res: Response,
+) {
+  try {
+    // 1️⃣ 强制全量（保留排序）
+    const fullQuery: CoalEconPaginationDto = {
+      ...pagination,
+      page: 1,
+      pageSize: Number.MAX_SAFE_INTEGER,
+    };
 
-  /** 1️⃣ 拉取 FastAPI 完整结果 */
-  const res = await this.apiGet(this.ECON_TASK.progressUrl, { taskUuid });
-  const data = res.data?.data;
-  const results = data?.results;
+    const result = await this.fetchAndSaveProgress(taskUuid, fullQuery);
 
-  if (!Array.isArray(results) || results.length === 0) {
-    throw new Error('没有可导出的计算结果');
-  }
+    const rows = result.data?.results ?? [];
 
-  /** 2️⃣ 喷吹煤 ID → 名称映射 */
-  const identifiers = new Set<string>();
-  results.forEach(item => {
-    if (item['喷吹煤名称']) {
-      identifiers.add(String(item['喷吹煤名称']));
+    if (!rows.length) {
+      throw new Error('暂无数据可导出');
     }
-  });
 
-  let coals: CoalEconInfo[] = [];
-  const numericIds = [...identifiers]
-    .map(v => Number(v))
-    .filter(v => !isNaN(v));
+    // 2️⃣ 设置响应头
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
 
-  if (numericIds.length) {
-    coals = await this.coalRepo.find({ where: { id: In(numericIds) } });
-  }
+    const fileName = `喷吹煤经济性结果_${taskUuid}.xlsx`;
 
-  const nameMap: Record<string, string> = {};
-  coals.forEach(c => {
-    nameMap[c.id] = c.name;
-    nameMap[c.name] = c.name;
-  });
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`,
+    );
 
-  let mappedResults = results.map(item => ({
-    ...item,
-    喷吹煤名称: nameMap[item['喷吹煤名称']] || item['喷吹煤名称'],
-  }));
-
-  /** 3️⃣ ⭐ 排序（不分页，只排序） */
-  if (pagination?.sort) {
-    const fieldPath = pagination.sort;
-    const order = pagination.order === 'desc' ? -1 : 1;
-
-    mappedResults = [...mappedResults].sort((a, b) => {
-      const va = this.getNestedValue(a, fieldPath);
-      const vb = this.getNestedValue(b, fieldPath);
-
-      const na = Number(va);
-      const nb = Number(vb);
-
-      if (!isNaN(na) && !isNaN(nb)) {
-        return na > nb ? order : na < nb ? -order : 0;
-      }
-      return va > vb ? order : va < vb ? -order : 0;
+    // 3️⃣ 流式写入
+    const workbook = new ExcelJS.stream.xlsx.WorkbookWriter({
+      stream: res,
+      useStyles: true,
+      useSharedStrings: true,
     });
+
+    const worksheet = workbook.addWorksheet('喷吹煤经济性结果');
+
+    const headers = Object.keys(rows[0] ?? {});
+    if (!headers.length) {
+      throw new Error('数据格式异常');
+    }
+
+    worksheet.columns = headers.map(h => ({
+      header: h,
+      key: h,
+      width: 18,
+    }));
+
+    worksheet.getRow(1).font = { bold: true };
+
+    for (const row of rows) {
+      worksheet.addRow(row).commit();
+    }
+
+    worksheet.commit();
+    await workbook.commit();
+  } catch (err) {
+    throw new Error('导出失败：' + err.message);
   }
-
-  /** 4️⃣ 生成 Excel */
-  const workbook = new ExcelJS.Workbook();
-  const sheet = workbook.addWorksheet('喷吹煤经济性评价结果');
-
-  const headers = Object.keys(mappedResults[0]);
-  sheet.columns = headers.map(key => ({
-    header: key,
-    key,
-    width: Math.max(14, key.length * 2),
-  }));
-
-  mappedResults.forEach(row => sheet.addRow(row));
-  sheet.getRow(1).font = { bold: true };
-
-  return Buffer.from(await workbook.xlsx.writeBuffer());
 }
 
 }

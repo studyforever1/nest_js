@@ -172,14 +172,25 @@ export class CoalEconConfigService {
     }
 
     // ⭐ 排序逻辑
-    if (sort && this.SORT_FIELD_MAP[sort]) {
-      qb.orderBy(
-        this.SORT_FIELD_MAP[sort],
-        order === 'desc' ? 'DESC' : 'ASC',
-      );
-    } else {
-      qb.orderBy('coal.id', 'ASC');
-    }
+    // ===== 排序逻辑 =====
+if (sort) {
+  if (sort.startsWith('composition.')) {
+    const key = sort.replace('composition.', '');
+    qb.orderBy(
+      `CAST(JSON_UNQUOTE(JSON_EXTRACT(coal.composition, '$."${key}"')) AS DECIMAL)`,
+      order === 'desc' ? 'DESC' : 'ASC'
+    );
+  } else if (this.SORT_FIELD_MAP[sort]) {
+    qb.orderBy(
+      this.SORT_FIELD_MAP[sort],
+      order === 'desc' ? 'DESC' : 'ASC'
+    );
+  } else {
+    qb.orderBy('coal.id', 'ASC');
+  }
+} else {
+  qb.orderBy('coal.id', 'ASC');
+}
 
     const total = await qb.getCount();
     const records = await qb

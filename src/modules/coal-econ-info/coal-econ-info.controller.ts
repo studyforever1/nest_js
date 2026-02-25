@@ -25,6 +25,7 @@ import { UpdateCoalEconInfoDto } from './dto/update-coal-econ-info.dto';
 import { PaginationDto } from './dto/pagination.dto';
 import { User } from '../user/entities/user.entity';
 
+
 @ApiTags('喷吹煤经济性评价-喷吹煤信息库')
 @ApiBearerAuth('JWT')
 @UseGuards(AuthGuard('jwt'), PermissionsGuard)

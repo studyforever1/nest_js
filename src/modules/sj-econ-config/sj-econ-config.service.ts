@@ -266,14 +266,24 @@ async getSelectedIngredients(
   if (name?.trim()) qb.andWhere('raw.name LIKE :name', { name: `%${name}%` });
 
   // ⭐ 排序逻辑
-  if (sort && this.SORT_FIELD_MAP[sort]) {
-    qb.orderBy(
-      this.SORT_FIELD_MAP[sort],
-      order === 'desc' ? 'DESC' : 'ASC',
-    );
-  } else {
+  if (sort) {
+    if (sort.startsWith('composition.')) {
+        const key = sort.replace('composition.', '');
+        qb.orderBy(
+            `CAST(JSON_UNQUOTE(JSON_EXTRACT(raw.composition, '$."${key}"')) AS DECIMAL)`,
+            order === 'desc' ? 'DESC' : 'ASC'
+        );
+    } else if (this.SORT_FIELD_MAP[sort]) {
+        qb.orderBy(
+            this.SORT_FIELD_MAP[sort],
+            order === 'desc' ? 'DESC' : 'ASC'
+        );
+    } else {
+        qb.orderBy('raw.id', 'ASC');
+    }
+} else {
     qb.orderBy('raw.id', 'ASC');
-  }
+}
 
   const total = await qb.getCount();
 

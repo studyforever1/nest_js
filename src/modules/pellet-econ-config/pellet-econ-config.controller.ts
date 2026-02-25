@@ -1,4 +1,4 @@
-import { Controller, Put, Get, Body, Query, UseGuards, Delete } from '@nestjs/common';
+import { Controller, Put, Get, Body, Query, UseGuards, Delete,UseInterceptors } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
@@ -11,6 +11,7 @@ import {
   DeletePelletParamsDto,
   PelletEconPaginationDto,
 } from './dto/pellet-econ-config.dto';
+
 
 @ApiTags('外购球团块矿经济性评价-参数配置')
 @ApiBearerAuth('JWT')

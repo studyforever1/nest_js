@@ -26,6 +26,7 @@ import { UpdateMineTypIndDto } from './dto/update-mine-typ-ind.dto';
 import { RemoveMineTypIndDto } from './dto/remove-mine-typ-ind.dto';
 import { PaginationDto } from './dto/pagination.dto';
 
+
 @ApiTags('主要矿粉典型指标数据库')
 @ApiBearerAuth('JWT')
 @UseGuards(AuthGuard('jwt'), PermissionsGuard)

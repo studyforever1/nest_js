@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, Param,Query, UseGuards } from '@nestjs/common';
+import { Controller, Post, Body, Get, Param,Query, UseGuards,BadRequestException } from '@nestjs/common';
 import { CalcService } from './sj-calc.service';
 import { ApiBearerAuth, ApiTags, ApiOperation, ApiParam } from '@nestjs/swagger';
 import { ApiOkResponseData, ApiErrorResponse } from '../../common/response/response.decorator';
@@ -15,6 +15,7 @@ import { ExportSchemeDto } from './dto/export-scheme.dto';
 import { Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { GetSchemeDto } from './dto/get-scheme.dto';
+import * as XLSX from 'xlsx'; // ✅ TS 可识别类型声明
 
 
 @ApiBearerAuth('JWT')
@@ -129,6 +130,52 @@ async exportExcel(
   } catch (err: any) {
     console.error(err);
     res.status(400).json({ code: 400, message: err.message || '导出失败' });
+  }
+}
+
+@Post('preview/excel')
+@Permissions('sj:calc')
+@ApiOperation({
+  summary: '预览烧结矿方案（Excel）',
+  description: '根据 taskUuid 和方案序号返回 Excel 内容 JSON，用于前端预览。',
+})
+@ApiErrorResponse()
+async previewExcel(
+  @Body() dto: ExportSchemeDto,
+): Promise<{ sheetName: string; data: any[][] }> {
+  try {
+    // 1️⃣ 获取参数
+    const { ingredientParams, otherSettings } =
+      await this.calcService.exportSchemeExcel(dto.taskUuid, dto.index);
+
+    // 2️⃣ 调用 FastAPI 生成 Excel buffer
+    const buffer = await this.calcService.callFastApi({
+      ingredientParams,
+      otherSettings,
+    });
+
+    // 3️⃣ 使用 xlsx 库解析 Excel
+    const workbook = XLSX.read(buffer, { type: 'buffer' });
+
+    // 4️⃣ 取第一个 sheet
+    const firstSheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[firstSheetName];
+
+    // 5️⃣ 转成 JSON 数组
+    // 👇 关键修改：添加 defval: ""，将空单元格转为空字符串而不是 null
+    const jsonData: any[][] = XLSX.utils.sheet_to_json(worksheet, { 
+      header: 1, 
+      defval: "" 
+    });
+
+    // 6️⃣ 返回给前端
+    return {
+      sheetName: firstSheetName,
+      data: jsonData,
+    };
+  } catch (err: any) {
+    console.error(err);
+    throw new BadRequestException(err.message || '预览失败');
   }
 }
 }

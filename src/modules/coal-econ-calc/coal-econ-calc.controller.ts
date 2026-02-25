@@ -56,30 +56,14 @@ export class CoalEconCalcController {
     return this.service.fetchAndSaveProgress(taskId, pagination);
   }
 
-  /** ⭐ 导出 Excel（完整结果，不分页） */
   @Get('export/:task_id')
 @Permissions('coal:calc')
-@ApiOperation({ summary: '导出喷吹煤经济性评价结果（Excel）' })
-async exportExcel(
+@ApiOperation({ summary: '导出喷吹煤经济性任务结果为Excel（支持排序）' })
+async export(
   @Param('task_id') taskId: string,
   @Query() pagination: CoalEconPaginationDto,
   @Res() res: Response,
 ) {
-  const buffer = await this.service.exportTaskResultToExcel(
-    taskId,
-    pagination,
-  );
-
-  const filename = encodeURIComponent('喷吹煤经济性评价结果.xlsx');
-  res.setHeader(
-    'Content-Type',
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  );
-  res.setHeader(
-    'Content-Disposition',
-    `attachment; filename="${filename}"`,
-  );
-  res.end(buffer);
+  return this.service.exportTaskResult(taskId, pagination, res);
 }
-
 }

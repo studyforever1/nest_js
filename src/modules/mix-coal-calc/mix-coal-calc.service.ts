@@ -10,6 +10,8 @@ import { ApiResponse } from '../../common/response/response.dto';
 import { MixCoalPaginationDto } from './dto/mix-coal-calc.dto';
 import { CoalEconInfo } from '../coal-econ-info/entities/coal-econ-info.entity';
 import { appConfig } from 'src/config/app.config';
+import ExcelJS from 'exceljs';
+import type { Response } from 'express';
 
 @Injectable()
 export class MixCoalCalcService {
@@ -112,64 +114,64 @@ export class MixCoalCalcService {
     }
 
     /** 查询任务进度 */
-async fetchProgress(taskUuid: string) {
-  try {
-    const res: AxiosResponse<any> = await axios.get(
-      `${this.fastApiUrl}${this.TASK_ENDPOINTS.progress}`,
-      { params: { taskUuid } },
-    );
+    async fetchProgress(taskUuid: string) {
+        try {
+            const res: AxiosResponse<any> = await axios.get(
+                `${this.fastApiUrl}${this.TASK_ENDPOINTS.progress}`,
+                { params: { taskUuid } },
+            );
 
-    const data = res.data?.data || { results: [], status: 'RUNNING' };
-    const results = data.results || [];
+            const data = res.data?.data || { results: [], status: 'RUNNING' };
+            const results = data.results || [];
 
-    /** 👇 给喷吹煤配比补 name */
-    await this.appendCoalNameToResults(results);
+            /** 👇 给喷吹煤配比补 name */
+            await this.appendCoalNameToResults(results);
 
-    return ApiResponse.success({
-      taskUuid,
-      status: data.status,
-      progress: data.progress ?? 0,
-      total: data.total ?? results.length,
-      results,
-    });
-  } catch (err) {
-    return this.handleError(err, '查询任务进度失败');
-  }
-}
-
-private async appendCoalNameToResults(results: any[]) {
-  // 收集所有煤 ID
-  const coalIdSet = new Set<number>();
-
-  results.forEach((item) => {
-    const coalRatio = item['喷吹煤配比'];
-    if (coalRatio && typeof coalRatio === 'object') {
-      Object.keys(coalRatio).forEach((id) => coalIdSet.add(Number(id)));
+            return ApiResponse.success({
+                taskUuid,
+                status: data.status,
+                progress: data.progress ?? 0,
+                total: data.total ?? results.length,
+                results,
+            });
+        } catch (err) {
+            return this.handleError(err, '查询任务进度失败');
+        }
     }
-  });
 
-  const coalIds = Array.from(coalIdSet);
-  if (!coalIds.length) return;
+    private async appendCoalNameToResults(results: any[]) {
+        // 收集所有煤 ID
+        const coalIdSet = new Set<number>();
 
-  // 查询煤信息
-  const coals = await this.coalRepo.findByIds(coalIds);
-  const coalMap = new Map<number, string>();
-  coals.forEach((c) => coalMap.set(c.id, c.name));
+        results.forEach((item) => {
+            const coalRatio = item['喷吹煤配比'];
+            if (coalRatio && typeof coalRatio === 'object') {
+                Object.keys(coalRatio).forEach((id) => coalIdSet.add(Number(id)));
+            }
+        });
 
-  // 回填 name
-  results.forEach((item) => {
-    const coalRatio = item['喷吹煤配比'];
-    if (!coalRatio) return;
+        const coalIds = Array.from(coalIdSet);
+        if (!coalIds.length) return;
 
-    Object.keys(coalRatio).forEach((id) => {
-      const coalId = Number(id);
-      coalRatio[id] = {
-        name: coalMap.get(coalId) || '',
-        ...coalRatio[id],
-      };
-    });
-  });
-}
+        // 查询煤信息
+        const coals = await this.coalRepo.findByIds(coalIds);
+        const coalMap = new Map<number, string>();
+        coals.forEach((c) => coalMap.set(c.id, c.name));
+
+        // 回填 name
+        results.forEach((item) => {
+            const coalRatio = item['喷吹煤配比'];
+            if (!coalRatio) return;
+
+            Object.keys(coalRatio).forEach((id) => {
+                const coalId = Number(id);
+                coalRatio[id] = {
+                    name: coalMap.get(coalId) || '',
+                    ...coalRatio[id],
+                };
+            });
+        });
+    }
 
 
     private handleError(err: unknown, prefix = '操作失败') {
@@ -177,4 +179,83 @@ private async appendCoalNameToResults(results: any[]) {
         this.logger.error(`${prefix}: ${message}`, (err as any)?.stack);
         return ApiResponse.error(message);
     }
+async exportResult(taskUuid: string, res: Response) {
+  try {
+    const result = await this.fetchProgress(taskUuid);
+    const rows = result.data?.results ?? [];
+
+    if (!rows.length) {
+      if (!res.headersSent) res.status(404).send('暂无数据可导出');
+      return;
+    }
+
+    const row = rows[0]; // 仅一条结果
+
+    // ============================
+    // 设置响应头
+    // ============================
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    );
+    const fileName = `混合煤性价比结果_${taskUuid}.xlsx`;
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`
+    );
+
+    // ============================
+    // 创建流式 Workbook
+    // ============================
+    const workbook = new ExcelJS.stream.xlsx.WorkbookWriter({
+      stream: res,
+      useStyles: true,
+      useSharedStrings: true,
+    });
+
+    const worksheet = workbook.addWorksheet('混合煤计算结果');
+    let currentRow = 1;
+
+    // ============================
+    // 整体指标
+    // ============================
+// 整体指标
+worksheet.addRow(['整体指标']).font = { bold: true };
+
+worksheet.addRow(['指标', '数值']).font = { bold: true };
+
+worksheet.addRow(['合计原煤价格', row['合计原煤价格']]).commit();
+worksheet.addRow(['单卡价格', row['单卡价格']]).commit();
+
+// ============================
+// 喷吹煤配比
+worksheet.addRow(['喷吹煤配比']).font = { bold: true };
+worksheet.addRow(['序号', '煤种', '配比(%)', '日消耗']).font = { bold: true };
+
+const ratios = row['喷吹煤配比'] || {};
+Object.entries(ratios)
+  .filter(([_, v]: any) => Number(v.配比) > 0)
+  .forEach(([key, value]: any) => {
+    worksheet.addRow([key, value.name, value.配比, value.日消耗]).commit();
+  });
+
+// ============================
+// 成分指标
+worksheet.addRow(['喷吹煤成分及指标']).font = { bold: true };
+worksheet.addRow(['成分', '数值']).font = { bold: true };
+
+const components = row['喷吹煤成分及指标'] || {};
+Object.entries(components).forEach(([k, v]) => {
+  worksheet.addRow([k, v]).commit();
+});
+
+// 提交 worksheet
+worksheet.commit();
+await workbook.commit();
+
+  } catch (err) {
+    console.error('导出混合煤失败：', err);
+    if (!res.headersSent) res.status(500).send('导出失败：' + err.message);
+  }
+}
 }

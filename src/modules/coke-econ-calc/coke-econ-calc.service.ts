@@ -11,6 +11,8 @@ import { BizModule } from '../../database/entities/biz-module.entity';
 import { ApiResponse } from '../../common/response/response.dto';
 import { CokeEconPaginationDto } from './dto/coke-econ-pagination.dto';
 import { appConfig } from '../../config/app.config';
+import * as ExcelJS from 'exceljs';
+import { Response } from 'express';
 
 @Injectable()
 export class CokeEconCalcService {
@@ -373,6 +375,68 @@ async buildSummaryFromTaskRefs(
   }
 }
 
+async exportTaskResult(
+  taskUuid: string,
+  pagination: CokeEconPaginationDto,
+  res: Response
+) {
+  try {
+    // 1️⃣ 强制全量，但保留排序参数
+    const fullQuery: CokeEconPaginationDto = {
+      ...pagination,
+      page: 1,
+      pageSize: Number.MAX_SAFE_INTEGER,
+    };
 
+    const result = await this.fetchAndSaveProgress(taskUuid, fullQuery);
+
+    const rows = result.data?.results ?? [];
+
+    if (!rows.length) {
+      throw new Error('暂无数据可导出');
+    }
+
+    // 2️⃣ 设置响应头
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    );
+
+    const fileName = `焦炭经济性结果_${taskUuid}.xlsx`;
+
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`
+    );
+
+    // 3️⃣ 创建流式 Workbook
+    const workbook = new ExcelJS.stream.xlsx.WorkbookWriter({
+      stream: res,
+      useStyles: true,
+      useSharedStrings: true,
+    });
+
+    const worksheet = workbook.addWorksheet('经济性结果');
+
+    const headers = Object.keys(rows[0]);
+    worksheet.columns = headers.map(h => ({
+      header: h,
+      key: h,
+      width: 18,
+    }));
+
+    worksheet.getRow(1).font = { bold: true };
+
+    for (const row of rows) {
+      worksheet.addRow(row).commit();
+    }
+
+    worksheet.commit();
+    await workbook.commit();
+
+  } catch (err) {
+    throw new Error('导出失败：' + err.message);
+  }
+}
 
 }

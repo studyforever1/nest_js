@@ -44,112 +44,112 @@ export class CalcService {
     @InjectRepository(User) private readonly userRepo: Repository<User>,
     @InjectRepository(SjRawMaterial) private readonly sjRawMaterialRepo: Repository<SjRawMaterial>,
     private readonly sjconfigService: SjconfigService,
-  ) {}
+  ) { }
 
   /** 启动计算任务 */
   /** 启动计算任务（支持 taskUuid 未及时返回 → 初始化中） */
 
 
-async startTask(
-  moduleName: string,
-  user: User,
-): Promise<ApiResponse<{ taskUuid: string; status: string }>> {
-  try {
-    this.logger.debug(`准备启动任务，userId=${user.user_id}, module=${moduleName}`);
+  async startTask(
+    moduleName: string,
+    user: User,
+  ): Promise<ApiResponse<{ taskUuid: string; status: string }>> {
+    try {
+      this.logger.debug(`准备启动任务，userId=${user.user_id}, module=${moduleName}`);
 
-    /** 1️⃣ NestJS 生成 taskUuid（核心） */
-    const taskUuid = uuidv4();
+      /** 1️⃣ NestJS 生成 taskUuid（核心） */
+      const taskUuid = uuidv4();
 
-    // ================= 原有参数准备逻辑（几乎不动） =================
+      // ================= 原有参数准备逻辑（几乎不动） =================
 
-    const config = await this.sjconfigService.getLatestConfigByName(user, moduleName);
-    if (!config) throw new Error(`未找到模块 ${moduleName} 的配置`);
-    console.log('获取到的配置:', config);
-    const ingredientData = config.ingredientData || [];
+      const config = await this.sjconfigService.getLatestConfigByName(user, moduleName);
+      if (!config) throw new Error(`未找到模块 ${moduleName} 的配置`);
+      console.log('获取到的配置:', config);
+      const ingredientData = config.ingredientData || [];
 
-    const ingredientParams: Record<number, any> = {};
-    ingredientData.forEach(raw => {
-      ingredientParams[raw.id] = {
-        ...raw.composition,
-        TFe: raw.composition?.TFe ?? 0,
-        烧损: raw.composition?.['烧损'] ?? 0,
-        价格: raw.composition?.['价格'] ?? 0,
-        库存: raw.inventory ?? 0,
-      };
-    });
-
-    const ingredientLimitsClean: Record<string, any> = {};
-    Object.keys(config.ingredientLimits || {}).forEach(id => {
-      const { name, ...limits } = config.ingredientLimits[id];
-      ingredientLimitsClean[id] = limits;
-    });
-
-    const fullParams = {
-      calculateType: moduleName,
-      ingredientData,
-      ingredientParams,
-      ingredientLimits: ingredientLimitsClean,
-      chemicalLimits: config.chemicalLimits || {},
-      otherSettings: config.otherSettings || {},
-    };
-    console.log('启动任务参数:', fullParams);
-    // ================= 2️⃣ 先保存任务（INITIALIZING） =================
-
-    const task = this.taskRepo.create({
-      task_uuid: taskUuid,
-      module_type: moduleName,
-      status: TaskStatus.INITIALIZING,
-      parameters: fullParams,
-      user,
-    });
-    await this.taskRepo.save(task);
-
-    // 初始化内存缓存
-    this.taskCache.set(taskUuid, { results: [], lastUpdated: Date.now() });
-
-    // ================= 3️⃣ 后台启动 FastAPI（不 await） =================
-
-    this.startFastApiTask(taskUuid, fullParams)
-      .catch(err => {
-        this.logger.error(`FastAPI 启动失败 task=${taskUuid}: ${err.message}`);
+      const ingredientParams: Record<number, any> = {};
+      ingredientData.forEach(raw => {
+        ingredientParams[raw.id] = {
+          ...raw.composition,
+          TFe: raw.composition?.TFe ?? 0,
+          烧损: raw.composition?.['烧损'] ?? 0,
+          价格: raw.composition?.['价格'] ?? 0,
+          库存: raw.inventory ?? 0,
+        };
       });
 
-    // ================= 4️⃣ 立即返回给前端 =================
+      const ingredientLimitsClean: Record<string, any> = {};
+      Object.keys(config.ingredientLimits || {}).forEach(id => {
+        const { name, ...limits } = config.ingredientLimits[id];
+        ingredientLimitsClean[id] = limits;
+      });
 
-    return ApiResponse.success(
-      {
-        taskUuid,
-        status: 'INITIALIZING',
-      },
-      '任务已创建，正在启动中',
-    );
+      const fullParams = {
+        calculateType: moduleName,
+        ingredientData,
+        ingredientParams,
+        ingredientLimits: ingredientLimitsClean,
+        chemicalLimits: config.chemicalLimits || {},
+        otherSettings: config.otherSettings || {},
+      };
+      console.log('启动任务参数:', fullParams);
+      // ================= 2️⃣ 先保存任务（INITIALIZING） =================
 
-  } catch (err: unknown) {
-    return this.handleError(err, '启动任务失败');
+      const task = this.taskRepo.create({
+        task_uuid: taskUuid,
+        module_type: moduleName,
+        status: TaskStatus.INITIALIZING,
+        parameters: fullParams,
+        user,
+      });
+      await this.taskRepo.save(task);
+
+      // 初始化内存缓存
+      this.taskCache.set(taskUuid, { results: [], lastUpdated: Date.now() });
+
+      // ================= 3️⃣ 后台启动 FastAPI（不 await） =================
+
+      this.startFastApiTask(taskUuid, fullParams)
+        .catch(err => {
+          this.logger.error(`FastAPI 启动失败 task=${taskUuid}: ${err.message}`);
+        });
+
+      // ================= 4️⃣ 立即返回给前端 =================
+
+      return ApiResponse.success(
+        {
+          taskUuid,
+          status: 'INITIALIZING',
+        },
+        '任务已创建，正在启动中',
+      );
+
+    } catch (err: unknown) {
+      return this.handleError(err, '启动任务失败');
+    }
   }
-}
 
-private async startFastApiTask(taskUuid: string, fullParams: any) {
-  try {
-    await this.apiPost('/sj/start/', {
-      taskUuid,          // ⭐ FastAPI 必须接收这个
-      ...fullParams,
-    });
+  private async startFastApiTask(taskUuid: string, fullParams: any) {
+    try {
+      await this.apiPost('/sj/start/', {
+        taskUuid,          // ⭐ FastAPI 必须接收这个
+        ...fullParams,
+      });
 
-    // 启动成功 → RUNNING
-    await this.taskRepo.update(
-      { task_uuid: taskUuid },
-      { status: TaskStatus.RUNNING },
-    );
-  } catch (err) {
-    // 启动失败 → FAILED
-    await this.taskRepo.update(
-      { task_uuid: taskUuid },
-      { status: TaskStatus.FAILED },
-    );
-    throw err;
+      // 启动成功 → RUNNING
+      await this.taskRepo.update(
+        { task_uuid: taskUuid },
+        { status: TaskStatus.RUNNING },
+      );
+    } catch (err) {
+      // 启动失败 → FAILED
+      await this.taskRepo.update(
+        { task_uuid: taskUuid },
+        { status: TaskStatus.FAILED },
+      );
+      throw err;
+    }
   }
-}
 
 
   /** 停止任务 */
@@ -172,11 +172,17 @@ private async startFastApiTask(taskUuid: string, fullParams: any) {
   }
 
   /** 查询任务进度（增量返回 + 分页排序 + 总页数） */
-/** 查询任务进度（增量 + 分页排序 + 总页数 + 完成任务返回最终结果） */
-/** 查询任务进度（增量 + 分页排序 + 总页数 + 完成任务返回最终结果） */
-async fetchAndSaveProgress(taskUuid: string, pagination?: PaginationDto): Promise<ApiResponse<any>> {
+  /** 查询任务进度（增量 + 分页排序 + 总页数 + 完成任务返回最终结果） */
+  /** 查询任务进度（增量 + 分页排序 + 总页数 + 完成任务返回最终结果） */
+async fetchAndSaveProgress(
+  taskUuid: string,
+  pagination?: PaginationDto
+): Promise<ApiResponse<any>> {
+
   try {
+
     const task = await this.findTask(taskUuid);
+
     if (!task) {
       return ApiResponse.success({
         taskUuid,
@@ -193,93 +199,165 @@ async fetchAndSaveProgress(taskUuid: string, pagination?: PaginationDto): Promis
 
     let results: any[] = [];
 
+    // ================= 🔥 构建原料快照映射 =================
+    const ingredientData: any[] = task.parameters?.ingredientData || [];
+    const ingredientLimits: Record<string, any> =
+      task.parameters?.ingredientLimits || {};
+
+    const idNameMap: Record<string, string> = {};
+    ingredientData.forEach(item => {
+      if (item?.id != null && item?.name) {
+        idNameMap[String(item.id)] = item.name;
+      }
+    });
+
+    // ================= 未完成任务 =================
     if (task.status !== TaskStatus.FINISHED) {
-      // 调用 FastAPI 获取增量结果
+
       const res = await this.apiGet('/sj/progress/', { taskUuid });
       const { code, message, data } = res.data;
-      if (code !== 0 || !data) throw new Error(message || 'FastAPI 返回异常');
 
-      // ================= 使用任务快照映射原料 =================
+      if (code !== 0 || !data)
+        throw new Error(message || 'FastAPI 返回异常');
 
-      const ingredientData: any[] = task.parameters?.ingredientData || [];
+      if (!Array.isArray(data.results))
+        throw new Error('FastAPI 返回 results 不是数组');
 
-      const idNameMap: Record<string, string> = {};
-
-      ingredientData.forEach(item => {
-        idNameMap[String(item.id)] = item.name;
-      });
-
-      const ingredientLimits: Record<string, any> = task.parameters?.ingredientLimits || {};
-
-      // 过滤有效方案（必须有成本和吨度价）
-      const validResults = (data.results || []).filter(
-        item => item && item["主要参数"] &&
-                typeof item["主要参数"].成本 === "number" &&
-                typeof item["主要参数"].吨度价 === "number"
+      // 过滤有效方案
+      const validResults = data.results.filter(item =>
+        item &&
+        item["主要参数"] &&
+        typeof item["主要参数"].成本 === "number" &&
+        typeof item["主要参数"].吨度价 === "number"
       );
 
-      // 1️⃣ 成本排名（按成本升序）
-      validResults.sort((a, b) => a["主要参数"].成本 - b["主要参数"].成本);
-      validResults.forEach((item, index) => item.成本排名 = index + 1);
+      // ================= 🔥 合并缓存 =================
+      const cache = this.taskCache.get(taskUuid) || {
+        results: [],
+        lastUpdated: Date.now()
+      };
 
-      // 2️⃣ 吨度价排名（按吨度价升序）
-      validResults
-        .slice() // 克隆数组避免覆盖性价比排序
-        .sort((a, b) => a["主要参数"].吨度价 - b["主要参数"].吨度价)
-        .forEach((item, index) => item.吨度价排名 = index + 1);
+      const combinedMap: Record<string, any> = {};
 
-      // 映射原料配比和化学成分
-      results = validResults.map(item => {
-        const mapped = { ...item };
+      // 先加入历史
+      cache.results.forEach(item => {
+        if (item?.方案序号 != null) {
+          combinedMap[String(item.方案序号)] = item;
+        }
+      });
+
+      // 再加入新结果（覆盖同编号）
+      validResults.forEach(item => {
+        if (item?.方案序号 != null) {
+          combinedMap[String(item.方案序号)] = item;
+        }
+      });
+
+      results = Object.values(combinedMap);
+
+      // ================= 成本排序 =================
+      results.sort((a, b) =>
+        a["主要参数"].成本 - b["主要参数"].成本
+      );
+
+      results.forEach((item, index) => {
+        item.成本排名 = index + 1;
+      });
+
+      // ================= 吨度价排序 =================
+      [...results]
+        .sort((a, b) =>
+          a["主要参数"].吨度价 - b["主要参数"].吨度价
+        )
+        .forEach((item, index) => {
+          item.吨度价排名 = index + 1;
+        });
+
+      // ================= 名称映射 =================
+      results = results.map(item => {
+
+        const mapped: Record<string, any> = { ...item };
 
         if (item["原料配比"]) {
-          const newMix: Record<string, any> = {};
-          Object.entries(item["原料配比"]).forEach(([code, val]) => {
-            const valObj = val as Record<string, any>;
-            const limits = ingredientLimits[code] || {};
-            newMix[code] = {
-              ...valObj,
-              name: idNameMap[code] || limits.name || code,
-              配比: (valObj.配比 ?? 0) * 100,
-            };
-          });
-          mapped["原料配比"] = newMix;
-        }
 
-        if (mapped["化学成分"]) {
-          mapped["化学成分"] = mapped["化学成分"];
+          const newMix: Record<string, any> = {};
+
+          Object.entries(item["原料配比"])
+            .forEach(([code, val]: [string, any]) => {
+
+              if (val?.配比 != null) {
+
+                const ratio = Number(
+                  ((val.配比 ?? 0)).toFixed(2)
+                );
+
+                newMix[code] = {
+                  ...val,
+                  name:
+                    idNameMap[code] ||
+                    ingredientLimits[code]?.name ||
+                    code,
+                  配比: ratio
+                };
+              }
+
+            });
+
+          mapped["原料配比"] = newMix;
         }
 
         return mapped;
       });
 
-      // 更新内存缓存
-      const cache = this.taskCache.get(taskUuid) || { results: [], lastUpdated: Date.now() };
-      cache.results = results; // 覆盖缓存，保证两种排名正确
+      // ================= 更新缓存 =================
+      cache.results = results;
       cache.lastUpdated = Date.now();
       this.taskCache.set(taskUuid, cache);
 
-      // 更新任务状态
-      task.status = this.mapStatus(data.status);
+      // ================= 更新任务状态 =================
+      task.status =
+        data.status === 'finished'
+          ? TaskStatus.FINISHED
+          : TaskStatus.RUNNING;
+
       task.progress = data.progress;
       task.total = data.total;
+
       await this.taskRepo.save(task);
 
-      // 如果任务完成，持久化最终结果并清理缓存
+      // ================= 完成任务 → 持久化 =================
       if (task.status === TaskStatus.FINISHED && results.length) {
         await this.saveResults(task, results);
-        this.taskCache.delete(taskUuid);
+
+        // 延迟删除缓存，避免闪空
+        setTimeout(() => {
+          this.taskCache.delete(taskUuid);
+        }, 30000);
       }
+
     } else {
-      // 任务已完成，从数据库获取最终结果
-      const resultEntity = await this.resultRepo.findOne({
-        where: { task: { task_uuid: taskUuid } },
-      });
-      results = resultEntity?.output_data || [];
+
+      // ================= 已完成任务 =================
+      const cache = this.taskCache.get(taskUuid);
+
+      if (cache?.results?.length) {
+        results = cache.results;
+      } else {
+        const resultEntity =
+          await this.resultRepo.findOne({
+            where: { task: { task_uuid: taskUuid } }
+          });
+
+        results = resultEntity?.output_data || [];
+      }
     }
 
-    // 分页 + 排序
-    const { pagedResults, totalResults, totalPages } = this.applyPaginationAndSort(results, pagination);
+    // ================= 分页 =================
+    const {
+      pagedResults,
+      totalResults,
+      totalPages
+    } = this.applyPaginationAndSort(results, pagination);
 
     return ApiResponse.success({
       taskUuid: task.task_uuid,
@@ -299,45 +377,44 @@ async fetchAndSaveProgress(taskUuid: string, pagination?: PaginationDto): Promis
 }
 
 
+  /** 分页 + 排序工具方法 */
+  private applyPaginationAndSort(results: any[], pagination?: PaginationDto) {
+    let sortedResults = results;
 
-/** 分页 + 排序工具方法 */
-private applyPaginationAndSort(results: any[], pagination?: PaginationDto) {
-  let sortedResults = results;
+    if (pagination?.sort) {
+      const fieldPath = pagination.sort; // 支持 '主要参数.成本'、'化学成分.TFe'
+      const order = pagination.order === 'desc' ? -1 : 1;
 
-  if (pagination?.sort) {
-    const fieldPath = pagination.sort; // 支持 '主要参数.成本'、'化学成分.TFe'
-    const order = pagination.order === 'desc' ? -1 : 1;
+      sortedResults = [...results].sort((a, b) => {
+        let va = getNestedValue(a, fieldPath);
+        let vb = getNestedValue(b, fieldPath);
 
-    sortedResults = [...results].sort((a, b) => {
-      let va = getNestedValue(a, fieldPath);
-      let vb = getNestedValue(b, fieldPath);
+        // 转数字排序优先
+        const na = Number(va);
+        const nb = Number(vb);
+        if (!isNaN(na) && !isNaN(nb)) {
+          va = na;
+          vb = nb;
+        } else {
+          va = va ? String(va) : '';
+          vb = vb ? String(vb) : '';
+        }
 
-      // 转数字排序优先
-      const na = Number(va);
-      const nb = Number(vb);
-      if (!isNaN(na) && !isNaN(nb)) {
-        va = na;
-        vb = nb;
-      } else {
-        va = va ? String(va) : '';
-        vb = vb ? String(vb) : '';
-      }
+        return va > vb ? order : va < vb ? -order : 0;
+      });
+    }
 
-      return va > vb ? order : va < vb ? -order : 0;
-    });
+    const page = pagination?.page ?? 1;
+    const pageSize = pagination?.pageSize ?? 10;
+    const start = (page - 1) * pageSize;
+    const pagedResults = sortedResults.slice(start, start + pageSize);
+
+    return {
+      pagedResults,
+      totalResults: sortedResults.length,
+      totalPages: Math.ceil(sortedResults.length / pageSize),
+    };
   }
-
-  const page = pagination?.page ?? 1;
-  const pageSize = pagination?.pageSize ?? 10;
-  const start = (page - 1) * pageSize;
-  const pagedResults = sortedResults.slice(start, start + pageSize);
-
-  return {
-    pagedResults,
-    totalResults: sortedResults.length,
-    totalPages: Math.ceil(sortedResults.length / pageSize),
-  };
-}
 
 
   private async apiPost(path: string, data: any): Promise<AxiosResponse<any>> {
@@ -380,146 +457,148 @@ private applyPaginationAndSort(results: any[], pagination?: PaginationDto) {
     return ApiResponse.error(message);
   }
   async getSchemeByIndex(taskUuid: string, index: number): Promise<any | null> {
-  // 查找任务
-  const task = await this.taskRepo.findOne({ where: { task_uuid: taskUuid } });
-  if (!task) return null;
+    // 查找任务
+    const task = await this.taskRepo.findOne({ where: { task_uuid: taskUuid } });
+    if (!task) return null;
 
-  // 查询结果
-  const resultEntity = await this.resultRepo.findOne({
-    where: { task: { task_uuid: taskUuid } },
-  });
-  if (!resultEntity) return null;
+    // 查询结果
+    const resultEntity = await this.resultRepo.findOne({
+      where: { task: { task_uuid: taskUuid } },
+    });
+    if (!resultEntity) return null;
 
-  // 确保 output_data 是数组
-  let allResults: any[] = [];
-  if (Array.isArray(resultEntity.output_data)) {
-    allResults = resultEntity.output_data;
-  } else if (typeof resultEntity.output_data === 'string') {
-    try {
-      allResults = JSON.parse(resultEntity.output_data);
-    } catch (err) {
-      this.logger.error(`解析 output_data 出错: ${err}`);
-      return null;
+    // 确保 output_data 是数组
+    let allResults: any[] = [];
+    if (Array.isArray(resultEntity.output_data)) {
+      allResults = resultEntity.output_data;
+    } else if (typeof resultEntity.output_data === 'string') {
+      try {
+        allResults = JSON.parse(resultEntity.output_data);
+      } catch (err) {
+        this.logger.error(`解析 output_data 出错: ${err}`);
+        return null;
+      }
     }
-  }
 
-  // 检查 index 是否越界
-const scheme = allResults.find(item => item['方案序号'] === index);
-if (!scheme) return null;
-
-
-  // 原料上下限信息
-  const ingredientLimits: Record<string, { low_limit?: number; top_limit?: number; name?: string }> =
-    task.parameters?.ingredientLimits || {};
-
-  // 化学成分上下限信息
-  const chemicalLimits: Record<string, { low_limit?: number; top_limit?: number }> =
-    task.parameters?.chemicalLimits || {};
-
-  // 原料配比处理：保留代号 + 添加 name + 上下限 + 配比 x100
-  const ingredientWithLimits: Record<string, any> = {};
-  const rawIds = Object.keys(scheme['原料配比'] || {});
-  
-  // 从数据库获取原料名称映射
-  const raws = await this.sjRawMaterialRepo.find({ where: { id: In(rawIds.map(Number)) } });
-  const idNameMap: Record<string, string> = {};
-  raws.forEach(raw => idNameMap[String(raw.id)] = raw.name);
-
-  Object.entries(scheme['原料配比'] || {}).forEach(([code, val]) => {
-    const valObj = val as Record<string, any>;
-    const limits = ingredientLimits[code] || {};
-    ingredientWithLimits[code] = {
-      ...valObj,
-      name: idNameMap[code] || limits.name || code,
-      low_limit: limits.low_limit ?? null,
-      top_limit: limits.top_limit ?? null // 小数转百分比
-    };
-  });
-
-  // 化学成分处理：保留原有字段 + 上下限
-  // 化学成分处理：保留原有值 + 上下限
-const chemicalWithLimits: Record<string, any> = {};
-Object.entries(scheme['化学成分'] || {}).forEach(([key, val]) => {
-  const limits = chemicalLimits[key] || {};
-  chemicalWithLimits[key] = {
-    value: val, // 原来的数值
-    low_limit: limits.low_limit ?? null,
-    top_limit: limits.top_limit ?? null,
-  };
-});
+    // 检查 index 是否越界
+    const scheme = allResults.find(item => item['方案序号'] === index);
+    if (!scheme) return null;
 
 
-  return {
-    ...scheme,
-    '原料配比': ingredientWithLimits,
-    '化学成分': chemicalWithLimits,
-  };
-}
+    // 原料上下限信息
+    const ingredientLimits: Record<string, { low_limit?: number; top_limit?: number; name?: string }> =
+      task.parameters?.ingredientLimits || {};
+
+    // 化学成分上下限信息
+    const chemicalLimits: Record<string, { low_limit?: number; top_limit?: number }> =
+      task.parameters?.chemicalLimits || {};
+
+    // 原料配比处理：保留代号 + 添加 name + 上下限 + 配比 x100
+    const ingredientWithLimits: Record<string, any> = {};
+    const rawIds = Object.keys(scheme['原料配比'] || {});
+
+    // 从数据库获取原料名称映射
+    const raws = await this.sjRawMaterialRepo.find({ where: { id: In(rawIds.map(Number)) } });
+    const idNameMap: Record<string, string> = {};
+    raws.forEach(raw => idNameMap[String(raw.id)] = raw.name);
+
+    Object.entries(scheme['原料配比'] || {}).forEach(([code, val]) => {
+      const valObj = val as Record<string, any>;
+      const limits = ingredientLimits[code] || {};
+      ingredientWithLimits[code] = {
+        ...valObj,
+        name: idNameMap[code] || limits.name || code,
+        low_limit: limits.low_limit ?? null,
+        top_limit: limits.top_limit ?? null // 小数转百分比
+      };
+    });
+
+    // 化学成分处理：保留原有字段 + 上下限
+    // 化学成分处理：保留原有值 + 上下限
+    const chemicalWithLimits: Record<string, any> = {};
+    Object.entries(scheme['化学成分'] || {}).forEach(([key, val]) => {
+      const limits = chemicalLimits[key] || {};
+      chemicalWithLimits[key] = {
+        value: val, // 原来的数值
+        low_limit: limits.low_limit ?? null,
+        top_limit: limits.top_limit ?? null,
+      };
+    });
 
 
-/** 导出单个方案为 Excel，并整理所需参数 */
-async exportSchemeExcel(taskUuid: string, index: number) {
-  // 1️⃣ 获取方案信息
-  const scheme = await this.getSchemeByIndex(taskUuid, index);
-  if (!scheme) throw new Error('方案不存在');
-
-  const ingredientWithLimits = scheme['原料配比'] || {};
-  const mainParams = scheme['主要参数'] || {};
-  const chemical = scheme['化学成分'] || {};
-
-  // 2️⃣ 获取任务参数（用于 其他费用）
-  const task = await this.taskRepo.findOne({
-    where: { task_uuid:taskUuid },
-  });
-
-  // 3️⃣ 获取原料 ID 列表
-  const ingredientIds = Object.keys(ingredientWithLimits).map(Number);
-
-  // 4️⃣ 查询原料基础信息
-  const rawMaterials = await this.sjRawMaterialRepo.find({
-    where: { id: In(ingredientIds) },
-  });
-
-  // 5️⃣ 组装 ingredientParams（FastAPI 需要的结构）
-  const ingredientParams: Record<string, any> = {};
-
-  for (const id of ingredientIds) {
-    const val = ingredientWithLimits[id];
-    const raw = rawMaterials.find(r => r.id === id);
-
-    if (!raw) continue;
-
-    ingredientParams[val.name] = {
-      原料产地: raw.origin || '',
-      分类编号: raw.category || '',
-      H2O: raw.composition?.H2O ?? 0,
-      价格: raw.composition?.价格 ?? 0,
-      lose_index: val.lose_index ?? 1,
-      配比: Number(val.配比) || 0,
+    return {
+      ...scheme,
+      '原料配比': ingredientWithLimits,
+      '化学成分': chemicalWithLimits,
     };
   }
 
-  // 6️⃣ 组装 otherSettings（FastAPI 用）
-  const finalOtherSettings = {
-    ...scheme.otherSettings,
-    ...mainParams,
-    导出名称: `${taskUuid}-${index}`,
-    其他费用: task?.parameters?.['otherSettings']["其他费用"] ?? 0,
-    干基总残存: mainParams['干基总残存'] ?? 0,
-    品位: chemical?.TFe?.value ?? 0,
-  };
-  console.log("导出参数", finalOtherSettings);
-  return {
-    ingredientParams,
-    otherSettings: finalOtherSettings,
-  };
-}
 
-/** 调用 FastAPI 生成 Excel */
-async callFastApi(payload: { ingredientParams: any; otherSettings: any }) {
-  const response = await axios.post(`${this.fastApiUrl}${'/sj/export/excel/'}`, payload, { responseType: 'arraybuffer' });
-  return Buffer.from(response.data);
-}
+  /** 导出单个方案为 Excel，并整理所需参数 */
+  async exportSchemeExcel(taskUuid: string, index: number) {
+    // 1️⃣ 获取方案信息
+    const scheme = await this.getSchemeByIndex(taskUuid, index);
+    if (!scheme) throw new Error('方案不存在');
+
+    const ingredientWithLimits = scheme['原料配比'] || {};
+    const mainParams = scheme['主要参数'] || {};
+    const chemical = scheme['化学成分'] || {};
+
+    // 2️⃣ 获取任务参数（用于 其他费用）
+    const task = await this.taskRepo.findOne({
+      where: { task_uuid: taskUuid },
+    });
+
+    // 3️⃣ 获取原料 ID 列表
+    const ingredientIds = Object.keys(ingredientWithLimits).map(Number);
+
+    // 4️⃣ 查询原料基础信息
+    const rawMaterials = await this.sjRawMaterialRepo.find({
+      where: { id: In(ingredientIds) },
+    });
+
+    // 5️⃣ 组装 ingredientParams（FastAPI 需要的结构）
+    const ingredientParams: Record<string, any> = {};
+
+    for (const id of ingredientIds) {
+      const val = ingredientWithLimits[id];
+      const raw = rawMaterials.find(r => r.id === id);
+
+      if (!raw) continue;
+
+      ingredientParams[val.name] = {
+        原料产地: raw.origin || '',
+        分类编号: raw.category || '',
+        H2O: raw.composition?.H2O ?? 0,
+        价格: raw.composition?.价格 ?? 0,
+        lose_index: val.lose_index ?? 1,
+        配比: Number(val.配比) || 0,
+      };
+    }
+
+    // 6️⃣ 组装 otherSettings（FastAPI 用）
+    const finalOtherSettings = {
+      ...scheme.otherSettings,
+      ...mainParams,
+      导出名称: `${taskUuid}-${index}`,
+      其他费用: task?.parameters?.['otherSettings']["其他费用"] ?? 0,
+      干基总残存: mainParams['干基总残存'] ?? 0,
+      品位: chemical?.TFe?.value ?? 0,
+    };
+    console.log("导出参数", finalOtherSettings);
+    return {
+      ingredientParams,
+      otherSettings: finalOtherSettings,
+    };
+  }
+
+  /** 调用 FastAPI 生成 Excel */
+  async callFastApi(payload: { ingredientParams: any; otherSettings: any }) {
+    const response = await axios.post(`${this.fastApiUrl}${'/sj/export/excel/'}`, payload, { responseType: 'arraybuffer' });
+    return Buffer.from(response.data);
+  }
 
   /** 调用 FastAPI 生成 Excel buffer */
+
+  
 }

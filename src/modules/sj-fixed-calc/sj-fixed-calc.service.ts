@@ -177,17 +177,10 @@ async getProgress(taskUuid: string): Promise<ApiResponse<any>> {
                 if (rawResult['原料配比']) {
                     Object.entries(rawResult['原料配比']).forEach(([id, val]: [string, any]) => {
                         val.name = idToName[id] || id;
-                        val.配比 = Number(val.配比 ?? 0) * 100;
+                        val.配比 = Number(((val?.配比 ?? 0)).toFixed(2));
                     });
                 }
 
-                // 燃料配比
-                if (rawResult['燃料配比']) {
-                    Object.entries(rawResult['燃料配比']).forEach(([id, val]: [string, any]) => {
-                        val.name = idToName[id] || id;
-                        val.配比 = Number(val.配比 ?? 0) * 100;
-                    });
-                }
 
                 results.push({
                     ...rawResult,

@@ -199,14 +199,25 @@ async saveFullConfig(
     }
 
     // ⭐ 排序逻辑
-    if (sort && this.SORT_FIELD_MAP[sort]) {
-      qb.orderBy(
-        this.SORT_FIELD_MAP[sort],
-        order === 'desc' ? 'DESC' : 'ASC',
-      );
-    } else {
-      qb.orderBy('coke.id', 'ASC');
-    }
+    if (sort) {
+  if (sort.startsWith('composition.')) {
+    const key = sort.replace('composition.', '');
+    // JSON 排序，注意中文 key 要加双引号
+    qb.orderBy(
+      `CAST(JSON_UNQUOTE(JSON_EXTRACT(coke.composition, '$."${key}"')) AS DECIMAL)`,
+      order === 'desc' ? 'DESC' : 'ASC'
+    );
+  } else if (this.SORT_FIELD_MAP[sort]) {
+    qb.orderBy(
+      this.SORT_FIELD_MAP[sort],
+      order === 'desc' ? 'DESC' : 'ASC'
+    );
+  } else {
+    qb.orderBy('coke.id', 'ASC');
+  }
+} else {
+  qb.orderBy('coke.id', 'ASC');
+}
 
     const total = await qb.getCount();
     const records = await qb

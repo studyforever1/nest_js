@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, Query, Param, UseGuards } from '@nestjs/common';
+import { Controller, Post, Get, Body, Query, Param, UseGuards,Res } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
@@ -7,6 +7,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { User } from '../user/entities/user.entity';
 import { MixCoalCalcService } from './mix-coal-calc.service';
 import { StartMixCoalCalcDto, StopMixCoalCalcDto, MixCoalPaginationDto } from './dto/mix-coal-calc.dto';
+import type { Response } from 'express';
 
 @ApiBearerAuth('JWT')
 @ApiTags('混合煤性价比计算')
@@ -39,6 +40,18 @@ async progress(
   @Param('task_id') taskId: string,
 ) {
   return this.service.fetchProgress(taskId);
+}
+
+@Get('export/:task_id')
+@Permissions('mix-coal:calc')
+@ApiOperation({ summary: '导出混合煤性价比计算结果为Excel' })
+async export(
+  @Param('task_id') taskId: string,
+  @Res() res: Response, // express Response
+) {
+  // 直接调用 service，流写 Excel 完成后结束
+  await this.service.exportResult(taskId, res);
+  // ⚠️ 不 return，不要让 Nest 再尝试发送 JSON
 }
 
 }

@@ -196,7 +196,7 @@ async query(options: {
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('球团块矿信息库');
 
-    sheet.addRow(['球团名称', ...FIXED_HEADERS]);
+    sheet.addRow(['矿粉名称', ...FIXED_HEADERS]);
 
     list.forEach(item => {
       const composition = this.normalizeComposition(item.composition);
@@ -224,14 +224,14 @@ async query(options: {
     headerRow.eachCell((cell, col) => {
       const val = String(cell.value ?? '').trim();
       if (!val) return;
-      if (!FIXED_HEADERS.includes(val as FixedHeader) && val !== '球团名称') {
+      if (!FIXED_HEADERS.includes(val as FixedHeader) && val !== '矿粉名称') {
         throw new BadRequestException(`非法列名：${val}`);
       }
       headerMap[val] = col;
     });
 
-    if (!headerMap['球团名称']) {
-      throw new BadRequestException('缺少必要列：球团名称');
+    if (!headerMap['矿粉名称']) {
+      throw new BadRequestException('缺少必要列：矿粉名称');
     }
 
     const result: PelletEconInfo[] = [];
@@ -239,7 +239,7 @@ async query(options: {
     sheet.eachRow({ includeEmpty: true }, (row, index) => {
       if (index === 1) return;
 
-      const name = String(row.getCell(headerMap['球团名称'])?.value ?? '').trim();
+      const name = String(row.getCell(headerMap['矿粉名称'])?.value ?? '').trim();
       if (!name) return;
 
       const composition: Record<string, any> = {};
@@ -292,7 +292,7 @@ async query(options: {
     if (fs.existsSync(filePath)) return filePath;
 
     const workbook = new ExcelJS.Workbook();
-    workbook.addWorksheet('模板').addRow(['球团名称', ...FIXED_HEADERS]);
+    workbook.addWorksheet('模板').addRow(['矿粉名称', ...FIXED_HEADERS]);
     await workbook.xlsx.writeFile(filePath);
     return filePath;
   }
