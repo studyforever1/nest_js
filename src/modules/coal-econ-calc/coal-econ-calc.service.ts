@@ -185,23 +185,33 @@ async fetchAndSaveProgress(
     }));
 
     /** ---------- 性价比排名（置换价值指数） ---------- */
-    const rankField = '置换价值指数';
-    if (mappedResults.some(item => !isNaN(Number(item[rankField])))) {
-      const resultsWithValue = mappedResults
-        .filter(item => !isNaN(Number(item[rankField])))
-        .sort((a, b) => Number(b[rankField]) - Number(a[rankField])); // 降序
+   /** ---------- 性价比排名（置换价值指数） ---------- */
+const rankField = '置换价值指数';
 
-      const rankMap = new Map<string, number>();
-      resultsWithValue.forEach((item, index) => {
-        rankMap.set(item['喷吹煤名称'], index + 1);
-      });
+if (mappedResults.some(item => !isNaN(Number(item[rankField])))) {
+  const resultsWithValue = mappedResults
+    .filter(item => !isNaN(Number(item[rankField])))
+    .sort((a, b) => Number(b[rankField]) - Number(a[rankField])); // 降序
 
-      mappedResults = mappedResults.map(item => ({
-        ...item,
-        性价比排名: rankMap.get(item['喷吹煤名称']) ?? undefined,
-      }));
+  const rankMap = new Map<string, number>();
+  resultsWithValue.forEach((item, index) => {
+    rankMap.set(item['喷吹煤名称'], index + 1);
+  });
+
+  mappedResults = mappedResults.map(item => {
+    const rank = rankMap.get(item['喷吹煤名称']);
+
+    if (rank === undefined) {
+      return item;
     }
 
+    // ⭐ 关键：把排名放在最前面
+    return {
+      性价比排名: rank,
+      ...item,
+    };
+  });
+}
     /** ---------- 分页 + 排序 ---------- */
     const { pagedResults, totalResults, totalPages } =
       this.applyPaginationAndSort(mappedResults, pagination);

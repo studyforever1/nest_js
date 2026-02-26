@@ -72,7 +72,7 @@ async getPortPelletLumpProgress(
 }
 @Get('export/:task_id')
 @Permissions('pellet:calc')
-@ApiOperation({ summary: '导出球团经济性评价结果 Excel' })
+@ApiOperation({ summary: '导出球团块矿经济性评价结果 Excel' })
 async exportPelletExcel(
   @Param('task_id') taskId: string,
   @Query() pagination: PelletEconPaginationDto,
@@ -83,16 +83,21 @@ async exportPelletExcel(
     pagination,
   );
 
+  const filename = '球团块矿经济性评价结果.xlsx';
+  const encodedFilename = encodeURIComponent(filename);
+
   res.setHeader(
     'Content-Disposition',
-    `attachment; filename=球团经济性评价结果.xlsx`,
+    `attachment; filename*=UTF-8''${encodedFilename}`,
   );
   res.setHeader(
     'Content-Type',
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   );
+
   res.end(buffer);
 }
+
 @Get('port-pellet-lump/export/:task_id')
 @Permissions('pellet:calc')
 @ApiOperation({ summary: '导出港口球团块矿资源库评价结果 Excel' })
@@ -107,15 +112,18 @@ async exportPortPelletLumpExcel(
       pagination,
     );
 
+  const filename = '港口球团块矿资源库评价结果.xlsx';
+  const encodedFilename = encodeURIComponent(filename);
+
   res.setHeader(
     'Content-Disposition',
-    `attachment; filename=港口球团块矿资源库评价结果.xlsx`,
+    `attachment; filename*=UTF-8''${encodedFilename}`,
   );
   res.setHeader(
     'Content-Type',
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   );
+
   res.end(buffer);
 }
-
 }

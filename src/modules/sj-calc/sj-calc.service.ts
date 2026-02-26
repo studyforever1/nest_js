@@ -456,83 +456,126 @@ async fetchAndSaveProgress(
     this.logger.error(`${prefix}: ${message}`, (err as any)?.stack);
     return ApiResponse.error(message);
   }
-  async getSchemeByIndex(taskUuid: string, index: number): Promise<any | null> {
-    // 查找任务
-    const task = await this.taskRepo.findOne({ where: { task_uuid: taskUuid } });
-    if (!task) return null;
+async getSchemeByIndex(taskUuid: string, index: number): Promise<any | null> {
+  /** ---------- 查找任务 ---------- */
+  const task = await this.taskRepo.findOne({ where: { task_uuid: taskUuid } });
+  if (!task) return null;
 
-    // 查询结果
-    const resultEntity = await this.resultRepo.findOne({
-      where: { task: { task_uuid: taskUuid } },
-    });
-    if (!resultEntity) return null;
+  /** ---------- 查询结果 ---------- */
+  const resultEntity = await this.resultRepo.findOne({
+    where: { task: { task_uuid: taskUuid } },
+  });
+  if (!resultEntity) return null;
 
-    // 确保 output_data 是数组
-    let allResults: any[] = [];
-    if (Array.isArray(resultEntity.output_data)) {
-      allResults = resultEntity.output_data;
-    } else if (typeof resultEntity.output_data === 'string') {
-      try {
-        allResults = JSON.parse(resultEntity.output_data);
-      } catch (err) {
-        this.logger.error(`解析 output_data 出错: ${err}`);
-        return null;
-      }
+  /** ---------- 解析 output_data ---------- */
+  let allResults: any[] = [];
+
+  if (Array.isArray(resultEntity.output_data)) {
+    allResults = resultEntity.output_data;
+  } else if (typeof resultEntity.output_data === 'string') {
+    try {
+      allResults = JSON.parse(resultEntity.output_data);
+    } catch (err) {
+      this.logger.error(`解析 output_data 出错: ${err}`);
+      return null;
     }
+  }
 
-    // 检查 index 是否越界
-    const scheme = allResults.find(item => item['方案序号'] === index);
-    if (!scheme) return null;
+  /** ---------- 查找对应方案 ---------- */
+  const scheme = allResults.find(item => item['方案序号'] === index);
+  if (!scheme) return null;
 
+  /** ---------- 上下限信息 ---------- */
+  const ingredientLimits =
+    task.parameters?.ingredientLimits || {};
 
-    // 原料上下限信息
-    const ingredientLimits: Record<string, { low_limit?: number; top_limit?: number; name?: string }> =
-      task.parameters?.ingredientLimits || {};
+  const chemicalLimits =
+    task.parameters?.chemicalLimits || {};
 
-    // 化学成分上下限信息
-    const chemicalLimits: Record<string, { low_limit?: number; top_limit?: number }> =
-      task.parameters?.chemicalLimits || {};
+  /** ======================================================
+   * 原料配比处理
+   * ====================================================== */
+  const ingredientWithLimits: Record<string, any> = {};
+  const rawIds = Object.keys(scheme['原料配比'] || {}).map(Number);
 
-    // 原料配比处理：保留代号 + 添加 name + 上下限 + 配比 x100
-    const ingredientWithLimits: Record<string, any> = {};
-    const rawIds = Object.keys(scheme['原料配比'] || {});
+  // 查询原料名称
+  const raws = rawIds.length
+    ? await this.sjRawMaterialRepo.find({ where: { id: In(rawIds) } })
+    : [];
 
-    // 从数据库获取原料名称映射
-    const raws = await this.sjRawMaterialRepo.find({ where: { id: In(rawIds.map(Number)) } });
-    const idNameMap: Record<string, string> = {};
-    raws.forEach(raw => idNameMap[String(raw.id)] = raw.name);
+  const idNameMap: Record<string, string> = {};
+  raws.forEach(raw => {
+    idNameMap[String(raw.id)] = raw.name;
+  });
 
-    Object.entries(scheme['原料配比'] || {}).forEach(([code, val]) => {
-      const valObj = val as Record<string, any>;
-      const limits = ingredientLimits[code] || {};
-      ingredientWithLimits[code] = {
-        ...valObj,
-        name: idNameMap[code] || limits.name || code,
-        low_limit: limits.low_limit ?? null,
-        top_limit: limits.top_limit ?? null // 小数转百分比
-      };
-    });
+  Object.entries(scheme['原料配比'] || {}).forEach(([code, val]) => {
+    const limits = ingredientLimits[code] || {};
 
-    // 化学成分处理：保留原有字段 + 上下限
-    // 化学成分处理：保留原有值 + 上下限
-    const chemicalWithLimits: Record<string, any> = {};
-    Object.entries(scheme['化学成分'] || {}).forEach(([key, val]) => {
+    ingredientWithLimits[code] = {
+      ...(val as Record<string, any>),
+      name: idNameMap[code] || limits.name || code,
+      low_limit: limits.low_limit ?? null,
+      top_limit: limits.top_limit ?? null,
+    };
+  });
+
+  /** ======================================================
+   * 化学成分处理（按固定顺序输出）
+   * ====================================================== */
+
+  const chemicalOrder = [
+    'TFe',
+    'SiO2',
+    'CaO',
+    'MgO',
+    'Al2O3',
+    'P',
+    'S',
+    'TiO2',
+    'K2O',
+    'Na2O',
+    'Zn',
+    'As',
+    'Pb',
+    'V2O5',
+    'R2',
+    '镁铝比',
+  ];
+
+  const chemicalSource = scheme['化学成分'] || {};
+  const chemicalWithLimits: Record<string, any> = {};
+
+  /** 1️⃣ 按指定顺序插入 */
+  chemicalOrder.forEach(key => {
+    if (Object.prototype.hasOwnProperty.call(chemicalSource, key)) {
       const limits = chemicalLimits[key] || {};
       chemicalWithLimits[key] = {
-        value: val, // 原来的数值
+        value: chemicalSource[key],
         low_limit: limits.low_limit ?? null,
         top_limit: limits.top_limit ?? null,
       };
-    });
+    }
+  });
 
+  /** 2️⃣ 补充未在顺序数组中的字段 */
+  Object.keys(chemicalSource).forEach(key => {
+    if (!chemicalWithLimits.hasOwnProperty(key)) {
+      const limits = chemicalLimits[key] || {};
+      chemicalWithLimits[key] = {
+        value: chemicalSource[key],
+        low_limit: limits.low_limit ?? null,
+        top_limit: limits.top_limit ?? null,
+      };
+    }
+  });
 
-    return {
-      ...scheme,
-      '原料配比': ingredientWithLimits,
-      '化学成分': chemicalWithLimits,
-    };
-  }
-
+  /** ---------- 返回最终结果 ---------- */
+  return {
+    ...scheme,
+    '原料配比': ingredientWithLimits,
+    '化学成分': chemicalWithLimits,
+  };
+}
 
   /** 导出单个方案为 Excel，并整理所需参数 */
   async exportSchemeExcel(taskUuid: string, index: number) {

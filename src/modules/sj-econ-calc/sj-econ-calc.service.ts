@@ -218,25 +218,41 @@ async fetchEconProgress(
     });
 
     // 6️⃣ ⚡ 性价比排名
-    const rankFields = [
-      '单品位价格折算后',
-      '烧结矿单品位价折算后',
-      '生铁成本',
-      '与PB粉对比'
-    ];
-    const rankField = rankFields.find(f => mappedResults.some(item => !isNaN(Number(item[f]))));
-    if (rankField) {
-      const resultsWithValue = mappedResults
-        .filter(item => !isNaN(Number(item[rankField])))
-        .sort((a, b) => Number(a[rankField]) - Number(b[rankField]));
-      const rankMap = new Map<string, number>();
-      resultsWithValue.forEach((item, index) => rankMap.set(item['原料'], index + 1));
-      mappedResults = mappedResults.map(item => ({
-        ...item,
-        性价比排名: rankMap.get(item['原料']) ?? undefined
-      }));
+const rankFields = [
+  '单品位价格折算后',
+  '烧结矿单品位价折算后',
+  '生铁成本',
+  '与PB粉对比'
+];
+
+const rankField = rankFields.find(f =>
+  mappedResults.some(item => !isNaN(Number(item[f])))
+);
+
+if (rankField) {
+  const resultsWithValue = mappedResults
+    .filter(item => !isNaN(Number(item[rankField])))
+    .sort((a, b) => Number(a[rankField]) - Number(b[rankField])); // 升序
+
+  const rankMap = new Map<string, number>();
+  resultsWithValue.forEach((item, index) => {
+    rankMap.set(item['原料'], index + 1);
+  });
+
+  mappedResults = mappedResults.map(item => {
+    const rank = rankMap.get(item['原料']);
+
+    if (rank === undefined) {
+      return item;
     }
 
+    // ⭐ 关键：排名放第一列
+    return {
+      性价比排名: rank,
+      ...item,
+    };
+  });
+}
     // 7️⃣ 分页 + 排序
     const { pagedResults, totalResults, totalPages } =
       this.applyPaginationAndSort(mappedResults, pagination);

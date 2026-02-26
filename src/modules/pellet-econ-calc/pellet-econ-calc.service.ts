@@ -255,7 +255,7 @@ async fetchAndSaveProgress(
     });
 
     /** ---------- 映射结果 ---------- */
-    const mappedResults = (data.results || []).map(item => ({
+    let mappedResults = (data.results || []).map(item => ({
       ...item,
       矿粉名称: nameMap[item['矿粉名称']] || item['矿粉名称'],
     }));
@@ -272,13 +272,21 @@ async fetchAndSaveProgress(
         rankMap.set(item['矿粉名称'], index + 1);
       });
 
-      mappedResults.forEach(item => {
-        item['性价比排名'] = rankMap.get(item['矿粉名称']) ?? undefined;
+      mappedResults = mappedResults.map(item => {
+        const rank = rankMap.get(item['矿粉名称']) ?? undefined;
+
+        // ⭐ 关键：把排名放在第一列
+        const { 性价比排名, ...rest } = item;
+        return {
+          性价比排名: rank,
+          ...rest,
+        };
       });
     }
 
     /** ---------- 分页 + 排序 ---------- */
-    const { pagedResults, totalResults, totalPages } = this.applyPaginationAndSort(mappedResults, pagination);
+    const { pagedResults, totalResults, totalPages } =
+      this.applyPaginationAndSort(mappedResults, pagination);
 
     return ApiResponse.success({
       taskUuid,
@@ -309,7 +317,7 @@ async fetchAndSavePortPelletLumpProgress(
     const data = res.data?.data;
     if (!data) return ApiResponse.success({ status: 'RUNNING', results: [] });
 
-    /** ---------- 提取球团标识 ---------- */
+    /** ---------- 提取标识 ---------- */
     const identifiers = new Set<string>();
     (data.results || []).forEach(item => {
       const idOrName = item['矿粉名称'];
@@ -339,12 +347,12 @@ async fetchAndSavePortPelletLumpProgress(
     });
 
     /** ---------- 映射结果 ---------- */
-    const mappedResults = (data.results || []).map(item => ({
+    let mappedResults = (data.results || []).map(item => ({
       ...item,
       矿粉名称: nameMap[item['矿粉名称']] || item['矿粉名称'],
     }));
 
-    /** ---------- 性价比排名（吨铁成本，从小到大） ---------- */
+    /** ---------- 性价比排名 ---------- */
     const rankField = '吨铁成本';
     if (mappedResults.some(item => !isNaN(Number(item[rankField])))) {
       const resultsWithValue = mappedResults
@@ -356,13 +364,20 @@ async fetchAndSavePortPelletLumpProgress(
         rankMap.set(item['矿粉名称'], index + 1);
       });
 
-      mappedResults.forEach(item => {
-        item['性价比排名'] = rankMap.get(item['矿粉名称']) ?? undefined;
+      mappedResults = mappedResults.map(item => {
+        const rank = rankMap.get(item['矿粉名称']) ?? undefined;
+        const { 性价比排名, ...rest } = item;
+
+        return {
+          性价比排名: rank,
+          ...rest,
+        };
       });
     }
 
     /** ---------- 分页 + 排序 ---------- */
-    const { pagedResults, totalResults, totalPages } = this.applyPaginationAndSort(mappedResults, pagination);
+    const { pagedResults, totalResults, totalPages } =
+      this.applyPaginationAndSort(mappedResults, pagination);
 
     return ApiResponse.success({
       taskUuid,

@@ -83,13 +83,39 @@ export class SjconfigService {
   // ============================================================
 
   /** 获取最新参数组（自动复制默认参数） */
-  async getLatestConfigByName(user: User, moduleName: string) {
+async getLatestConfigByName(user: User, moduleName: string) {
   const group = await this.getOrCreateUserGroup(user, moduleName);
   const configData = _.cloneDeep(group.config_data || {});
 
-  // ===============================
+  // ============================================
+  // 通用排序工具
+  // ============================================
+  const orderObject = (
+    source: Record<string, any>,
+    order: string[],
+  ): Record<string, any> => {
+    const ordered: Record<string, any> = {};
+
+    // 先按指定顺序放
+    order.forEach(key => {
+      if (key in source) {
+        ordered[key] = source[key];
+      }
+    });
+
+    // 再补充未定义顺序字段（防止扩展丢失）
+    Object.keys(source).forEach(key => {
+      if (!(key in ordered)) {
+        ordered[key] = source[key];
+      }
+    });
+
+    return ordered;
+  };
+
+  // ============================================
   // 1️⃣ ingredientLimits 加 name
-  // ===============================
+  // ============================================
   const ingredientLimits = configData.ingredientLimits || {};
   const rawIds = Object.keys(ingredientLimits).map(id => Number(id));
 
@@ -97,11 +123,13 @@ export class SjconfigService {
 
   if (rawIds.length) {
     const raws = await this.rawRepo.findByIds(rawIds);
+
     raws.forEach(r => {
       rawMap[r.id] = r;
     });
 
     const limitsWithName: Record<string, any> = {};
+
     raws.forEach(r => {
       if (ingredientLimits[r.id]) {
         limitsWithName[r.id] = {
@@ -114,10 +142,11 @@ export class SjconfigService {
     configData.ingredientLimits = limitsWithName;
   }
 
-  // ===============================
+  // ============================================
   // 2️⃣ ingredientResults 加 name（value 不变）
-  // ===============================
+  // ============================================
   const ingredientResults = configData.ingredientResults || {};
+
   if (Object.keys(ingredientResults).length && Object.keys(rawMap).length) {
     const resultsWithName: Record<string, any> = {};
 
@@ -128,7 +157,7 @@ export class SjconfigService {
       if (raw) {
         resultsWithName[id] = {
           name: raw.name,
-          value: ingredientResults[id], // ⭐ 原始 value
+          value: ingredientResults[id],
         };
       }
     });
@@ -136,9 +165,9 @@ export class SjconfigService {
     configData.ingredientResults = resultsWithName;
   }
 
-  // ===============================
+  // ============================================
   // 3️⃣ otherSettings 固定字段顺序
-  // ===============================
+  // ============================================
   const otherSettingsOrder = [
     '精粉',
     '固定配比',
@@ -157,28 +186,44 @@ export class SjconfigService {
     '精粉总比例上限',
     '精粉总比例下限',
     '干基总残存修正值',
-    '修正值运算'
+    '修正值运算',
   ];
 
   if (configData.otherSettings) {
-  const ordered: Record<string, any> = {};
+    configData.otherSettings = orderObject(
+      configData.otherSettings,
+      otherSettingsOrder,
+    );
+  }
 
-  // 先放白名单字段（如果存在）
-  otherSettingsOrder.forEach(key => {
-    if (key in configData.otherSettings) {
-      ordered[key] = configData.otherSettings[key];
-    }
-  });
+  // ============================================
+  // 4️⃣ chemicalLimits 固定字段顺序
+  // ============================================
+  const chemicalOrder = [
+    'TFe',
+    'SiO2',
+    'CaO',
+    'MgO',
+    'Al2O3',
+    'P',
+    'S',
+    'TiO2',
+    'K2O',
+    'Na2O',
+    'Zn',
+    'As',
+    'Pb',
+    'V2O5',
+    'R2',
+    '镁铝比',
+  ];
 
-  // 再放剩余字段（不丢失）
-  Object.keys(configData.otherSettings).forEach(key => {
-    if (!(key in ordered)) {
-      ordered[key] = configData.otherSettings[key];
-    }
-  });
-
-  configData.otherSettings = ordered;
-}
+  if (configData.chemicalLimits) {
+    configData.chemicalLimits = orderObject(
+      configData.chemicalLimits,
+      chemicalOrder,
+    );
+  }
 
   return configData;
 }
