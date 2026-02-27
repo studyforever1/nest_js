@@ -32,6 +32,29 @@ import type { Response } from 'express';
 import * as multer from 'multer';
 import { RawPaginationDto } from './dto/pagination.dto';
 import { User } from '../user/entities/user.entity';
+import { ApiResponse } from 'src/common/response/response.dto';
+// 定义分类枚举
+export enum RawCategory {
+  T1高 = 'T1高',
+  T1中 = 'T1中',
+  T1低 = 'T1低',
+  T2高 = 'T2高',
+  T2中 = 'T2中',
+  T2低 = 'T2低',
+  X = 'X',
+  R = 'R',
+  F = 'F',
+}
+
+export enum Origin {
+  国内精矿 = '国内精矿',
+  外精矿 = '外精矿',
+  澳矿 = '澳矿',
+  巴西矿 = '巴西矿',
+  印度矿 = '印度矿',
+  其他粉矿 = '其他粉矿',
+
+}
 
 
 @ApiTags('物料信息-烧结物料信息')
@@ -40,6 +63,24 @@ import { User } from '../user/entities/user.entity';
 @Controller('sj-raw-material')
 export class SjRawMaterialController {
   constructor(private readonly rawService: SjRawMaterialService) {}
+
+  // 后端接口
+@Get('categories')
+async getCategories(): Promise<ApiResponse<any>> {
+  const options = Object.entries(RawCategory).map(([label, value]) => ({
+    label,   // 中文名称
+    value,   // 实际存库值
+  }));
+  return ApiResponse.success(options);
+}
+@Get('origins')
+async getOrigins(): Promise<ApiResponse<any>> {
+  const options = Object.values(Origin).map(value => ({
+    label: value, // 前端显示
+    value,        // 前端选中填入表单
+  }));
+  return ApiResponse.success(options);
+}
 
   /** 新增原料 */
   @Post()
@@ -150,4 +191,6 @@ async findAll(
     );
     res.sendFile(filePath, { root: process.cwd() });
   }
+
+  
 }

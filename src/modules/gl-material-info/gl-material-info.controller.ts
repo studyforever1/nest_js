@@ -32,6 +32,26 @@ import type { Response } from 'express';
 import * as multer from 'multer';
 import { GLPaginationDto } from './dto/pagination.dto';
 import { User } from '../user/entities/user.entity';
+import { ApiResponse } from 'src/common/response/response.dto';
+
+
+
+export enum Category {
+  烧结矿 = 'S',
+  球团矿 = 'Q',
+  块矿 = 'K',
+}
+
+export enum Origin {
+  国内精矿 = '国内精矿',
+  外精矿 = '外精矿',
+  澳矿 = '澳矿',
+  巴西矿 = '巴西矿',
+  印度矿 = '印度矿',
+  其他粉矿 = '其他粉矿',
+
+}
+
 
 
 @ApiTags('物料信息-高炉物料信息')
@@ -40,6 +60,24 @@ import { User } from '../user/entities/user.entity';
 @Controller('gl-material-info')
 export class GlMaterialInfoController {
   constructor(private readonly rawService: GlMaterialInfoService) {}
+
+@Get('categories')
+async getCategories(): Promise<ApiResponse<any>> {
+  const options = Object.entries(Category).map(([label, value]) => ({
+    label,   // 中文名称
+    value,   // 实际存库值
+  }));
+  return ApiResponse.success(options);
+}
+
+@Get('origins')
+async getOrigins(): Promise<ApiResponse<any>> {
+  const options = Object.values(Origin).map(value => ({
+    label: value, // 前端显示
+    value,        // 前端选中填入表单
+  }));
+  return ApiResponse.success(options);
+}
 
   /** 新增原料 */
   @Post()
