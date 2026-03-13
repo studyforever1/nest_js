@@ -64,4 +64,32 @@ export class LlythCalcController {
   async getScheme(@Query() dto: LLYTHGetSchemeDto, @CurrentUser() user: User): Promise<ApiResponse<any>> {
     return await this.llythCalcService.getSchemeByIndex(dto.taskUuid, dto.index);
   }
+
+
+  @Post('pause')
+  @Permissions('sj-calc')
+  @ApiOperation({
+    summary: '暂停计算任务',
+    description: '根据 task_id 暂停正在执行的烧结计算任务。',
+  })
+  @ApiOkResponseData(LLYTHStopTaskResponseDto)
+  @ApiErrorResponse()
+  pauseTask(@Body() dto: LLYTHStopTaskDto) {
+    return this.llythCalcService.pauseTask(dto.task_id);
+  }
+  
+  /**
+   * 继续计算任务
+   */
+  @Post('resume')
+  @Permissions('sj-calc')
+  @ApiOperation({
+    summary: '继续计算任务',
+    description: '根据 task_id 继续之前暂停的烧结计算任务。',
+  })
+  @ApiOkResponseData(LLYTHStopTaskResponseDto)
+  @ApiErrorResponse()
+  resumeTask(@Body() dto: LLYTHStopTaskDto) {
+    return this.llythCalcService.resumeTask(dto.task_id);
+  }
 }

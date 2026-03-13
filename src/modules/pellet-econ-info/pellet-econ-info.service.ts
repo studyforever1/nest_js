@@ -86,7 +86,7 @@ export class PelletEconInfoService {
 
   /** ========================= 查询（核心修改点） ========================= */
 async query(options: {
-  user: User;                 // 当前用户
+  user: User;
   page?: number;
   pageSize?: number;
   name?: string;
@@ -121,19 +121,23 @@ async query(options: {
     qb.orderBy('p.id', 'ASC');
   }
 
-  qb.skip((page - 1) * pageSize).take(pageSize);
-
-  const [records, total] = await qb.getManyAndCount();
+  // ❗不在SQL分页
+  const records = await qb.getMany();
+  const total = records.length;
 
   // ================= 2️⃣ 获取用户最新配置 =================
   let selectedSet = new Set<number>();
+
   try {
-    const group = await this.repo.manager.getRepository(ConfigGroup)
+    const group = await this.repo.manager
+      .getRepository(ConfigGroup)
       .createQueryBuilder('cg')
       .leftJoin('cg.user', 'user')
       .leftJoin('cg.module', 'module')
       .where('user.user_id = :userId', { userId: user.user_id })
-      .andWhere('module.name = :moduleName', { moduleName: '外购球团块矿经济性评价' }) // 模块名
+      .andWhere('module.name = :moduleName', {
+        moduleName: '外购球团块矿经济性评价',
+      })
       .orderBy('cg.updated_at', 'DESC')
       .getOne();
 
@@ -143,15 +147,16 @@ async query(options: {
           ? JSON.parse(group.config_data)
           : group.config_data;
 
-      // ✅ 尝试 pelletParams > ingredientParams
-      const pelletParams: number[] = configData.pelletParams ?? configData.ingredientParams ?? [];
+      const pelletParams: number[] =
+        configData.pelletParams ?? configData.ingredientParams ?? [];
+
       selectedSet = new Set(pelletParams.map(id => Number(id)));
     }
   } catch (err) {
     console.warn('获取用户球团块矿配置失败', err);
   }
 
-  // ================= 3️⃣ 映射 composition + selected =================
+  // ================= 3️⃣ 映射 =================
   const mapped = records.map(item => ({
     ...item,
     composition: this.normalizeComposition(item.composition),
@@ -159,11 +164,17 @@ async query(options: {
   }));
 
   // ================= 4️⃣ 已选优先 =================
-  const mappedSorted = mapped.sort((a, b) => (a.selected === b.selected ? 0 : a.selected ? -1 : 1));
+  const mappedSorted = mapped.sort((a, b) =>
+    a.selected === b.selected ? 0 : a.selected ? -1 : 1
+  );
 
-  // ================= 5️⃣ 返回 =================
+  // ================= 5️⃣ 内存分页 =================
+  const start = (page - 1) * pageSize;
+  const end = start + pageSize;
+  const paged = mappedSorted.slice(start, end);
+
   return {
-    data: mappedSorted,
+    data: paged,
     total,
     page,
     pageSize,

@@ -79,14 +79,14 @@ export class CoalEconInfoService {
 private readonly MODULE_NAME = '喷吹煤经济性评价';
   /** ========================= 查询（核心修改点） ========================= */
 async query(options: {
-   user: User,   
+  user: User;
   page: number;
   pageSize: number;
   name?: string;
   sort?: string;
   order?: 'asc' | 'desc';
 }) {
-  const {user, page, pageSize, name, sort, order } = options;
+  const { user, page, pageSize, name, sort, order } = options;
 
   const qb = this.repo.createQueryBuilder('c');
 
@@ -99,6 +99,7 @@ async query(options: {
   if (sort) {
     if (sort.startsWith('composition.')) {
       const key = sort.replace('composition.', '');
+
       qb.orderBy(
         `CAST(JSON_EXTRACT(c.composition, '$."${key}"') AS DECIMAL)`,
         order === 'desc' ? 'DESC' : 'ASC',
@@ -115,22 +116,24 @@ async query(options: {
     qb.orderBy('c.id', 'ASC');
   }
 
-  // ================= 3️⃣ 分页 =================
-  const [records, total] = await qb
-    .skip((page - 1) * pageSize)
-    .take(pageSize)
-    .getManyAndCount();
+  // ❗ 不在 SQL 里分页
+  const records = await qb.getMany();
+  const total = records.length;
 
-  // ================= 4️⃣ 获取已选原料（coalParams） =================
+  // ================= 3️⃣ 获取已选原料 =================
   let selectedSet = new Set<number>();
+
   try {
     const configRepo = this.repo.manager.getRepository(ConfigGroup);
+
     const config = await configRepo
       .createQueryBuilder('cg')
       .leftJoin('cg.user', 'user')
       .leftJoin('cg.module', 'module')
-      .where('user.user_id = :userId', {  userId: user.user_id})
-      .andWhere('module.name = :moduleName', { moduleName: this.MODULE_NAME })
+      .where('user.user_id = :userId', { userId: user.user_id })
+      .andWhere('module.name = :moduleName', {
+        moduleName: this.MODULE_NAME,
+      })
       .orderBy('cg.updated_at', 'DESC')
       .getOne();
 
@@ -141,6 +144,7 @@ async query(options: {
           : config.config_data;
 
       const coalParams: number[] = configData.coalParams ?? [];
+
       if (coalParams.length) {
         selectedSet = new Set(coalParams.map(id => Number(id)));
       }
@@ -149,22 +153,26 @@ async query(options: {
     console.warn('获取模块配置失败，不影响查询', err);
   }
 
-  // ================= 5️⃣ 格式化 composition + selected =================
+  // ================= 4️⃣ 映射 =================
   const mapped = records
     .map(item => ({
       ...item,
       composition: this.normalizeComposition(item.composition),
       selected: selectedSet.has(Number(item.id)),
     }))
-    // ✅ 默认把已选的放前面
     .sort((a, b) => {
       if (a.selected && !b.selected) return -1;
       if (!a.selected && b.selected) return 1;
-      return 0; // 保持原顺序
+      return 0;
     });
 
+  // ================= 5️⃣ 内存分页 =================
+  const start = (page - 1) * pageSize;
+  const end = start + pageSize;
+  const paged = mapped.slice(start, end);
+
   return {
-    data: mapped,
+    data: paged,
     total,
     page,
     pageSize,

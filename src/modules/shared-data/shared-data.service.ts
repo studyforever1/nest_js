@@ -10,6 +10,7 @@ import dayjs from 'dayjs';
 import { ListSharedDto } from './dto/list-shared.dto';
 import { GlMaterialInfo } from '../gl-material-info/entities/gl-material-info.entity';
 
+
 @Injectable()
 export class SharedDataService {
   constructor(
@@ -25,16 +26,132 @@ export class SharedDataService {
 
   /** ----------- 统一格式（完全对齐 History） ----------- */
   private formatRaw = (item: SharedData) => {
-    return {
-      id: item.id,
-      scheme_id: item.scheme_id,
-      module_type: item.module_type,
-      result: item.result,
-      created_at: dayjs(item.created_at).format('YYYY-MM-DD HH:mm:ss'),
-      task_uuid: item.task?.task_uuid || null,
-      username: item.user?.username || null,
+
+  let result =
+    typeof item.result === 'string'
+      ? JSON.parse(item.result)
+      : item.result;
+
+  // 只处理烧结配料相关模块
+  if (
+    item.module_type === '烧结配料计算' ||
+    item.module_type === '烧结优化配料'
+  ) {
+
+    const chem = result?.['化学成分'] || {};
+    const orderedChem: Record<string, number> = {};
+
+    // 固定顺序
+    for (const key of this.chemicalOrder) {
+      orderedChem[key] = Number(chem[key]) || 0;
+    }
+
+    result = {
+      // 👇 其他字段保持
+      主要参数: result?.['主要参数'] || {},
+      化学成分: orderedChem,
+      原料配比: result?.['原料配比'] || {},
+      成本排名: result?.['成本排名'],
+      方案序号: result?.['方案序号'],
+      吨度价排名: result?.['吨度价排名'],
     };
+  }
+
+  // 单独高炉配料计算
+  if (item.module_type === '高炉配料计算') {
+    const sortByOrder = (source: Record<string, any>, order: string[]) => {
+      const sorted: Record<string, any> = {};
+      order.forEach(key => { if (source?.[key] !== undefined) sorted[key] = source[key]; });
+      Object.keys(source || {}).forEach(key => { if (!sorted[key]) sorted[key] = source[key]; });
+      return sorted;
+    };
+    const fixedLoadOrder = ['S负荷', 'P负荷', 'Mn负荷', '碱金属负荷', 'Zn负荷', 'Ti负荷'];
+    const fixedIronOrder = ['P', 'Ti', 'Mn', 'Pb', 'Cr', 'Ni'];
+    const fixedSlagOrder = ['FeO', 'CaO', 'SiO2', 'MgO', 'Al2O3', 'S', 'TiO2', 'MnO', 'R2', 'R3', 'R4', '镁铝比', '总渣量'];
+    const glMainOrder = ['成本(元)', '综合入炉品位(%)', '矿耗(t/t)', '燃料比(kg/t)', '综合焦比(t/t)', '焦比(t/t)', '煤比(t/t)'];
+    const sortMain = (source: Record<string, any>) => {
+      const sorted: Record<string, any> = {};
+      glMainOrder.forEach(key => { if (source?.[key] != null) sorted[key] = source[key]; });
+      Object.keys(source || {}).forEach(key => { if (!sorted[key]) sorted[key] = source[key]; });
+      return sorted;
+    };
+    result = {
+      原料配比和矿耗: result?.['原料配比和矿耗'] || {},
+      燃料配比和矿耗: result?.['燃料配比和矿耗'] || {},
+      主要参数: sortMain(result?.['主要参数'] || {}),
+      负荷: sortByOrder(result?.['负荷'] || {}, fixedLoadOrder),
+      铁水含量: sortByOrder(result?.['铁水含量'] || {}, fixedIronOrder),
+      炉渣成分: sortByOrder(result?.['炉渣成分'] || {}, fixedSlagOrder),
+      成本排名: result?.['成本排名'],
+      方案序号: result?.['方案序号'],
+      烧结矿序号: result?.['烧结矿序号'],
+    };
+  }
+
+  // 铁前一体化和利润一体化模块
+  if (
+    item.module_type === '铁前一体化配料计算I' ||
+    item.module_type === '铁前一体化配料计算II' ||
+    item.module_type === '利润一体化配料计算'
+  ) {
+    const fixedLoadOrder = ['S负荷', 'P负荷', 'Mn负荷', '碱金属负荷', 'Zn负荷', 'Ti负荷'];
+    const fixedIronOrder = ['P', 'Ti', 'Mn', 'Pb', 'Cr', 'Ni'];
+    const fixedSlagOrder = ['FeO', 'CaO', 'SiO2', 'MgO', 'Al2O3', 'S', 'TiO2', 'MnO', 'R2', 'R3', 'R4', '镁铝比', '总渣量'];
+
+    const sortByOrder = (source: Record<string, any>, order: string[]) => {
+      const sorted: Record<string, any> = {};
+      order.forEach(key => { if (source?.[key] !== undefined) sorted[key] = source[key]; });
+      Object.keys(source || {}).forEach(key => { if (!sorted[key]) sorted[key] = source[key]; });
+      return sorted;
+    };
+
+    const sortMain = (source: Record<string, any>, isLlyth: boolean) => {
+      let headOrder: string[];
+      if (isLlyth) {
+        headOrder = [
+          '综合入炉品位(%)', '吨材毛利润(元/t)', '本月毛利(亿元/月)', '边际效益(亿元/月)',
+          '吨铁成本(元/t)', '铁水日产(t/d)', '吨钢成本(元/t)', '钢坯日产(t/d)',
+          '吨坯毛利润(元/t)', '吨材成本(元/t)', '带钢日产(t/d)',
+          '矿耗(t/t)', '燃料比(kg/t)', '焦比(t/t)', '综合焦比(t/t)', '煤比(t/t)',
+        ];
+      } else {
+        headOrder = [
+          '成本(元/t)', '综合入炉品位(%)',
+          '矿耗(t/t)', '燃料比(kg/t)', '综合焦比(t/t)', '焦比(t/t)', '煤比(t/t)', '吨材毛利润(元/t)',
+        ];
+      }
+      const sorted: Record<string, any> = {};
+      headOrder.forEach(key => { if (source?.[key] != null) sorted[key] = source[key]; });
+      Object.keys(source || {}).forEach(key => { if (!sorted[key]) sorted[key] = source[key]; });
+      return sorted;
+    };
+
+    const isLlyth = item.module_type === '利润一体化配料计算';
+
+    result = {
+      原料配比和矿耗: result?.['原料配比和矿耗'] || {},
+      燃料配比和矿耗: result?.['燃料配比和矿耗'] || {},
+      主要参数: sortMain(result?.['主要参数'] || {}, isLlyth),
+      负荷: sortByOrder(result?.['负荷'] || {}, fixedLoadOrder),
+      铁水含量: sortByOrder(result?.['铁水含量'] || {}, fixedIronOrder),
+      炉渣成分: sortByOrder(result?.['炉渣成分'] || {}, fixedSlagOrder),
+      成本排名: result?.['成本排名'],
+      利润排名: result?.['利润排名'],
+      方案序号: result?.['方案序号'],
+      烧结矿序号: result?.['烧结矿序号'],
+    };
+  }
+
+  return {
+    id: item.id,
+    scheme_id: item.scheme_id,
+    module_type: item.module_type,
+    result,
+    created_at: dayjs(item.created_at).format('YYYY-MM-DD HH:mm:ss'),
+    task_uuid: item.task?.task_uuid || null,
+    username: item.user?.username || null,
   };
+};
 
   /** ----------- 批量保存共享方案 ----------- */
   async saveShared(
@@ -105,7 +222,24 @@ export class SharedDataService {
     );
   }
 
-
+private chemicalOrder = [
+  'TFe',
+  'SiO2',
+  'CaO',
+  'MgO',
+  'Al2O3',
+  'P',
+  'S',
+  'TiO2',
+  'K2O',
+  'Na2O',
+  'Zn',
+  'As',
+  'Pb',
+  'V2O5',
+  'R2',
+  '镁铝比',
+];
   /** ----------- 分页查询（完全对齐 History） ----------- */
   async list(user: User, query: ListSharedDto) {
     const { module_type, date, page = 1, pageSize = 10 } = query;

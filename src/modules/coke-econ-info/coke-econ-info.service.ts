@@ -81,7 +81,7 @@ export class CokeEconInfoService {
 private readonly MODULE_NAME = '焦炭经济性评价';
   /** ========================= 查询（核心修改点） ========================= */
 async query(options: {
-  user: User;                // ✅ 新增 user
+  user: User;
   page: number;
   pageSize: number;
   name?: string;
@@ -101,6 +101,7 @@ async query(options: {
   if (sort) {
     if (sort.startsWith('composition.')) {
       const key = sort.replace('composition.', '');
+
       qb.orderBy(
         `CAST(JSON_EXTRACT(c.composition, '$."${key}"') AS DECIMAL)`,
         order === 'desc' ? 'DESC' : 'ASC'
@@ -117,22 +118,24 @@ async query(options: {
     qb.orderBy('c.id', 'ASC');
   }
 
-  // ================= 3️⃣ 分页 =================
-  const [records, total] = await qb
-    .skip((page - 1) * pageSize)
-    .take(pageSize)
-    .getManyAndCount();
+  // ❗ 不使用 SQL 分页
+  const records = await qb.getMany();
+  const total = records.length;
 
-  // ================= 4️⃣ 获取用户已选 cokeParams =================
+  // ================= 3️⃣ 获取用户已选 cokeParams =================
   let selectedSet = new Set<number>();
+
   try {
     const configRepo = this.repo.manager.getRepository(ConfigGroup);
+
     const config = await configRepo
       .createQueryBuilder('cg')
       .leftJoin('cg.user', 'user')
       .leftJoin('cg.module', 'module')
       .where('user.user_id = :userId', { userId: user.user_id })
-      .andWhere('module.name = :moduleName', { moduleName: this.MODULE_NAME }) // 默认焦炭模块名
+      .andWhere('module.name = :moduleName', {
+        moduleName: this.MODULE_NAME
+      })
       .orderBy('cg.updated_at', 'DESC')
       .getOne();
 
@@ -149,26 +152,31 @@ async query(options: {
     console.warn('获取模块配置失败，不影响查询', err);
   }
 
-  // ================= 5️⃣ 映射 composition + selected =================
-let mapped = records.map(item => ({
-  ...item,
-  composition: this.normalizeComposition(item.composition),
-  selected: selectedSet.has(Number(item.id)), // ✅ 标记是否已选
-}));
+  // ================= 4️⃣ 映射 =================
+  let mapped = records.map(item => ({
+    ...item,
+    composition: this.normalizeComposition(item.composition),
+    selected: selectedSet.has(Number(item.id)),
+  }));
 
-// ================= 6️⃣ 已选优先排序 =================
-mapped.sort((a, b) => {
-  if (a.selected === b.selected) return 0; // 相同 selected 状态保持原顺序
-  return a.selected ? -1 : 1; // selected=true 的排在前面
-});
+  // ================= 5️⃣ 已选优先 =================
+  mapped.sort((a, b) => {
+    if (a.selected === b.selected) return 0;
+    return a.selected ? -1 : 1;
+  });
 
-return {
-  data: mapped,
-  total,
-  page,
-  pageSize,
-  totalPages: Math.ceil(total / pageSize),
-};
+  // ================= 6️⃣ 内存分页 =================
+  const start = (page - 1) * pageSize;
+  const end = start + pageSize;
+  const paged = mapped.slice(start, end);
+
+  return {
+    data: paged,
+    total,
+    page,
+    pageSize,
+    totalPages: Math.ceil(total / pageSize),
+  };
 }
 
   async remove(ids: number[]) {

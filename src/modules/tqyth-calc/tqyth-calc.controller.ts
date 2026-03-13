@@ -65,4 +65,31 @@ async getScheme(
   return await this.tqythCalcService.getSchemeByIndex(dto.taskUuid, dto.index);
 }
 
+
+@Post('pause')
+@Permissions('sj-calc')
+@ApiOperation({
+  summary: '暂停计算任务',
+  description: '根据 task_id 暂停正在执行的烧结计算任务。',
+})
+@ApiOkResponseData(TQYTHStopTaskResponseDto)
+@ApiErrorResponse()
+pauseTask(@Body() dto: TQYTHStopTaskDto) {
+  return this.tqythCalcService.pauseTask(dto.task_id);
+}
+
+/**
+ * 继续计算任务
+ */
+@Post('resume')
+@Permissions('sj-calc')
+@ApiOperation({
+  summary: '继续计算任务',
+  description: '根据 task_id 继续之前暂停的烧结计算任务。',
+})
+@ApiOkResponseData(TQYTHStopTaskResponseDto)
+@ApiErrorResponse()
+resumeTask(@Body() dto: TQYTHStopTaskDto) {
+  return this.tqythCalcService.resumeTask(dto.task_id);
+}
 }

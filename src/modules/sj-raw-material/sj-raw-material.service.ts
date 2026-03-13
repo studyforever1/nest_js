@@ -125,7 +125,7 @@ async query(user: User, params: RawPaginationDto) {
   // ================= 2️⃣ 分类筛选 =================
   if (type) qb.andWhere('raw.category LIKE :type', { type: `%${type}%` });
 
-  // ================= 3️⃣ 排序（数据库字段排序） =================
+  // ================= 3️⃣ 排序 =================
   if (sort) {
     if (sort.startsWith('composition.')) {
       const key = sort.replace('composition.', '');
@@ -142,14 +142,16 @@ async query(user: User, params: RawPaginationDto) {
     qb.orderBy('raw.id', 'ASC');
   }
 
-  qb.skip((page - 1) * pageSize).take(pageSize);
-
-  const [list, total] = await qb.getManyAndCount();
+  // ⚠️ 不在 SQL 里分页
+  const list = await qb.getMany();
+  const total = list.length;
 
   // ================= 4️⃣ 获取已选原料 =================
   let selectedSet = new Set<number>();
+
   try {
     const configRepo = this.rawRepo.manager.getRepository(ConfigGroup);
+
     const config = await configRepo
       .createQueryBuilder('cg')
       .leftJoin('cg.user', 'user')
@@ -159,8 +161,8 @@ async query(user: User, params: RawPaginationDto) {
       .orderBy('cg.updated_at', 'DESC')
       .getOne();
 
-    // ✅ 解析 config_data
     let configData: any = {};
+
     if (config?.config_data) {
       configData =
         typeof config.config_data === 'string'
@@ -169,6 +171,7 @@ async query(user: User, params: RawPaginationDto) {
     }
 
     const ingredientParams: number[] = configData.ingredientParams ?? [];
+
     if (ingredientParams.length) {
       selectedSet = new Set(ingredientParams.map((id) => Number(id)));
     }
@@ -176,22 +179,28 @@ async query(user: User, params: RawPaginationDto) {
     console.warn('获取模块配置失败，不影响原料查询', err);
   }
 
-  // ================= 5️⃣ 数据映射 & 内存排序 =================
-  const mapped = list
-    .map((item) => ({
-      ...item,
-      composition: this.normalizeComposition(item.composition),
-      selected: selectedSet.has(Number(item.id)),
-    }))
-    // ✅ 默认把已选的放前面
-    .sort((a, b) => {
-      if (a.selected && !b.selected) return -1;
-      if (!a.selected && b.selected) return 1;
-      return 0; // 保持原有顺序
-    });
+  // ================= 5️⃣ 数据映射 =================
+  const mapped = list.map((item) => ({
+    ...item,
+    composition: this.normalizeComposition(item.composition),
+    selected: selectedSet.has(Number(item.id)),
+  }));
+
+  // ================= 6️⃣ selected 排前 =================
+  mapped.sort((a, b) => {
+    if (a.selected && !b.selected) return -1;
+    if (!a.selected && b.selected) return 1;
+    return 0;
+  });
+
+  // ================= 7️⃣ 内存分页 =================
+  const start = (page - 1) * pageSize;
+  const end = start + pageSize;
+
+  const paged = mapped.slice(start, end);
 
   return {
-    data: mapped,
+    data: paged,
     total,
     page,
     pageSize,

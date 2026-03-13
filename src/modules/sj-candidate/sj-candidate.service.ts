@@ -1,4 +1,5 @@
 // src/modules/sj-candidate/sj-candidate.service.ts
+
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, Between } from 'typeorm';
@@ -20,89 +21,174 @@ export class SjCandidateService {
     private readonly userRepo: Repository<User>,
   ) {}
 
-  /** ----------- 统一格式方法（对齐 Shared / History） ----------- */
-  private formatRaw = (item: SjCandidate) => {
+  /** ================= 化学成分顺序常量 ================= */
+  private readonly chemicalOrder = [
+    'TFe',
+    'SiO2',
+    'CaO',
+    'MgO',
+    'Al2O3',
+    'P',
+    'S',
+    'TiO2',
+    'K2O',
+    'Na2O',
+    'Zn',
+    'As',
+    'Pb',
+    'V2O5',
+    'R2',
+    '镁铝比',
+  ];
+
+  /** ================= 通用基础结构 ================= */
+  private buildBaseInfo(item: SjCandidate) {
     return {
       id: item.id,
       scheme_id: item.scheme_id,
       module_type: item.module_type,
-      result: item.result,
       created_at: dayjs(item.created_at).format('YYYY-MM-DD HH:mm:ss'),
       task_uuid: item.task?.task_uuid || null,
       username: item.user?.username || null,
     };
-  };
+  }
 
-  /** ----------- 批量保存候选方案 ----------- */
-async saveCandidate(
-  taskUuid: string,
-  userId: number,
-  schemeIndexes: number[], // 这里是方案序号数组
-  moduleType: string,
-) {
-  // 1️⃣ 查任务
-  const task = await this.taskRepo.findOne({
-    where: { task_uuid: taskUuid },
-    relations: ['results'],
+  /** ================= 化学成分排序 ================= */
+/** ================= 化学成分排序（仅排序，不改结构） ================= */
+private reorderChemical(chemicalSource: any) {
+  const result: Record<string, any> = {};
+
+  // 1️⃣ 按固定顺序排
+  this.chemicalOrder.forEach(key => {
+    if (chemicalSource?.hasOwnProperty(key)) {
+      result[key] = chemicalSource[key]; // ✅ 直接保留原结构
+    }
   });
-  if (!task) return ApiResponse.error('任务不存在');
 
-  // 2️⃣ 查用户
-  const user = await this.userRepo.findOneBy({ user_id: userId });
-  if (!user) return ApiResponse.error('用户不存在');
-
-  // 3️⃣ 获取结果
-  const resultEntity = task.results?.[0];
-  if (!resultEntity?.output_data) return ApiResponse.error('任务结果为空');
-
-  let results = resultEntity.output_data;
-  if (typeof results === 'string') {
-    try {
-      results = JSON.parse(results);
-    } catch (e) {
-      return ApiResponse.error('任务结果 JSON 解析失败');
+  // 2️⃣ 追加未定义字段
+  Object.keys(chemicalSource || {}).forEach(key => {
+    if (!result.hasOwnProperty(key)) {
+      result[key] = chemicalSource[key];
     }
-  }
+  });
 
-  const toSave: SjCandidate[] = [];
-
-  // 4️⃣ 遍历方案序号
-  for (const schemeNo of schemeIndexes) {
-    // 根据方案序号查找对应方案
-    const scheme = results.find(r => r['方案序号'] === schemeNo);
-    if (!scheme) continue;
-
-    const schemeId = `${task.task_uuid}-${scheme['方案序号']}`;
-
-    // 5️⃣ 检查是否已存在
-    const exists = await this.candidateRepo.findOne({
-      where: { scheme_id: schemeId },
-    });
-
-    if (!exists) {
-      toSave.push(
-        this.candidateRepo.create({
-          task,
-          user,
-          scheme_id: schemeId,
-          result: scheme, // 确保 SjCandidate.result 支持 JSON 类型
-          module_type: moduleType,
-        }),
-      );
-    }
-  }
-
-  // 6️⃣ 保存
-  if (toSave.length) await this.candidateRepo.save(toSave);
-
-  return ApiResponse.success(
-    { count: toSave.length },
-    '候选方案保存成功',
-  );
+  return result;
 }
 
+  /** ================= 烧结配料格式器 ================= */
+private formatSinterScheme(item: SjCandidate) {
+  const scheme = item.result;
+  if (!scheme) return null;
 
-  /** ----------- 分页查询候选方案（对齐 History/Shared） ----------- */
+  // 主要参数固定顺序：成本 → 吨度价 → 干基总消耗 → 干基总残存 → 预测烧结烟气含流量
+  const mainParamOrder = [
+    '成本(元)',
+    '吨度价',
+    '干基总消耗(t/t)',
+    '干基总残存(%)',
+    '预测烧结烟气含流量(mg/Nm3)',
+  ];
+
+  const sortMainParams = (source: Record<string, any>) => {
+    const sorted: Record<string, any> = {};
+    mainParamOrder.forEach(key => {
+      if (source?.[key] != null) sorted[key] = source[key];
+    });
+    Object.keys(source || {}).forEach(key => {
+      if (!sorted[key]) sorted[key] = source[key];
+    });
+    return sorted;
+  };
+
+  return {
+    ...scheme,
+    化学成分: this.reorderChemical(scheme['化学成分']),
+    主要参数: sortMainParams(scheme['主要参数'] || {}),
+  };
+}
+
+  /** ================= 统一格式入口 ================= */
+  private formatByModule(item: SjCandidate) {
+    const base = this.buildBaseInfo(item);
+
+    switch (item.module_type) {
+      case '烧结配料计算':
+        return {
+          ...base,
+          result: this.formatSinterScheme(item),
+        };
+
+      default:
+        return {
+          ...base,
+          result: item.result,
+        };
+    }
+  }
+
+  /** ================= 批量保存候选方案 ================= */
+  async saveCandidate(
+    taskUuid: string,
+    userId: number,
+    schemeIndexes: number[],
+    moduleType: string,
+  ) {
+    const task = await this.taskRepo.findOne({
+      where: { task_uuid: taskUuid },
+      relations: ['results'],
+    });
+    if (!task) return ApiResponse.error('任务不存在');
+
+    const user = await this.userRepo.findOneBy({ user_id: userId });
+    if (!user) return ApiResponse.error('用户不存在');
+
+    const resultEntity = task.results?.[0];
+    if (!resultEntity?.output_data)
+      return ApiResponse.error('任务结果为空');
+
+    let results = resultEntity.output_data;
+    if (typeof results === 'string') {
+      try {
+        results = JSON.parse(results);
+      } catch {
+        return ApiResponse.error('任务结果 JSON 解析失败');
+      }
+    }
+
+    const toSave: SjCandidate[] = [];
+
+    for (const schemeNo of schemeIndexes) {
+      const scheme = results.find(r => r['方案序号'] === schemeNo);
+      if (!scheme) continue;
+
+      const schemeId = `${task.task_uuid}-${schemeNo}`;
+
+      const exists = await this.candidateRepo.findOne({
+        where: { scheme_id: schemeId },
+      });
+
+      if (!exists) {
+        toSave.push(
+          this.candidateRepo.create({
+            task,
+            user,
+            scheme_id: schemeId,
+            result: scheme,
+            module_type: moduleType,
+          }),
+        );
+      }
+    }
+
+    if (toSave.length) await this.candidateRepo.save(toSave);
+
+    return ApiResponse.success(
+      { count: toSave.length },
+      '候选方案保存成功',
+    );
+  }
+
+  /** ================= 分页查询 ================= */
   async list(user: User, query: ListCandidateDto) {
     const { module_type, date, page = 1, pageSize = 10 } = query;
 
@@ -110,7 +196,6 @@ async saveCandidate(
 
     if (module_type) where.module_type = module_type;
 
-    // 日期筛选 YYYY-MM-DD
     if (date) {
       const start = new Date(`${date} 00:00:00`);
       const end = new Date(`${date} 23:59:59`);
@@ -127,7 +212,7 @@ async saveCandidate(
 
     return ApiResponse.success(
       {
-        data: records.map(this.formatRaw),
+        data: records.map(item => this.formatByModule(item)),
         total,
         page: Number(page),
         pageSize: Number(pageSize),
@@ -137,7 +222,7 @@ async saveCandidate(
     );
   }
 
-  /** ----------- 删除候选方案（对齐 Shared/History） ----------- */
+  /** ================= 删除 ================= */
   async delete(user: User, ids: number[]) {
     const idArray = (Array.isArray(ids) ? ids : [ids]).map(Number);
 
@@ -152,24 +237,23 @@ async saveCandidate(
     );
   }
 
-  /** ----------- 根据 ID 获取单个候选方案 ----------- */
-async getById(user: User, id: number) {
-  const item = await this.candidateRepo.findOne({
-    where: {
-      id,
-      user: { user_id: user.user_id }, // 防止越权
-    },
-    relations: ['task', 'user'],
-  });
+  /** ================= 根据ID获取 ================= */
+  async getById(user: User, id: number) {
+    const item = await this.candidateRepo.findOne({
+      where: {
+        id,
+        user: { user_id: user.user_id },
+      },
+      relations: ['task', 'user'],
+    });
 
-  if (!item) {
-    return ApiResponse.error('候选方案不存在');
+    if (!item) {
+      return ApiResponse.error('候选方案不存在');
+    }
+
+    return ApiResponse.success(
+      this.formatByModule(item),
+      '获取候选方案成功',
+    );
   }
-
-  return ApiResponse.success(
-    this.formatRaw(item),
-    '获取候选方案成功',
-  );
-}
-
 }

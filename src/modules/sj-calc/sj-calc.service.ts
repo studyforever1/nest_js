@@ -11,6 +11,33 @@ import { SjRawMaterial } from '../sj-raw-material/entities/sj-raw-material.entit
 import { v4 as uuidv4 } from 'uuid';
 import { appConfig } from '../../config/app.config';
 
+interface IngredientData {
+  id: number;
+  name: string;
+  origin?: string;
+  category?: string;
+  composition?: {
+    H2O?: number;
+    价格?: number;
+  };
+}
+
+const mainParamUnitMap: Record<string, string> = {
+  成本: '成本(元/t)',
+  吨度价: '吨度价',
+  干基总消耗: '干基总消耗(t/t)',
+  干基总残存: '干基总残存(%)',
+  预测烧结烟气含流量: '预测烧结烟气含流量(mg/Nm3)',
+};
+
+
+const mainParamOrder = [
+  '成本(元/t)',
+  '吨度价',
+  '干基总消耗(t/t)',
+  '干基总残存(%)',
+  '预测烧结烟气含流量(mg/Nm3)'
+];
 
 /** 分页参数 DTO */
 export interface PaginationDto {
@@ -154,18 +181,40 @@ export class CalcService {
 
   /** 停止任务 */
   async stopTask(taskUuid: string): Promise<ApiResponse<{ taskUuid: string; status: string }>> {
+
     try {
+
       const task = await this.findTask(taskUuid);
       if (!task) return ApiResponse.error('任务不存在');
 
-      const res = await this.apiPost('/sj/stop/', { taskUuid });
-      if (res.data?.status === 'stopped' || res.status === 200) {
-        task.status = TaskStatus.STOPPED;
-        await this.taskRepo.save(task);
-        this.taskCache.delete(taskUuid);
-        return ApiResponse.success({ taskUuid, status: 'stopped' }, '任务已停止');
+      // 1️⃣ 先获取当前结果
+      const resProgress = await this.apiGet('/sj/progress/', { taskUuid });
+
+      const results = resProgress.data?.data?.results || [];
+
+      // 2️⃣ 通知 FastAPI 停止
+      await this.apiPost('/sj/stop/', { taskUuid });
+
+      // 3️⃣ 保存结果
+      if (results.length > 0) {
+        await this.saveResults(task, results);
       }
-      return ApiResponse.error(res.data?.message || '停止失败');
+
+      // 4️⃣ 更新任务状态
+      task.status = TaskStatus.STOPPED;
+      task.progress = resProgress.data.data.progress;
+      task.total = resProgress.data.data.total;
+
+      await this.taskRepo.save(task);
+
+      // 5️⃣ 清理缓存
+      this.taskCache.delete(taskUuid);
+
+      return ApiResponse.success(
+        { taskUuid, status: 'stopped' },
+        '任务已停止并保存当前结果'
+      );
+
     } catch (err: unknown) {
       return this.handleError(err, '停止任务失败');
     }
@@ -203,7 +252,7 @@ export class CalcService {
       const ingredientData: any[] = task.parameters?.ingredientData || [];
       const ingredientLimits: Record<string, any> =
         task.parameters?.ingredientLimits || {};
-
+      const chemicalLimits = task.parameters?.chemicalLimits || {};
       const idNameMap: Record<string, string> = {};
       ingredientData.forEach(item => {
         if (item?.id != null && item?.name) {
@@ -259,7 +308,8 @@ export class CalcService {
           }
         });
 
-        results = Object.values(combinedMap);
+        results = Object.values(combinedMap)
+          .sort((a, b) => a["方案序号"] - b["方案序号"]);
 
         // ================= 成本排序 =================
         results.sort((a, b) =>
@@ -319,24 +369,93 @@ export class CalcService {
 
             entries.forEach(([code, val]: [string, any], index: number) => {
 
-              if (val?.配比 != null) {
+              if (val?.value != null) {
 
-                const ratio = Number(((val.配比 ?? 0)).toFixed(2));
+                const ratio = Number(((val.value ?? 0)).toFixed(2));
+
+                const limits = ingredientLimits[code] || {};
 
                 newMix[code] = {
                   ...val,
                   name:
                     idNameMap[code] ||
-                    ingredientLimits[code]?.name ||
+                    limits.name ||
                     code,
-                  配比: ratio,
-                  sortIndex: index + 1   // 🔥 关键排序字段
+                  value: ratio,
+                  sortIndex: index + 1,
+                  low_limit: limits.low_limit ?? null,
+                  top_limit: limits.top_limit ?? null
                 };
               }
 
             });
 
             mapped["原料配比"] = newMix;
+          }
+          // ================= 化学成分处理 =================
+          if (item["化学成分"]) {
+
+            const chemicalSource = item["化学成分"];
+            const chemicalWithLimits: Record<string, any> = {};
+
+            Object.keys(chemicalSource).forEach(key => {
+
+              const limits = chemicalLimits[key] || {};
+              const val = chemicalSource[key];
+
+              // 🔥 如果已经是完整结构，就不要再包一层
+              if (typeof val === 'object' && val !== null && 'value' in val) {
+
+                chemicalWithLimits[key] = {
+                  ...val,
+                  low_limit: val.low_limit ?? limits.low_limit ?? null,
+                  top_limit: val.top_limit ?? limits.top_limit ?? null,
+                };
+
+              } else {
+
+                chemicalWithLimits[key] = {
+                  value: val,
+                  low_limit: limits.low_limit ?? null,
+                  top_limit: limits.top_limit ?? null,
+                };
+
+              }
+
+            });
+
+            mapped["化学成分"] = chemicalWithLimits;
+          }
+          // ================= 主要参数加单位 =================
+          // ================= 主要参数排序 + 单位 =================
+          if (item["主要参数"]) {
+
+            const originalMain = item["主要参数"];
+            const newMain: Record<string, any> = {};
+
+            // 先转换 key
+            const converted: Record<string, any> = {};
+
+            Object.keys(originalMain).forEach(key => {
+              const newKey = mainParamUnitMap[key] || key;
+              converted[newKey] = originalMain[key];
+            });
+
+            // 按固定顺序排序
+            mainParamOrder.forEach(key => {
+              if (converted[key] !== undefined) {
+                newMain[key] = converted[key];
+              }
+            });
+
+            // 补充其他字段
+            Object.keys(converted).forEach(key => {
+              if (!newMain.hasOwnProperty(key)) {
+                newMain[key] = converted[key];
+              }
+            });
+
+            mapped["主要参数"] = newMain;
           }
           return mapped;
         });
@@ -347,24 +466,33 @@ export class CalcService {
         this.taskCache.set(taskUuid, cache);
 
         // ================= 更新任务状态 =================
-        task.status =
-          data.status === 'finished'
-            ? TaskStatus.FINISHED
-            : TaskStatus.RUNNING;
+        if (data.status === 'finished') {
+          task.status = TaskStatus.FINISHED;
+        }
+        else if (data.status === 'paused') {
+          task.status = TaskStatus.PAUSED;
+        }
+        else {
+          task.status = TaskStatus.RUNNING;
+        }
 
-        task.progress = data.progress;
-        task.total = data.total;
+        task.progress = data.progress ?? task.progress;
+        task.total = data.total ?? task.total;
 
         await this.taskRepo.save(task);
 
-        // ================= 完成任务 → 持久化 =================
+        // ================= 完成任务时保存结果 =================
         if (task.status === TaskStatus.FINISHED && results.length) {
-          await this.saveResults(task, results);
 
-          // 延迟删除缓存，避免闪空
-          setTimeout(() => {
-            this.taskCache.delete(taskUuid);
-          }, 30000);
+          const exist = await this.resultRepo.findOne({
+            where: { task: { task_uuid: taskUuid } }
+          });
+
+          if (!exist) {
+            await this.saveResults(task, results);
+          }
+
+          this.taskCache.delete(taskUuid);
         }
 
       } else {
@@ -380,7 +508,15 @@ export class CalcService {
               where: { task: { task_uuid: taskUuid } }
             });
 
-          results = resultEntity?.output_data || [];
+          if (!resultEntity) {
+            results = [];
+          }
+          else if (typeof resultEntity.output_data === 'string') {
+            results = JSON.parse(resultEntity.output_data);
+          }
+          else {
+            results = resultEntity.output_data || [];
+          }
         }
       }
 
@@ -404,7 +540,18 @@ export class CalcService {
       });
 
     } catch (err: any) {
-      return this.handleError(err, '获取任务进度失败');
+      // 11️⃣ 异常 fallback → 返回初始化状态
+      return ApiResponse.success({
+        taskUuid,
+        status: 'initializing',
+        progress: 0,
+        total: 0,
+        results: [],
+        page: pagination?.page ?? 1,
+        pageSize: pagination?.pageSize ?? 10,
+        totalResults: 0,
+        totalPages: 0,
+      }, '任务初始化中');
     }
   }
 
@@ -470,36 +617,32 @@ export class CalcService {
   }
 
   private async saveResults(task: Task, results: any[]): Promise<void> {
+
     const resultEntity = this.resultRepo.create({
       task,
-      output_data: results,
+      output_data: JSON.stringify(results),   // ⭐关键修改
       is_shared: false,
       finished_at: new Date(),
     });
+
     await this.resultRepo.save(resultEntity);
   }
-
-  private mapStatus(status: string): TaskStatus {
-    return status === 'finished' ? TaskStatus.FINISHED : TaskStatus.RUNNING;
-  }
-
   private handleError(err: unknown, prefix = '操作失败'): ApiResponse<any> {
     const message = err instanceof Error ? err.message : String(err);
     this.logger.error(`${prefix}: ${message}`, (err as any)?.stack);
     return ApiResponse.error(message);
   }
-  async getSchemeByIndex(taskUuid: string, index: number): Promise<any | null> {
-    /** ---------- 查找任务 ---------- */
-    const task = await this.taskRepo.findOne({ where: { task_uuid: taskUuid } });
-    if (!task) return null;
+  async getSchemeByIndex(
+    taskUuid: string,
+    index: number
+  ): Promise<any | null> {
 
-    /** ---------- 查询结果 ---------- */
     const resultEntity = await this.resultRepo.findOne({
       where: { task: { task_uuid: taskUuid } },
     });
+
     if (!resultEntity) return null;
 
-    /** ---------- 解析 output_data ---------- */
     let allResults: any[] = [];
 
     if (Array.isArray(resultEntity.output_data)) {
@@ -513,154 +656,170 @@ export class CalcService {
       }
     }
 
-    /** ---------- 查找对应方案 ---------- */
-    const scheme = allResults.find(item => item['方案序号'] === index);
+    const scheme = allResults.find(
+      item => Number(item['方案序号']) === Number(index)
+    );
+
     if (!scheme) return null;
 
-    /** ---------- 上下限信息 ---------- */
-    const ingredientLimits =
-      task.parameters?.ingredientLimits || {};
-
-    const chemicalLimits =
-      task.parameters?.chemicalLimits || {};
-
-    /** ======================================================
-     * 原料配比处理
-     * ====================================================== */
-    const ingredientWithLimits: Record<string, any> = {};
-    const rawIds = Object.keys(scheme['原料配比'] || {}).map(Number);
-
-    // 查询原料名称
-    const raws = rawIds.length
-      ? await this.sjRawMaterialRepo.find({ where: { id: In(rawIds) } })
-      : [];
-
-    const idNameMap: Record<string, string> = {};
-    raws.forEach(raw => {
-      idNameMap[String(raw.id)] = raw.name;
-    });
-
-    Object.entries(scheme['原料配比'] || {}).forEach(([code, val]) => {
-      const limits = ingredientLimits[code] || {};
-
-      ingredientWithLimits[code] = {
-        ...(val as Record<string, any>),
-        name: idNameMap[code] || limits.name || code,
-        low_limit: limits.low_limit ?? null,
-        top_limit: limits.top_limit ?? null,
-      };
-    });
-
-    /** ======================================================
-     * 化学成分处理（按固定顺序输出）
-     * ====================================================== */
+    // ================= 化学成分排序 =================
 
     const chemicalOrder = [
-      'TFe',
-      'SiO2',
-      'CaO',
-      'MgO',
-      'Al2O3',
-      'P',
-      'S',
-      'TiO2',
-      'K2O',
-      'Na2O',
-      'Zn',
-      'As',
-      'Pb',
-      'V2O5',
-      'R2',
-      '镁铝比',
+      'TFe', 'SiO2', 'CaO', 'MgO', 'Al2O3',
+      'P', 'S', 'TiO2', 'K2O', 'Na2O',
+      'Zn', 'As', 'Pb', 'V2O5', 'R2', '镁铝比'
     ];
 
-    const chemicalSource = scheme['化学成分'] || {};
-    const chemicalWithLimits: Record<string, any> = {};
+    const sourceChemical = scheme['化学成分'] || {};
+    const sortedChemical: Record<string, any> = {};
 
-    /** 1️⃣ 按指定顺序插入 */
     chemicalOrder.forEach(key => {
-      if (Object.prototype.hasOwnProperty.call(chemicalSource, key)) {
-        const limits = chemicalLimits[key] || {};
-        chemicalWithLimits[key] = {
-          value: chemicalSource[key],
-          low_limit: limits.low_limit ?? null,
-          top_limit: limits.top_limit ?? null,
-        };
+      if (sourceChemical.hasOwnProperty(key)) {
+        sortedChemical[key] = sourceChemical[key];
       }
     });
 
-    /** 2️⃣ 补充未在顺序数组中的字段 */
-    Object.keys(chemicalSource).forEach(key => {
-      if (!chemicalWithLimits.hasOwnProperty(key)) {
-        const limits = chemicalLimits[key] || {};
-        chemicalWithLimits[key] = {
-          value: chemicalSource[key],
-          low_limit: limits.low_limit ?? null,
-          top_limit: limits.top_limit ?? null,
-        };
+    Object.keys(sourceChemical).forEach(key => {
+      if (!sortedChemical.hasOwnProperty(key)) {
+        sortedChemical[key] = sourceChemical[key];
       }
     });
 
-    /** ---------- 返回最终结果 ---------- */
+    // ================= 主要参数排序 =================
+
+    const mainParamOrder = [
+      '成本(元/t)',
+      '吨度价',
+      '干基总消耗(t/t)',
+      '干基总残存(%)',
+      '预测烧结烟气含流量(mg/Nm3)'
+    ];
+
+    const sourceMain = scheme['主要参数'] || {};
+    const sortedMain: Record<string, any> = {};
+
+    mainParamOrder.forEach(key => {
+      if (sourceMain.hasOwnProperty(key)) {
+        sortedMain[key] = sourceMain[key];
+      }
+    });
+
+    Object.keys(sourceMain).forEach(key => {
+      if (!sortedMain.hasOwnProperty(key)) {
+        sortedMain[key] = sourceMain[key];
+      }
+    });
+
     return {
       ...scheme,
-      '原料配比': ingredientWithLimits,
-      '化学成分': chemicalWithLimits,
+      '化学成分': sortedChemical,
+      '主要参数': sortedMain
     };
   }
 
   /** 导出单个方案为 Excel，并整理所需参数 */
+  /** 导出单个方案为 Excel，并整理所需参数 */
   async exportSchemeExcel(taskUuid: string, index: number) {
-    // 1️⃣ 获取方案信息
+
+    // 1️⃣ 获取方案
     const scheme = await this.getSchemeByIndex(taskUuid, index);
-    if (!scheme) throw new Error('方案不存在');
 
-    const ingredientWithLimits = scheme['原料配比'] || {};
-    const mainParams = scheme['主要参数'] || {};
-    const chemical = scheme['化学成分'] || {};
+    if (!scheme) {
+      throw new Error('方案不存在');
+    }
 
-    // 2️⃣ 获取任务参数（用于 其他费用）
+    const ingredientWithLimits = scheme["原料配比"] || {};
+    const mainParams = scheme["主要参数"] || {};
+    const chemical = scheme["化学成分"] || {};
+
+    // 2️⃣ 获取任务
     const task = await this.taskRepo.findOne({
       where: { task_uuid: taskUuid },
     });
 
-    // 3️⃣ 获取原料 ID 列表
-    const ingredientIds = Object.keys(ingredientWithLimits).map(Number);
+    if (!task) {
+      throw new Error("任务不存在");
+    }
 
-    // 4️⃣ 查询原料基础信息
-    const rawMaterials = await this.sjRawMaterialRepo.find({
-      where: { id: In(ingredientIds) },
-    });
+    const parameters = task.parameters || {};
 
-    // 5️⃣ 组装 ingredientParams（FastAPI 需要的结构）
+    // 3️⃣ 获取原料快照数据
+    const ingredientData: IngredientData[] =
+      parameters.ingredientData || [];
+
+    // 4️⃣ 构建原料 Map（提高查找效率）
+    const ingredientMap = new Map<number, IngredientData>(
+      ingredientData.map(item => [item.id, item])
+    );
+
+    // 5️⃣ 组装 ingredientParams（给 FastAPI）
     const ingredientParams: Record<string, any> = {};
 
-    for (const id of ingredientIds) {
+    for (const idStr of Object.keys(ingredientWithLimits)) {
+
+      const id = Number(idStr);
       const val = ingredientWithLimits[id];
-      const raw = rawMaterials.find(r => r.id === id);
+
+      const raw = ingredientMap.get(id);
 
       if (!raw) continue;
 
       ingredientParams[val.name] = {
-        原料产地: raw.origin || '',
-        分类编号: raw.category || '',
+        原料产地: raw.origin || "",
+        分类编号: raw.category || "",
         H2O: raw.composition?.H2O ?? 0,
         价格: raw.composition?.价格 ?? 0,
-        lose_index: val.lose_index ?? 1,
-        配比: Number(val.配比) || 0,
+        lose_index: val?.lose_index ?? 1,
+        配比: Number(val?.value) || 0,
       };
     }
 
-    // 6️⃣ 组装 otherSettings（FastAPI 用）
+    // 6️⃣ 组装 otherSettings
     const finalOtherSettings = {
-      ...scheme.otherSettings,
-      ...mainParams,
+
+      ...parameters.otherSettings,
+
+      综合品位:
+        chemical?.TFe?.value ??
+        chemical?.TFe ??
+        0,
+
+      干基总残存:
+        mainParams["干基总残存(%)"] ??
+        mainParams["干基总残存"] ??
+        0,
+
+      成本:
+        mainParams["成本(元)"] ??
+        mainParams["成本"] ??
+        0,
+
+      吨度价:
+        mainParams["吨度价"] ??
+        0,
+      品位:
+        chemical?.TFe?.value ??
+        chemical?.TFe ??
+        0,
+
+      其他费用:
+        parameters?.otherSettings?.["其他费用"] ?? 0,
+
       导出名称: `${taskUuid}-${index}`,
-      其他费用: task?.parameters?.['otherSettings']["其他费用"] ?? 0,
-      干基总残存: mainParams['干基总残存'] ?? 0,
-      品位: chemical?.TFe?.value ?? 0,
     };
-    console.log("导出参数", finalOtherSettings);
+
+    this.logger.debug(
+      "Excel导出参数: " +
+      JSON.stringify(
+        {
+          ingredientParams,
+          otherSettings: finalOtherSettings,
+        },
+        null,
+        2
+      )
+    );
+
     return {
       ingredientParams,
       otherSettings: finalOtherSettings,
@@ -675,5 +834,124 @@ export class CalcService {
 
   /** 调用 FastAPI 生成 Excel buffer */
 
+  /** 暂停任务 */
+  /** 暂停任务 */
+  /** 暂停任务 */
+async pauseTask(
+  taskUuid: string
+): Promise<ApiResponse<{ taskUuid: string; status: string }>> {
+  try {
+    const task = await this.findTask(taskUuid);
+    if (!task) return ApiResponse.error('任务不存在');
 
+    if (task.status !== TaskStatus.RUNNING) {
+      return ApiResponse.error('任务当前状态不可暂停');
+    }
+
+    // 1️⃣ 发出暂停信号
+    const res = await this.apiPost('/sj/pause/', { taskUuid });
+    if (res.status !== 200) {
+      return ApiResponse.error(res.data?.message || '暂停失败');
+    }
+
+    // 2️⃣ 轮询等待后端真正暂停
+    const interval = 500; // 每 0.5 秒
+    const maxWait = 10000; // 最多等待 10 秒
+    let elapsed = 0;
+    let paused = false;
+    let progress = task.progress;
+    let total = task.total;
+
+    while (elapsed < maxWait) {
+      const check = await this.apiGet('/sj/progress/', { taskUuid });
+      const status = check.data?.data?.status;
+
+      if (status === 'paused') {
+        paused = true;
+        progress = check.data?.data?.progress ?? progress;
+        total = check.data?.data?.total ?? total;
+        break;
+      }
+
+      await new Promise(r => setTimeout(r, interval));
+      elapsed += interval;
+    }
+
+    if (!paused) {
+      return ApiResponse.error('等待后端暂停超时');
+    }
+
+    // 3️⃣ 从缓存取整理好的结果
+    const cache = this.taskCache.get(taskUuid);
+    const results = cache?.results || [];
+
+    if (results.length > 0) {
+      let resultEntity = await this.resultRepo.findOne({
+        where: { task: { task_uuid: taskUuid } },
+      });
+
+      if (resultEntity) {
+        resultEntity.output_data = results;
+        resultEntity.finished_at = new Date();
+        await this.resultRepo.save(resultEntity);
+      } else {
+        await this.resultRepo.save({
+          task,
+          output_data: results,
+          is_shared: false,
+          finished_at: new Date(),
+        });
+      }
+    }
+
+    // 4️⃣ 更新任务状态
+    task.status = TaskStatus.PAUSED;
+    task.progress = progress;
+    task.total = total;
+    await this.taskRepo.save(task);
+
+    // 5️⃣ 可选：清理缓存
+    this.taskCache.delete(taskUuid);
+
+    return ApiResponse.success(
+      { taskUuid, status: 'paused' },
+      '任务已暂停并保存整理好的结果'
+    );
+  } catch (err) {
+    return this.handleError(err, '暂停任务失败');
+  }
+}
+
+  /** 继续任务 */
+  async resumeTask(taskUuid: string): Promise<ApiResponse<{ taskUuid: string; status: string }>> {
+    try {
+      const task = await this.findTask(taskUuid);
+      if (!task) return ApiResponse.error('任务不存在');
+
+      // 1️⃣ 调用 FastAPI 继续
+      const res = await this.apiPost('/sj/resume/', { taskUuid });
+      const runningStatus = res.data?.data?.status;
+
+      if (runningStatus === 'running') {
+        task.status = TaskStatus.RUNNING;
+
+        // 2️⃣ 拉取最新进度，保持进度同步
+        const progressRes = await this.apiGet('/sj/progress/', { taskUuid });
+        const progressData = progressRes.data?.data;
+        task.progress = progressData?.progress ?? task.progress;
+        task.total = progressData?.total ?? task.total;
+
+        await this.taskRepo.save(task);
+
+        return ApiResponse.success(
+          { taskUuid, status: 'running' },
+          '任务已继续'
+        );
+      }
+
+      return ApiResponse.error(res.data?.message || '继续失败');
+    } catch (err: unknown) {
+      return this.handleError(err, '继续任务失败');
+    }
+  }
 }

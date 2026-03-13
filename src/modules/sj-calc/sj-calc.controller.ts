@@ -58,6 +58,37 @@ export class CalcController {
     return this.calcService.stopTask(dto.task_id);
   }
 
+
+  /**
+ * 暂停计算任务
+ */
+@Post('pause')
+@Permissions('sj-calc')
+@ApiOperation({
+  summary: '暂停计算任务',
+  description: '根据 task_id 暂停正在执行的烧结计算任务。',
+})
+@ApiOkResponseData(StopTaskResponseDto)
+@ApiErrorResponse()
+pauseTask(@Body() dto: StopTaskDto) {
+  return this.calcService.pauseTask(dto.task_id);
+}
+
+/**
+ * 继续计算任务
+ */
+@Post('resume')
+@Permissions('sj-calc')
+@ApiOperation({
+  summary: '继续计算任务',
+  description: '根据 task_id 继续之前暂停的烧结计算任务。',
+})
+@ApiOkResponseData(StopTaskResponseDto)
+@ApiErrorResponse()
+resumeTask(@Body() dto: StopTaskDto) {
+  return this.calcService.resumeTask(dto.task_id);
+}
+
   /**
    * 查询任务进度
    */

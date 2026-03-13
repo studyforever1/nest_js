@@ -166,5 +166,125 @@ async previewExcel(
 }
 
 
+@Post('export/YTH/excel')
+@Permissions('gl:calc')
+@ApiOperation({
+  summary: '导出高炉方案（Excel）',
+  description: '根据 taskUuid 和方案序号导出 Excel 文件',
+})
+@ApiErrorResponse()
+async exportYTHExcel(
+  @Body() dto: GLExportSchemeDto,
+  @Res() res: Response,
+): Promise<void> {
+  try {
+    // 1️⃣ 整理导出参数
+    const { ingredientParams,fuelParams,otherSettings } =
+      await this.glCalcService.exportYTHSchemeExcel(dto.taskUuid, dto.index);
+
+    // 2️⃣ 调用 FastAPI 生成 Excel
+    const buffer = await this.glCalcService.callFastApi({
+      ingredientParams,
+      fuelParams,
+      otherSettings,
+    });
+
+    // 3️⃣ 文件名
+    const exportName =
+      otherSettings?.['导出名称'] || `${dto.taskUuid}-${dto.index}`;
+    const filename = encodeURIComponent(`${exportName}.xlsx`);
+
+    // 4️⃣ 返回文件
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${filename}"`,
+    );
+    res.setHeader('Content-Length', buffer.length);
+    res.end(buffer);
+  } catch (err: any) {
+    console.error(err);
+    res.status(400).json({
+      code: 400,
+      message: err.message || '导出失败',
+    });
+  }
+}
+
+@Post('preview/YTH/excel')
+@ApiOperation({
+  summary: '预览高炉方案（Excel）',
+  description: '根据 taskUuid 和方案序号返回 Excel 内容 JSON，用于前端预览。',
+})
+@ApiErrorResponse()
+async previewYTHExcel(
+  @Body() dto: GLExportSchemeDto,
+): Promise<{ sheetName: string; data: any[][] }> {
+  try {
+    // 1️⃣ 获取参数
+    const { ingredientParams, fuelParams, otherSettings } =
+      await this.glCalcService.exportYTHSchemeExcel(dto.taskUuid, dto.index);
+
+    // 2️⃣ 调用 FastAPI 生成 Excel buffer
+    const buffer = await this.glCalcService.callFastApi({
+      ingredientParams,
+      fuelParams,
+      otherSettings,
+    });
+
+    // 3️⃣ 使用 xlsx 库解析 Excel
+    const workbook = XLSX.read(buffer, { type: 'buffer' });
+
+    // 4️⃣ 取第一个 sheet
+    const firstSheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[firstSheetName];
+
+    // 5️⃣ 转成 JSON 数组
+    // 👇 关键修改：添加 defval: ""，将空单元格转为空字符串而不是 null
+    const jsonData: any[][] = XLSX.utils.sheet_to_json(worksheet, { 
+      header: 1, 
+      defval: "" 
+    });
+
+    // 6️⃣ 返回给前端
+    return {
+      sheetName: firstSheetName,
+      data: jsonData,
+    };
+  } catch (err: any) {
+    console.error(err);
+    throw new BadRequestException(err.message || '预览失败');
+  }
+}
+
+@Post('pause')
+@Permissions('sj-calc')
+@ApiOperation({
+  summary: '暂停计算任务',
+  description: '根据 task_id 暂停正在执行的烧结计算任务。',
+})
+@ApiOkResponseData(GLStopTaskResponseDto)
+@ApiErrorResponse()
+pauseTask(@Body() dto: GLStopTaskDto) {
+  return this.glCalcService.pauseTask(dto.task_id);
+}
+
+/**
+ * 继续计算任务
+ */
+@Post('resume')
+@Permissions('sj-calc')
+@ApiOperation({
+  summary: '继续计算任务',
+  description: '根据 task_id 继续之前暂停的烧结计算任务。',
+})
+@ApiOkResponseData(GLStopTaskResponseDto)
+@ApiErrorResponse()
+resumeTask(@Body() dto: GLStopTaskDto) {
+  return this.glCalcService.resumeTask(dto.task_id);
+}
 
 }

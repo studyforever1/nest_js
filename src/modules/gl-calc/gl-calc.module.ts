@@ -8,10 +8,11 @@ import { User } from '../user/entities/user.entity';
 import { GlMaterialInfo } from '../gl-material-info/entities/gl-material-info.entity';
 import { GlFuelInfo } from '../gl-fuel-info/entities/gl-fuel-info.entity';
 import { GlConfigModule } from '../gl-config/gl-config.module'; // ✅ 导入模块
+import { SjCandidate } from '../sj-candidate/entities/sj-candidate.entity'; // ✅ 导入实体
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Task, Result, User, GlMaterialInfo, GlFuelInfo]),
+    TypeOrmModule.forFeature([Task, Result, User, GlMaterialInfo, GlFuelInfo, SjCandidate]),
     GlConfigModule, // ✅ 导入模块，而不是服务
   ],
   controllers: [GlCalcController],

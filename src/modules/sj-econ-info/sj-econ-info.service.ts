@@ -81,7 +81,7 @@ export class SjEconInfoService {
 
   /** 查询（分页 + 名称模糊 + 排序） */
 async query(options: {
-  user: User;                 // ✅ 新增 user
+  user: User;
   page?: number;
   pageSize?: number;
   name?: string;
@@ -117,12 +117,13 @@ async query(options: {
     qb.orderBy('e.id', 'ASC');
   }
 
-  // ================= 3️⃣ 分页 =================
-  qb.skip((page - 1) * pageSize).take(pageSize);
-  const [records, total] = await qb.getManyAndCount();
+  // ❗不在 SQL 里分页
+  const records = await qb.getMany();
+  const total = records.length;
 
-  // ================= 4️⃣ 获取用户已选 ingredientParams =================
+  // ================= 3️⃣ 获取用户已选 =================
   let selectedSet = new Set<number>();
+
   try {
     const group = await this.econRepo.manager.getRepository(ConfigGroup)
       .createQueryBuilder('cg')
@@ -146,15 +147,26 @@ async query(options: {
     console.warn('获取用户烧结配置失败', err);
   }
 
-  // ================= 5️⃣ 映射 composition + selected =================
-  const mapped = records.map(item => ({
+  // ================= 4️⃣ 映射 =================
+  let mapped = records.map(item => ({
     ...item,
     composition: this.normalizeComposition(item.composition),
-    selected: selectedSet.has(Number(item.id)), // ✅ 标记是否已选
+    selected: selectedSet.has(Number(item.id)),
   }));
 
+  // ================= 5️⃣ 已选优先 =================
+  mapped.sort((a, b) => {
+    if (a.selected === b.selected) return 0;
+    return a.selected ? -1 : 1;
+  });
+
+  // ================= 6️⃣ 内存分页 =================
+  const start = (page - 1) * pageSize;
+  const end = start + pageSize;
+  const paged = mapped.slice(start, end);
+
   return {
-    data: mapped,
+    data: paged,
     total,
     page,
     pageSize,

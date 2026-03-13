@@ -50,6 +50,7 @@ import { ImModule } from './modules/im/im.module';
 import { PortIronOreInfoModule } from './modules/port-iron-ore-info/port-iron-ore-info.module';
 import { PortPelletLumpInfoModule } from './modules/port-pellet-lump-info/port-pellet-lump-info.module';
 import { DepartmentModule } from './modules/department/department.module';
+import { InitModule } from './modules/init/init.module';
 
 
 @Module({
@@ -58,6 +59,7 @@ import { DepartmentModule } from './modules/department/department.module';
       isGlobal: true, // 全局可用 process.env
     }),
     TypeOrmModule.forRoot(databaseConfig),
+    InitModule,
     MenuModule,
     CalcModule,
     AuthModule,

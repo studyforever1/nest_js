@@ -136,13 +136,11 @@ async query(
     qb.orderBy('raw.id', 'ASC');
   }
 
-  // ================= 4️⃣ 分页 =================
-  const [records, total] = await qb
-    .skip((page - 1) * pageSize)
-    .take(pageSize)
-    .getManyAndCount();
+  // ⚠️ 不在 SQL 分页
+  const records = await qb.getMany();
+  const total = records.length;
 
-  // ================= 5️⃣ 查询用户配置（fuelParams） =================
+  // ================= 4️⃣ 查询用户配置 =================
   let selectedSet = new Set<number>();
 
   try {
@@ -177,25 +175,30 @@ async query(
     console.warn('获取模块配置失败，不影响原料查询', err);
   }
 
-  // ================= 6️⃣ 数据映射 + selected 字段 =================
-  const mapped = records
-    .map(item => {
-      const formatted = this.formatRaw(item);
+  // ================= 5️⃣ 映射 =================
+  const mapped = records.map(item => {
+    const formatted = this.formatRaw(item);
 
-      return {
-        ...formatted,
-        selected: selectedSet.has(Number(item.id)),
-      };
-    })
-    // 默认把已选排前面
-    .sort((a, b) => {
-      if (a.selected && !b.selected) return -1;
-      if (!a.selected && b.selected) return 1;
-      return 0;
-    });
+    return {
+      ...formatted,
+      selected: selectedSet.has(Number(item.id)),
+    };
+  });
+
+  // ================= 6️⃣ 已选排前 =================
+  mapped.sort((a, b) => {
+    if (a.selected && !b.selected) return -1;
+    if (!a.selected && b.selected) return 1;
+    return 0;
+  });
+
+  // ================= 7️⃣ 内存分页 =================
+  const start = (page - 1) * pageSize;
+  const end = start + pageSize;
+  const paged = mapped.slice(start, end);
 
   return {
-    data: mapped,
+    data: paged,
     total,
     page,
     pageSize,
