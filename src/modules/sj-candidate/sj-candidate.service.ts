@@ -80,18 +80,24 @@ private formatSinterScheme(item: SjCandidate) {
   const scheme = item.result;
   if (!scheme) return null;
 
-  // 主要参数固定顺序：成本 → 吨度价 → 干基总消耗 → 干基总残存 → 预测烧结烟气含流量
-  const mainParamOrder = [
-    '成本(元)',
-    '吨度价',
-    '干基总消耗(t/t)',
-    '干基总残存(%)',
-    '预测烧结烟气含流量(mg/Nm3)',
-  ];
+  // 烧结配料主要参数顺序 (sj.txt) - 动态构建
+  const buildDynamicSjMainOrder = (mainParams: Record<string, any>) => {
+    const order: string[] = [];
+    
+    // 按照 sj.txt 的顺序
+    if ('成本(元)' in mainParams) order.push('成本(元)');
+    if ('吨度价' in mainParams) order.push('吨度价');
+    if ('干基总消耗(t/t)' in mainParams) order.push('干基总消耗(t/t)');
+    if ('干基总残存(%)' in mainParams) order.push('干基总残存(%)');
+    if ('预测烧结烟气含流量(mg/Nm3)' in mainParams) order.push('预测烧结烟气含流量(mg/Nm3)');
+    
+    return order;
+  };
 
   const sortMainParams = (source: Record<string, any>) => {
+    const order = buildDynamicSjMainOrder(source);
     const sorted: Record<string, any> = {};
-    mainParamOrder.forEach(key => {
+    order.forEach(key => {
       if (source?.[key] != null) sorted[key] = source[key];
     });
     Object.keys(source || {}).forEach(key => {
@@ -100,10 +106,16 @@ private formatSinterScheme(item: SjCandidate) {
     return sorted;
   };
 
+  // 保留原结构（可能是 {value, low_limit, top_limit} 或直接数字）
+  const reorderedChem = this.reorderChemical(scheme['化学成分']);
+
   return {
-    ...scheme,
-    化学成分: this.reorderChemical(scheme['化学成分']),
+    方案序号: scheme['方案序号'],
+    成本排名: scheme['成本排名'],
+    吨度价排名: scheme['吨度价排名'],
     主要参数: sortMainParams(scheme['主要参数'] || {}),
+    化学成分: reorderedChem,
+    原料配比: scheme['原料配比'] || {},
   };
 }
 
