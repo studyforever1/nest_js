@@ -9,6 +9,7 @@ import { User } from '../user/entities/user.entity';
 import { ApiResponse } from '../../common/response/response.dto';
 import { ListCandidateDto } from './dto/list-candidate.dto';
 import dayjs from 'dayjs';
+import { sortSJResult } from '../../common/formatters/sj.formatter';
 
 @Injectable()
 export class SjCandidateService {
@@ -20,26 +21,6 @@ export class SjCandidateService {
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
   ) {}
-
-  /** ================= 化学成分顺序常量 ================= */
-  private readonly chemicalOrder = [
-    'TFe',
-    'SiO2',
-    'CaO',
-    'MgO',
-    'Al2O3',
-    'P',
-    'S',
-    'TiO2',
-    'K2O',
-    'Na2O',
-    'Zn',
-    'As',
-    'Pb',
-    'V2O5',
-    'R2',
-    '镁铝比',
-  ];
 
   /** ================= 通用基础结构 ================= */
   private buildBaseInfo(item: SjCandidate) {
@@ -53,71 +34,14 @@ export class SjCandidateService {
     };
   }
 
-  /** ================= 化学成分排序 ================= */
-/** ================= 化学成分排序（仅排序，不改结构） ================= */
-private reorderChemical(chemicalSource: any) {
-  const result: Record<string, any> = {};
+  /** ================= 烧结配料格式器（借用公共模块） ================= */
+  private formatSinterScheme(item: SjCandidate) {
+    const scheme = item.result;
+    if (!scheme) return null;
 
-  // 1️⃣ 按固定顺序排
-  this.chemicalOrder.forEach(key => {
-    if (chemicalSource?.hasOwnProperty(key)) {
-      result[key] = chemicalSource[key]; // ✅ 直接保留原结构
-    }
-  });
-
-  // 2️⃣ 追加未定义字段
-  Object.keys(chemicalSource || {}).forEach(key => {
-    if (!result.hasOwnProperty(key)) {
-      result[key] = chemicalSource[key];
-    }
-  });
-
-  return result;
-}
-
-  /** ================= 烧结配料格式器 ================= */
-private formatSinterScheme(item: SjCandidate) {
-  const scheme = item.result;
-  if (!scheme) return null;
-
-  // 烧结配料主要参数顺序 (sj.txt) - 动态构建
-  const buildDynamicSjMainOrder = (mainParams: Record<string, any>) => {
-    const order: string[] = [];
-    
-    // 按照 sj.txt 的顺序
-    if ('成本(元)' in mainParams) order.push('成本(元)');
-    if ('吨度价' in mainParams) order.push('吨度价');
-    if ('干基总消耗(t/t)' in mainParams) order.push('干基总消耗(t/t)');
-    if ('干基总残存(%)' in mainParams) order.push('干基总残存(%)');
-    if ('预测烧结烟气含流量(mg/Nm3)' in mainParams) order.push('预测烧结烟气含流量(mg/Nm3)');
-    
-    return order;
-  };
-
-  const sortMainParams = (source: Record<string, any>) => {
-    const order = buildDynamicSjMainOrder(source);
-    const sorted: Record<string, any> = {};
-    order.forEach(key => {
-      if (source?.[key] != null) sorted[key] = source[key];
-    });
-    Object.keys(source || {}).forEach(key => {
-      if (!sorted[key]) sorted[key] = source[key];
-    });
-    return sorted;
-  };
-
-  // 保留原结构（可能是 {value, low_limit, top_limit} 或直接数字）
-  const reorderedChem = this.reorderChemical(scheme['化学成分']);
-
-  return {
-    方案序号: scheme['方案序号'],
-    成本排名: scheme['成本排名'],
-    吨度价排名: scheme['吨度价排名'],
-    主要参数: sortMainParams(scheme['主要参数'] || {}),
-    化学成分: reorderedChem,
-    原料配比: scheme['原料配比'] || {},
-  };
-}
+    // 只排序，不修改原字段
+    return sortSJResult(scheme);
+  }
 
   /** ================= 统一格式入口 ================= */
   private formatByModule(item: SjCandidate) {
@@ -129,7 +53,6 @@ private formatSinterScheme(item: SjCandidate) {
           ...base,
           result: this.formatSinterScheme(item),
         };
-
       default:
         return {
           ...base,
