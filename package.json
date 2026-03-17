@@ -65,7 +65,8 @@
     "socket.io": "^4.8.1",
     "swagger-ui-express": "^5.0.1",
     "tls-sig-api-v2": "^1.0.2",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "xlsx-js-style": "^1.2.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",

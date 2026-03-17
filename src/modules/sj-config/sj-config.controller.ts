@@ -8,7 +8,8 @@ import {
   Put,
   Delete,
   Param,
-  UseInterceptors
+  Res,
+  BadRequestException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -44,6 +45,10 @@ import { BuiltinPowderDeleteDto } from './dto/builtin-powder-delete.dto';
 import { BuiltinPowderListDto } from './dto/builtin-powder-list.dto';
 import { SJRestoreIngredientsDto } from './dto/sj-restore-ingredients.dto';
 import { UpdateSelectedIngredientDataDto } from './dto/update-selected-ingredient-data.dto';
+import type { Response } from 'express';
+import * as XLSX from 'xlsx';
+
+
 
 @ApiTags('烧结参数配置接口')
 @ApiBearerAuth('JWT')
@@ -404,6 +409,56 @@ async deleteExtMaterial(
       query.pageSize,
       query.keyword,
     );
+  }
+
+// =====================================================
+  // 🔥 烧结工序成本 Excel 导出/预览
+  // =====================================================
+
+  @Post('sj-process-cost/export/excel')
+  @ApiOperation({
+    summary: '导出烧结工序成本（Excel）',
+    description: '导出烧结工序成本配置为 Excel 文件',
+  })
+  async exportSJProcessCostExcel(
+    @CurrentUser() user: User,
+    @Res() res: Response,
+  ): Promise<void> {
+    try {
+      const buffer = await this.sjconfigService.exportSJProcessCostExcel(user);
+      
+      const filename = encodeURIComponent('烧结工序成本.xlsx');
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.setHeader('Content-Length', buffer.length);
+      res.end(buffer);
+    } catch (err: any) {
+      console.error(err);
+      res.status(400).json({ code: 400, message: err.message || '导出失败' });
+    }
+  }
+
+  @Post('sj-process-cost/preview/excel')
+  @ApiOperation({
+    summary: '预览烧结工序成本（Excel）',
+    description: '预览烧结工序成本配置，返回 JSON 格式',
+  })
+  async previewSJProcessCostExcel(
+    @CurrentUser() user: User,
+  ): Promise<{ sheetName: string; data: any[][] }> {
+    try {
+      const buffer = await this.sjconfigService.exportSJProcessCostExcel(user);
+      
+      const workbook = XLSX.read(buffer, { type: 'buffer' });
+      const firstSheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[firstSheetName];
+      const jsonData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+
+      return { sheetName: firstSheetName, data: jsonData };
+    } catch (err: any) {
+      console.error(err);
+      throw new BadRequestException(err.message || '预览失败');
+    }
   }
 }
 

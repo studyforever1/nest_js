@@ -1,4 +1,34 @@
 // gl.formatter.ts
+function roundValue(val: any) {
+  if (typeof val === 'number') return Math.round(val * 100) / 100;
+  return val;
+}
+
+function sortByOrderWithRound(source: Record<string, any>, order: string[]) {
+  const sorted: Record<string, any> = {};
+  order.forEach(key => {
+    if (source?.[key] !== undefined) {
+      const item = source[key];
+      if (typeof item === 'object' && item.value !== undefined) {
+        sorted[key] = { ...item, value: roundValue(item.value) };
+      } else {
+        sorted[key] = roundValue(item);
+      }
+    }
+  });
+  Object.keys(source || {}).forEach(key => {
+    if (!(key in sorted)) {
+      const item = source[key];
+      if (typeof item === 'object' && item.value !== undefined) {
+        sorted[key] = { ...item, value: roundValue(item.value) };
+      } else {
+        sorted[key] = roundValue(item);
+      }
+    }
+  });
+  return sorted;
+}
+
 
 // ================= 常量 =================
 const mainUnitMap: Record<string, string> = {
@@ -103,9 +133,9 @@ export function sortLLYTHResult(scheme: any) {
   return {
     ...scheme,
     主要参数: sortMainParameters(scheme["主要参数"] || {}, mainParamOrder),
-    负荷: sortByOrder(scheme["负荷"] || {}, fixedLoadOrder),
-    铁水含量: sortByOrder(scheme["铁水含量"] || {}, fixedIronOrder),
-    炉渣成分: sortByOrder(scheme["炉渣成分"] || {}, fixedSlagOrder),
+    负荷: sortByOrderWithRound(scheme["负荷"] || {}, fixedLoadOrder),
+    铁水含量: sortByOrderWithRound(scheme["铁水含量"] || {}, fixedIronOrder),
+    炉渣成分: sortByOrderWithRound(scheme["炉渣成分"] || {}, fixedSlagOrder),
   };
 }
 
