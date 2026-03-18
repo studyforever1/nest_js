@@ -12,7 +12,7 @@ import _ from 'lodash';
 import { In } from 'typeorm';
 import { BadRequestException } from '@nestjs/common/exceptions';
 import { UpdateSelectedIngredientDataDto } from './dto/update-selected-ingredient-data.dto';
-import * as XLSX from 'xlsx';
+import * as XLSX from 'xlsx-js-style';
 
 
 @Injectable()
@@ -1237,72 +1237,113 @@ export class SjconfigService {
    * @param user 当前用户
    * @returns Excel Buffer
    */
-  async exportSJProcessCostExcel(user: User): Promise<Buffer> {
-    const group = await this.getOrCreateUserGroup(user, '烧结配料计算');
-    const costMap: Record<string, any> = group.config_data?.SJProcessCost || {};
-    const otherSettings = group.config_data?.otherSettings || {};
+async exportSJProcessCostExcel(user: User): Promise<Buffer> {
+  const group = await this.getOrCreateUserGroup(user, '烧结配料计算');
+  const costMap: Record<string, any> = group.config_data?.SJProcessCost || {};
 
-    // 转为数组格式
-    const list = Object.entries(costMap).map(([name, val]) => ({
-      项目: name,
-      单位: val.单位 || '',
-      价格: val.价格 || '',
-      单位用量: val.单位用量 || '',
-      单位成本: val.单位成本 || '',
-    }));
+  const list = Object.entries(costMap).map(([name, val]) => ({
+    项目: name,
+    单位: val.单位 || '',
+    价格: val.价格 || '',
+    单位用量: val.单位用量 || '',
+    单位成本: val.单位成本 || '',
+  }));
 
-    // 计算总成本
-    const totalCost = this.calcTotalCost(costMap);
+  const totalCost = this.calcTotalCost(costMap);
 
-    // 构建 Excel 数据
-    const excelData: any[][] = [
-      ['烧结矿工序成本'],
-      ['项目', '单位', '价格', '单位用量', '单位成本'],
-    ];
+  const excelData: any[][] = [
+    ['烧结矿工序成本'],
+    ['项目', '单位', '价格', '单位用量', '单位成本'],
+  ];
 
-    // 添加数据行
-    list.forEach(item => {
-      excelData.push([
-        item.项目,
-        item.单位,
-        item.价格,
-        item.单位用量,
-        item.单位成本,
-      ]);
-    });
+  list.forEach(item => {
+    excelData.push([
+      item.项目,
+      item.单位,
+      item.价格,
+      item.单位用量,
+      item.单位成本,
+    ]);
+  });
 
-    // 添加总计行
-    excelData.push(['工序成本合计', '元', '', '', totalCost]);
+  excelData.push(['工序成本合计', '元', '', '', totalCost]);
 
-    // 创建工作簿
-    const worksheet = XLSX.utils.aoa_to_sheet(excelData);
-    // ✅ 合并 A1:E1
-    worksheet['!merges'] = [
-      {
-        s: { r: 0, c: 0 },
-        e: { r: 0, c: 4 },
-      },
-    ];
+  const worksheet = XLSX.utils.aoa_to_sheet(excelData);
 
-    // ✅ 关键：给 A1 设置居中
-    if (worksheet['A1']) {
-      worksheet['A1'].s = {
-        alignment: {
-          horizontal: 'center', // 水平居中
-          vertical: 'center',   // 垂直居中
-        },
-        font: {
-          bold: true, // 可选：加粗
-          sz: 14,     // 可选：字号
-        },
+  // ✅ 合并标题
+  worksheet['!merges'] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: 4 } },
+  ];
+
+  // ✅ 获取范围
+  const range = XLSX.utils.decode_range(worksheet['!ref']!);
+
+  for (let R = range.s.r; R <= range.e.r; ++R) {
+    for (let C = range.s.c; C <= range.e.c; ++C) {
+      const addr = XLSX.utils.encode_cell({ r: R, c: C });
+      const cell = worksheet[addr];
+
+      if (!cell) continue;
+
+      // 初始化 style
+      if (!cell.s) cell.s = {};
+
+      // ✅ 有值才加边框
+      if (cell.v !== undefined && cell.v !== '') {
+        cell.s.border = {
+          top: { style: 'thin' },
+          bottom: { style: 'thin' },
+          left: { style: 'thin' },
+          right: { style: 'thin' },
+        };
+      }
+
+      // ✅ 全部居中
+      cell.s.alignment = {
+        horizontal: 'center',
+        vertical: 'center',
       };
+
+      // ✅ 标题
+      if (R === 0) {
+        cell.s.font = {
+          bold: true,
+          sz: 14,
+        };
+      }
+
+      // ✅ 表头
+      if (R === 1) {
+        cell.s.font = { bold: true };
+        cell.s.fill = {
+          fgColor: { rgb: 'EAEAEA' },
+        };
+      }
     }
-
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, '烧结矿成本报表');
-
-    // 生成 Buffer
-    return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
   }
+
+  // ✅ 总计行加粗
+  const lastRow = excelData.length - 1;
+  for (let C = range.s.c; C <= range.e.c; ++C) {
+    const addr = XLSX.utils.encode_cell({ r: lastRow, c: C });
+    if (worksheet[addr]) {
+      worksheet[addr].s.font = { bold: true };
+    }
+  }
+
+  // ✅ 列宽
+  worksheet['!cols'] = [
+    { wch: 20 },
+    { wch: 10 },
+    { wch: 12 },
+    { wch: 12 },
+    { wch: 12 },
+  ];
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, '烧结矿成本报表');
+
+  return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+}
 
 }

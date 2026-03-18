@@ -12,7 +12,7 @@ import { FIXED_HEADERS as MATERIAL_FIXED_HEADERS } from '../gl-material-info/gl-
 import { FIXED_HEADERS as FUEL_FIXED_HEADERS } from '../gl-fuel-info/gl-fuel-info.service';
 import { UpdateSelectedIngredientDataDto } from './dto/update-selected-ingredient-data.dto';
 import { UpdateSelectedFuelDataDto } from './dto/update-selected-fuel-data.dto';
-import * as XLSX from 'xlsx';
+import * as XLSX from 'xlsx-js-style';
 
 function getNestedValue(obj: any, path: string): any {
   return path.split('.').reduce((o, key) => (o ? o[key] : undefined), obj);
@@ -1742,7 +1742,6 @@ async exportGLProcessCostExcel(user: User): Promise<Buffer> {
   const group = await this.getOrCreateUserGroup(user, '单独高炉配料计算');
   const costMap: Record<string, any> = group.config_data?.GLProcessCost || {};
 
-  // 转为数组格式
   const list = Object.entries(costMap).map(([name, val]) => ({
     项目: name,
     单位: val.单位 || '',
@@ -1751,17 +1750,13 @@ async exportGLProcessCostExcel(user: User): Promise<Buffer> {
     单位成本: val.单位成本 || '',
   }));
 
-  // 计算总成本
   const totalCost = this.calcTotalCost(costMap);
 
-  // 构建 Excel 数据
   const excelData: any[][] = [
     ['高炉工序成本测算表'],
-    ['', '', '', '', ''],
     ['项目', '单位', '价格', '单位用量', '单位成本'],
   ];
 
-  // 添加数据行
   list.forEach(item => {
     excelData.push([
       item.项目,
@@ -1772,39 +1767,84 @@ async exportGLProcessCostExcel(user: User): Promise<Buffer> {
     ]);
   });
 
-  // 添加总计行
-  excelData.push(['', '', '', '', '']);
   excelData.push(['工序成本合计', '元', '', '', totalCost]);
 
-  // 创建工作簿
   const worksheet = XLSX.utils.aoa_to_sheet(excelData);
-  worksheet['!merges'] = [
-      {
-        s: { r: 0, c: 0 },
-        e: { r: 0, c: 4 },
-      },
-    ];
 
-    // ✅ 关键：给 A1 设置居中
-    if (worksheet['A1']) {
-      worksheet['A1'].s = {
-        alignment: {
-          horizontal: 'center', // 水平居中
-          vertical: 'center',   // 垂直居中
-        },
-        font: {
-          bold: true, // 可选：加粗
-          sz: 14,     // 可选：字号
-        },
+  // ✅ 合并标题
+  worksheet['!merges'] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: 4 } },
+  ];
+
+  // ✅ 获取范围
+  const range = XLSX.utils.decode_range(worksheet['!ref']!);
+
+  for (let R = range.s.r; R <= range.e.r; ++R) {
+    for (let C = range.s.c; C <= range.e.c; ++C) {
+      const addr = XLSX.utils.encode_cell({ r: R, c: C });
+      const cell = worksheet[addr];
+
+      if (!cell) continue;
+
+      // 初始化 style
+      if (!cell.s) cell.s = {};
+
+      // ✅ 只要有内容就加边框
+      if (cell.v !== undefined && cell.v !== '') {
+        cell.s.border = {
+          top: { style: 'thin' },
+          bottom: { style: 'thin' },
+          left: { style: 'thin' },
+          right: { style: 'thin' },
+        };
+      }
+
+      // ✅ 全部居中
+      cell.s.alignment = {
+        horizontal: 'center',
+        vertical: 'center',
       };
+
+      // ✅ 标题行
+      if (R === 0) {
+        cell.s.font = {
+          bold: true,
+          sz: 14,
+        };
+      }
+
+      // ✅ 表头行
+      if (R === 1) {
+        cell.s.font = { bold: true };
+        cell.s.fill = {
+          fgColor: { rgb: 'EAEAEA' },
+        };
+      }
     }
+  }
+
+  // ✅ 总计行加粗
+  const lastRow = excelData.length - 1;
+  for (let C = range.s.c; C <= range.e.c; ++C) {
+    const addr = XLSX.utils.encode_cell({ r: lastRow, c: C });
+    if (worksheet[addr]) {
+      worksheet[addr].s.font = { bold: true };
+    }
+  }
+
+  // ✅ 列宽
+  worksheet['!cols'] = [
+    { wch: 20 },
+    { wch: 10 },
+    { wch: 12 },
+    { wch: 12 },
+    { wch: 12 },
+  ];
 
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, '高炉成本报表');
 
-  // 生成 Buffer
   return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
 }
-
 }
 
