@@ -6,6 +6,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { User } from '../user/entities/user.entity';
 import { CoalEconConfigService } from './coal-econ-config.service';
 import { SaveCoalEconConfigDto, SaveCoalParamsDto, DeleteCoalParamsDto, CoalEconPaginationDto } from './dto/coal-econ-config.dto';
+import { CoalToggleDto } from './dto/coal-toggle.dto';
 
 @ApiTags('喷吹煤经济性评价-参数配置')
 @ApiBearerAuth('JWT')
@@ -32,6 +33,15 @@ export class CoalEconConfigController {
   async saveCoal(@CurrentUser() user: User, @Body() body: SaveCoalParamsDto) {
     return this.service.saveSelectedCoals(user, this.MODULE_NAME, body.selectedIds || [], body.name);
   }
+
+  @Put('toggle-coal')
+@ApiOperation({ summary: '单个切换喷吹煤选中状态' })
+async toggleCoal(
+  @CurrentUser() user: User,
+  @Body() body: CoalToggleDto,
+) {
+  return this.service.toggleCoal(user, this.MODULE_NAME, body);
+}
 
   @Delete('coal')
   @ApiOperation({ summary: '删除选中喷吹煤' })

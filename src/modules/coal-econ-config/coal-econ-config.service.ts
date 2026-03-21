@@ -7,6 +7,7 @@ import { BizModule } from '../../database/entities/biz-module.entity';
 import { User } from '../user/entities/user.entity';
 import { CoalEconInfo } from '../coal-econ-info/entities/coal-econ-info.entity';
 import { FIXED_HEADERS } from '../coal-econ-info/coal-econ-info.service';
+import { CoalToggleDto } from './dto/coal-toggle.dto';
 
 @Injectable()
 export class CoalEconConfigService {
@@ -211,4 +212,30 @@ if (sort) {
     };
   }
 
+  async toggleCoal(user: User, moduleName: string, dto: CoalToggleDto) {
+  const { id, checked } = dto;
+
+  const group = await this.getOrCreateUserGroup(user, moduleName);
+  const configData = _.cloneDeep(group.config_data || {});
+
+  const oldParams: number[] = configData.coalParams || [];
+  let newParams = [...oldParams];
+
+  // ================= 1️⃣ 切换逻辑 =================
+  if (checked) {
+    if (!newParams.includes(id)) {
+      newParams.push(id);
+    }
+  } else {
+    newParams = newParams.filter(i => i !== id);
+  }
+
+  // ================= 2️⃣ 保存 =================
+  configData.coalParams = Array.from(new Set(newParams));
+  group.config_data = configData;
+
+  await this.configRepo.save(group);
+
+  return { data: group.config_data };
+}
 }

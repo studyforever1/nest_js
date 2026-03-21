@@ -12,6 +12,7 @@ import { ApiResponse } from '../../common/response/response.dto';
 import { SjconfigService } from '../sj-config/sj-config.service';
 import { SjRawMaterial } from '../sj-raw-material/entities/sj-raw-material.entity';
 import { appConfig } from 'src/config/app.config';
+import { formatSJResultFull, sortSJResult } from '../../common/formatters/sj.formatter';
 
 @Injectable()
 export class SjFixedCalcService {
@@ -144,88 +145,155 @@ async startTask(
     // 查询进度 / 结果
     // ============================
 async getProgress(taskUuid: string): Promise<ApiResponse<any>> {
-    try {
-        const task = await this.taskRepo.findOne({ where: { task_uuid: taskUuid } });
-        if (!task) return ApiResponse.error('任务不存在');
+  try {
+    const task = await this.taskRepo.findOne({ where: { task_uuid: taskUuid } });
 
-        let results: any[] = [];
+    if (!task) {
+      return ApiResponse.success({
+        taskUuid,
+        status: 'initializing',
+        progress: 0,
+        total: 0,
+        results: []
+      });
+    }
 
-        if (task.status !== TaskStatus.FINISHED) {
-            // 调 FastAPI 获取最新进度
-            const res = await this.apiPost('sj-fixed/progress/', {}, { taskUuid });
-            const data = res.data?.data;
-            const fastApiResults = data?.results || [];
+    let results: any[] = [];
 
-            // 更新任务状态和进度
-            task.status = data?.status === 'finished' ? TaskStatus.FINISHED : TaskStatus.RUNNING;
-            task.progress = Number(data?.progress ?? 0);
-            await this.taskRepo.save(task);
+    const parameters = task.parameters || {};
+    const ingredientData: any[] = parameters.ingredientData || [];
 
-            if (fastApiResults.length) {
-                const rawResult = { ...fastApiResults[0] };
+    const idNameMap: Record<string, string> = {};
+    const idCategoryMap: Record<string, string> = {};
 
-                // =========================
-                // 直接从 task.parameters.ingredientData 映射 id -> name
-                // =========================
-                const ingredientData: any[] = task.parameters?.ingredientData || [];
-                const idToName: Record<string, string> = {};
-                ingredientData.forEach(item => {
-                    idToName[item.id.toString()] = item.name || item.id.toString();
-                });
+    ingredientData.forEach(item => {
+      if (item?.id != null) {
+        idNameMap[String(item.id)] = item.name || '';
+        idCategoryMap[String(item.id)] = item.category || '';
+      }
+    });
 
-                // 原料配比
-                if (rawResult['原料配比']) {
-                    Object.entries(rawResult['原料配比']).forEach(([id, val]: [string, any]) => {
-                        val.name = idToName[id] || id;
-                        val.配比 = Number(((val?.配比 ?? 0)).toFixed(2));
-                    });
-                }
+    // ============================
+    // 安全调用 FastAPI
+    // ============================
+    let data: any = null;
 
+    if (task.status !== TaskStatus.FINISHED) {
+      try {
+        const res = await this.apiPost('sj-fixed/progress/', {}, { taskUuid });
+        data = res.data?.data;
+      } catch (err: any) {
+        const status = err?.response?.status;
 
-                results.push({
-                    ...rawResult,
-                    方案序号: rawResult['方案序号'] ?? 1,
-                });
-
-                // 任务完成，保存结果
-                if (task.status === TaskStatus.FINISHED) {
-                    await this.saveResults(task, results);
-                }
-            }
+        if (status === 404) {
+          this.logger.warn(`FastAPI 404: ${taskUuid} 未就绪`);
         } else {
-            // 已完成 → 从数据库读取
-            const resultEntity = await this.resultRepo.findOne({
-                where: { task: { task_uuid: taskUuid } },
-            });
-            if (resultEntity?.output_data?.length) {
-                results = resultEntity.output_data;
-            }
+          this.logger.error(`FastAPI 错误: ${err.message}`);
         }
 
-        return ApiResponse.success({
-            taskUuid,
-            status: task.status,
-            progress: task.progress,
-            total: results.length,
-            results,
-        });
-    } catch (err) {
-        return this.handleError(err, '获取任务结果失败');
+        data = null;
+      }
+
+      // ============================
+      // 有数据才处理
+      // ============================
+      if (data && Array.isArray(data.results)) {
+
+        results = data.results;
+
+        task.status = data.status === 'finished'
+          ? TaskStatus.FINISHED
+          : TaskStatus.RUNNING;
+
+        task.progress = Number(data.progress ?? 0);
+
+        await this.taskRepo.save(task);
+
+        // ============================
+        // ⭐ 不要只取 [0]，全部处理
+        // ============================
+        results = results.map(item => ({
+          ...item,
+          方案序号: item['方案序号'] ?? 1,
+        }));
+
+        // ============================
+        // 任务完成才做深度处理
+        // ============================
+        if (task.status === TaskStatus.FINISHED) {
+
+          results = results.map(item =>
+            formatSJResultFull(
+              item,
+              idNameMap,
+              idCategoryMap,
+              parameters.ingredientLimits,
+              parameters.chemicalLimits,
+            )
+          );
+
+          // 成本排名
+          results.sort((a, b) =>
+            a["主要参数"]["成本(元/t)"] - b["主要参数"]["成本(元/t)"]
+          );
+          results.forEach((item, idx) => item.成本排名 = idx + 1);
+
+          // 吨度价排名
+          results.sort((a, b) =>
+            a["主要参数"].吨度价 - b["主要参数"].吨度价
+          );
+          results.forEach((item, idx) => item.吨度价排名 = idx + 1);
+
+          await this.saveResults(task, results);
+        }
+      }
     }
+
+    // ============================
+    // 已完成 → 从数据库读取
+    // ============================
+    else {
+      const resultEntity = await this.resultRepo.findOne({
+        where: { task: { task_uuid: taskUuid } },
+      });
+
+      if (resultEntity?.output_data?.length) {
+        results = resultEntity.output_data.map(item => sortSJResult(item));
+      }
+    }
+
+    return ApiResponse.success({
+      taskUuid,
+      status: task.status,
+      progress: task.progress,
+      total: results.length,
+      results,
+    });
+
+  } catch (err: any) {
+    return this.handleError(err, '获取任务结果失败');
+  }
 }
     // ============================
-    // 保存结果
+    // 保存结果（upsert：先查后存，防止重复插入）
     // ============================
     private async saveResults(task: Task, results: any[]): Promise<void> {
         if (!results?.length) return;
-        await this.resultRepo.save(
-            this.resultRepo.create({
+        let entity = await this.resultRepo.findOne({
+            where: { task: { task_uuid: task.task_uuid } },
+        });
+        if (!entity) {
+            entity = this.resultRepo.create({
                 task,
                 output_data: results,
                 is_shared: false,
                 finished_at: new Date(),
-            }),
-        );
+            });
+        } else {
+            entity.output_data = results;
+            entity.finished_at = new Date();
+        }
+        await this.resultRepo.save(entity);
     }
 
     // ============================

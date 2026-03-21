@@ -14,6 +14,22 @@ import { UpdateSelectedIngredientDataDto } from './dto/update-selected-ingredien
 import { UpdateSelectedFuelDataDto } from './dto/update-selected-fuel-data.dto';
 import * as XLSX from 'xlsx-js-style';
 
+/** 深合并（数组直接覆盖） */
+function deepMergeReplaceArray(target: any, source: any) {
+  return _.mergeWith({}, target, source, (objValue, srcValue) => {
+    if (Array.isArray(srcValue)) {
+      return srcValue; // ✅ 数组直接替换
+    }
+  });
+}
+
+/** 清理 undefined（用于删除字段） */
+function cleanObject(obj: Record<string, any>) {
+  return Object.fromEntries(
+    Object.entries(obj).filter(([_, v]) => v !== undefined)
+  );
+}
+
 function getNestedValue(obj: any, path: string): any {
   return path.split('.').reduce((o, key) => (o ? o[key] : undefined), obj);
 }
@@ -1275,7 +1291,7 @@ async saveFullConfig(
   const group = await this.getOrCreateUserGroup(user, moduleName);
   const existingData = _.cloneDeep(group.config_data || {});
 
-  // ===================== otherSettings 同步白名单 =====================
+  // ===================== 白名单 =====================
   const OTHER_SETTING_WHITELIST: Record<string, string[]> = {
     '单独高炉配料计算': ['固定配比', '煤比选择', '焦丁比选择'],
     '铁前一体化配料计算I': ['固定配比', '煤比选择', '焦丁比选择', '变量选择'],
@@ -1284,7 +1300,7 @@ async saveFullConfig(
     '生铁固定配料计算': ['煤比选择', '焦丁比选择'],
   };
 
-  // ===================== 公共同步字段 =====================
+  // ===================== 公共字段（仅更新传入的） =====================
   const syncCommonData: Record<string, any> = {};
   if (ingredientLimits !== undefined) syncCommonData.ingredientLimits = ingredientLimits;
   if (fuelLimits !== undefined) syncCommonData.fuelLimits = fuelLimits;
@@ -1293,72 +1309,93 @@ async saveFullConfig(
   if (loadTopLimits !== undefined) syncCommonData.loadTopLimits = loadTopLimits;
   if (ironWaterTopLimits !== undefined) syncCommonData.ironWaterTopLimits = ironWaterTopLimits;
 
-  // ===================== 当前模块 otherSettings（全量保存） =====================
-  const currentOtherSettings: Record<string, any> = {};
-  if (otherSettings) {
-    for (const key of Object.keys(otherSettings)) {
-      currentOtherSettings[key] = otherSettings[key];
-    }
+  // ===================== 当前模块 otherSettings =====================
+  let mergedOtherSettings = existingData.otherSettings || {};
+
+  if (otherSettings !== undefined) {
+    mergedOtherSettings = deepMergeReplaceArray(
+      existingData.otherSettings || {},
+      otherSettings
+    );
   }
 
-  // ===================== 当前模块保存（含结果） =====================
-  group.config_data = {
+  // ===================== 当前模块配置 =====================
+  const newCurrentConfig: Record<string, any> = {
     ...existingData,
-    ...syncCommonData,
-
-    // ⭐ 只有当前模块才允许写入结果
-    ...(ingredientResults !== undefined ? { ingredientResults } : {}),
-    ...(fuelResults !== undefined ? { fuelResults } : {}),
-
-    otherSettings: {
-      ...(existingData.otherSettings || {}),
-      ...currentOtherSettings,
-    },
   };
+
+  // ✔ 只覆盖传入字段
+  Object.assign(newCurrentConfig, syncCommonData);
+
+  // ✔ 结果只允许当前模块写
+  if (ingredientResults !== undefined) {
+    newCurrentConfig.ingredientResults = ingredientResults;
+  }
+  if (fuelResults !== undefined) {
+    newCurrentConfig.fuelResults = fuelResults;
+  }
+
+  // ✔ otherSettings
+  newCurrentConfig.otherSettings = cleanObject(_.cloneDeep(mergedOtherSettings));
+
+  group.config_data = newCurrentConfig;
 
   await this.configRepo.save(group);
 
-  // ===================== 跨模块同步（不带结果） =====================
+  // ===================== 跨模块同步 =====================
   const allModules = Object.keys(OTHER_SETTING_WHITELIST);
   const otherModules = allModules.filter(m => m !== moduleName);
 
-  for (const other of otherModules) {
-    const otherGroup = await this.getOrCreateUserGroup(user, other);
-    const otherData = _.cloneDeep(otherGroup.config_data || {});
-    const targetWhitelist = OTHER_SETTING_WHITELIST[other] || [];
+  await Promise.all(
+    otherModules.map(async (other) => {
+      const otherGroup = await this.getOrCreateUserGroup(user, other);
+      const otherData = _.cloneDeep(otherGroup.config_data || {});
+      const whitelist = OTHER_SETTING_WHITELIST[other] || [];
 
-    // 仅同步白名单里的 otherSettings
-    const syncedOtherSettings: Record<string, any> = {};
-    if (otherSettings) {
-      for (const key of Object.keys(otherSettings)) {
-        if (targetWhitelist.includes(key)) {
-          syncedOtherSettings[key] = otherSettings[key];
+      // ===================== 同步 otherSettings（白名单） =====================
+      let syncedOtherSettings = otherData.otherSettings || {};
+
+      if (otherSettings !== undefined) {
+        const filtered: Record<string, any> = {};
+
+        for (const key of whitelist) {
+          if (otherSettings && key in otherSettings) {
+            filtered[key] = otherSettings[key];
+          }
         }
+
+        syncedOtherSettings = deepMergeReplaceArray(
+          otherData.otherSettings || {},
+          filtered
+        );
       }
-    }
 
-    const newConfig: Record<string, any> = {
-      ...otherData,
-      ...syncCommonData,
-      otherSettings: {
-        ...(otherData.otherSettings || {}),
-        ...syncedOtherSettings,
-      },
-    };
+      // ===================== 构建新配置 =====================
+      const newConfig: Record<string, any> = {
+        ...otherData,
+      };
 
-    // 🚫 默认禁止跨模块同步结果
-    delete newConfig.ingredientResults;
-    delete newConfig.fuelResults;
+      // ✔ 只更新传入字段
+      Object.assign(newConfig, syncCommonData);
 
-    // ⭐ 生铁固定配料计算：只保留自身已有结果
-    if (other === '生铁固定配料计算') {
-      newConfig.ingredientResults = otherData.ingredientResults || {};
-      newConfig.fuelResults = otherData.fuelResults || {};
-    }
+      // ✔ 同步 otherSettings
+      newConfig.otherSettings = cleanObject(_.cloneDeep(syncedOtherSettings));
 
-    otherGroup.config_data = newConfig;
-    await this.configRepo.save(otherGroup);
-  }
+      // 🚫 禁止跨模块覆盖结果
+      delete newConfig.ingredientResults;
+      delete newConfig.fuelResults;
+
+      // ⭐ 特例：保留自身结果
+      if (other === '生铁固定配料计算') {
+        newConfig.ingredientResults = otherData.ingredientResults || {};
+        newConfig.fuelResults = otherData.fuelResults || {};
+      }
+
+      otherGroup.config_data = newConfig;
+
+      return this.configRepo.save(otherGroup);
+    })
+  );
 
   return group;
 }
@@ -1845,6 +1882,374 @@ async exportGLProcessCostExcel(user: User): Promise<Buffer> {
   XLSX.utils.book_append_sheet(workbook, worksheet, '高炉成本报表');
 
   return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+}
+
+async toggleIngredient(
+  user: User,
+  moduleName: string,
+  id: number,
+  checked: boolean,
+) {
+  const group = await this.getOrCreateUserGroup(user, moduleName);
+  const configData = _.cloneDeep(group.config_data || {});
+
+  const oldParams: number[] = configData.ingredientParams || [];
+  const oldLimits: Record<number, any> = configData.ingredientLimits || {};
+
+  // ================= 1️⃣ otherSettings 初始化 =================
+  if (!configData.otherSettings) configData.otherSettings = {};
+  const otherSettings = configData.otherSettings;
+
+  if (!Array.isArray(otherSettings['块矿'])) otherSettings['块矿'] = [];
+  if (!Array.isArray(otherSettings['固定配比'])) otherSettings['固定配比'] = [];
+  if (!Array.isArray(otherSettings['精粉'])) otherSettings['精粉'] = [];
+
+  const newOtherSettings = _.cloneDeep(otherSettings);
+
+  // ================= 2️⃣ 参数增删 =================
+  const newParamsSet = new Set(oldParams);
+
+  if (checked) {
+    newParamsSet.add(id);
+  } else {
+    newParamsSet.delete(id);
+  }
+
+  const newParams = Array.from(newParamsSet);
+
+  // ================= 3️⃣ limits =================
+  const newLimits = _.cloneDeep(oldLimits);
+
+  if (!checked) {
+    delete newLimits[id];
+  } else {
+    if (!newLimits[id]) {
+      const builtinPowderGroup = await this.getOrCreateUserGroup(
+        user,
+        '单独高炉配料计算',
+      );
+
+      const builtinPowderMap: Record<string, any> =
+        builtinPowderGroup.config_data?.BuiltinPowder || {};
+
+      // ⚠️ 一次查询（避免重复 rawRepo 查询）
+      const raw = await this.rawRepo.findOne({ where: { id } });
+
+      if (!raw) {
+        return { data: group.config_data }; // 安全兜底
+      }
+
+      // ✅ 关键修复：避免 raw?.name 作为 key 报错
+      const rawName = raw.name;
+      const builtinPowder = rawName
+        ? builtinPowderMap[rawName]
+        : undefined;
+
+      newLimits[id] = builtinPowder
+        ? {
+            low_limit: builtinPowder.low_limit ?? 0,
+            top_limit: builtinPowder.top_limit ?? 100,
+          }
+        : { low_limit: 0, top_limit: 100 };
+    }
+  }
+
+  // ================= 4️⃣ otherSettings =================
+  const idStr = String(id);
+
+  const raw = await this.rawRepo.findOne({ where: { id } });
+
+  if (checked && raw) {
+    // 块矿
+    if (raw.category?.startsWith('K')) {
+      if (!newOtherSettings['块矿'].includes(id)) {
+        newOtherSettings['块矿'].push(id);
+      }
+    }
+
+    // 精粉
+    if (raw.category?.startsWith('T1')) {
+      if (!newOtherSettings['精粉'].includes(idStr)) {
+        newOtherSettings['精粉'].push(idStr);
+      }
+    }
+
+    // 固定配比
+    if (!newOtherSettings['固定配比'].includes(idStr)) {
+      newOtherSettings['固定配比'].push(idStr);
+    }
+  } else {
+    newOtherSettings['块矿'] = newOtherSettings['块矿'].filter(
+      (x: number) => x !== id,
+    );
+
+    newOtherSettings['精粉'] = newOtherSettings['精粉'].filter(
+      (x: string) => x !== idStr,
+    );
+
+    newOtherSettings['固定配比'] = newOtherSettings['固定配比'].filter(
+      (x: string) => x !== idStr,
+    );
+  }
+
+  // ================= 5️⃣ 清理脏数据 =================
+  newOtherSettings['固定配比'] = newOtherSettings['固定配比'].filter(id =>
+    newParams.includes(Number(id)),
+  );
+
+  newOtherSettings['精粉'] = newOtherSettings['精粉'].filter(id =>
+    newParams.includes(Number(id)),
+  );
+
+  newOtherSettings['块矿'] = Array.from(
+    new Set(
+      newOtherSettings['块矿'].filter(id =>
+        newParams.includes(Number(id)),
+      ),
+    ),
+  );
+
+  // ================= 6️⃣ 自动校准 =================
+  const calibratedValue = await this.calibrateVariableSelection(
+    moduleName,
+    newParams,
+    newOtherSettings,
+  );
+
+  if (calibratedValue !== undefined) {
+    newOtherSettings['变量选择'] = calibratedValue;
+  }
+
+  // ================= 7️⃣ 快照 =================
+  const rawsSnapshot = await this.rawRepo.find({
+    where: { id: In(newParams) },
+  });
+
+  const ingredientData = rawsSnapshot.map(r => ({
+    id: r.id,
+    name: r.name,
+    category: r.category,
+    composition: r.composition,
+    inventory: r.inventory,
+    origin: r.origin,
+    modifier: r.modifier,
+    enabled: r.enabled,
+    remark: r.remark,
+    created_at: r.created_at,
+    updated_at: r.updated_at,
+  }));
+
+  // ================= 8️⃣ 保存 =================
+  group.config_data = {
+    ...configData,
+    ingredientParams: newParams,
+    ingredientLimits: newLimits,
+    ingredientData,
+    otherSettings: newOtherSettings,
+  };
+
+  await this.configRepo.save(group);
+
+  // ================= 9️⃣ 跨模块同步 =================
+  const syncModules = [
+    '单独高炉配料计算',
+    '铁前一体化配料计算I',
+    '铁前一体化配料计算II',
+    '利润一体化配料计算',
+    '生铁固定配料计算',
+  ];
+
+  for (const other of syncModules.filter(m => m !== moduleName)) {
+    const otherGroup = await this.getOrCreateUserGroup(user, other);
+    const otherData = _.cloneDeep(otherGroup.config_data || {});
+
+    const syncedOtherSettings = {
+      ...(otherData.otherSettings || {}),
+      '块矿': newOtherSettings['块矿'],
+      '固定配比': newOtherSettings['固定配比'],
+    };
+
+    // 变量校准
+    if (
+      ['铁前一体化配料计算I', '铁前一体化配料计算II', '利润一体化配料计算'].includes(other)
+    ) {
+      const calibrated = await this.calibrateVariableSelection(
+        other,
+        newParams,
+        syncedOtherSettings,
+      );
+
+      if (calibrated !== undefined) {
+        syncedOtherSettings['变量选择'] = calibrated;
+      }
+    }
+
+    // 生铁模块
+    if (other === '生铁固定配料计算') {
+      const oldResults: Record<string, number> =
+        otherData.ingredientResults || {};
+
+      const newResults: Record<string, number> = {};
+
+      newParams.forEach(id => {
+        const key = String(id);
+        newResults[key] =
+          oldResults[key] !== undefined
+            ? oldResults[key]
+            : newLimits[id]?.low_limit ?? 0;
+      });
+
+      otherGroup.config_data = {
+        ...otherData,
+        ingredientParams: newParams,
+        ingredientLimits: newLimits,
+        ingredientResults: newResults,
+        otherSettings: syncedOtherSettings,
+      };
+    } else {
+      otherGroup.config_data = {
+        ...otherData,
+        ingredientParams: newParams,
+        ingredientLimits: newLimits,
+        otherSettings: syncedOtherSettings,
+      };
+    }
+
+    await this.configRepo.save(otherGroup);
+  }
+
+  return { data: group.config_data };
+}
+
+
+async toggleFuel(
+  user: User,
+  moduleName: string,
+  id: number,
+  checked: boolean,
+) {
+  const group = await this.getOrCreateUserGroup(user, moduleName);
+  const configData = _.cloneDeep(group.config_data || {});
+
+  const oldParams: number[] = configData.fuelParams || [];
+  const oldLimits: Record<number, any> = configData.fuelLimits || {};
+
+  let newParams = [...oldParams];
+  let newLimits = { ...oldLimits };
+
+  // ================= 1️⃣ 切换逻辑 =================
+  if (checked) {
+    // ✅ 添加
+    if (!newParams.includes(id)) {
+      newParams.push(id);
+    }
+
+    // 默认区间
+    if (!newLimits[id]) {
+      newLimits[id] = { low_limit: 0, top_limit: 100 };
+    }
+
+  } else {
+    // ❌ 移除
+    newParams = newParams.filter(i => i !== id);
+    delete newLimits[id];
+  }
+
+  // ================= 2️⃣ 更新 fuelData =================
+  const fuelsSnapshot = await this.fuelRepo.find({
+    where: { id: In(newParams) },
+  });
+
+  const fuelData = fuelsSnapshot.map(f => ({
+    id: f.id,
+    name: f.name,
+    category: f.category,
+    composition: f.composition,
+    inventory: f.inventory,
+    modifier: f.modifier,
+    enabled: f.enabled,
+    remark: f.remark,
+    created_at: f.created_at,
+    updated_at: f.updated_at,
+  }));
+
+  // ================= 3️⃣ otherSettings =================
+  const newOtherSettings = _.cloneDeep(configData.otherSettings || {});
+
+  newOtherSettings["焦丁比选择"] = '';
+  newOtherSettings["煤比选择"] = '';
+
+  const jiaoding = fuelsSnapshot.find(f => f.name.includes('焦丁'));
+  if (jiaoding) newOtherSettings["焦丁比选择"] = String(jiaoding.id);
+
+  const mei = fuelsSnapshot.find(f => f.name.includes('煤'));
+  if (mei) newOtherSettings["煤比选择"] = String(mei.id);
+
+  // ================= 4️⃣ 保存当前模块 =================
+  group.config_data = {
+    ...configData,
+    fuelParams: newParams,
+    fuelLimits: newLimits,
+    fuelData,
+    otherSettings: newOtherSettings,
+  };
+
+  await this.configRepo.save(group);
+
+  // ================= 5️⃣ 跨模块同步 =================
+  const allModules = [
+    '单独高炉配料计算',
+    '铁前一体化配料计算I',
+    '铁前一体化配料计算II',
+    '利润一体化配料计算',
+    '生铁固定配料计算',
+  ];
+
+  const otherModules = allModules.filter(m => m !== moduleName);
+
+  for (const other of otherModules) {
+    const otherGroup = await this.getOrCreateUserGroup(user, other);
+    const otherData = _.cloneDeep(otherGroup.config_data || {});
+
+    const syncedOtherSettings = { ...(otherData.otherSettings || {}) };
+    syncedOtherSettings["焦丁比选择"] = newOtherSettings["焦丁比选择"];
+    syncedOtherSettings["煤比选择"] = newOtherSettings["煤比选择"];
+
+    if (other === '生铁固定配料计算') {
+      const oldResults = otherData.fuelResults || {};
+      const newResults: Record<string, number> = {};
+
+      for (const fid of newParams) {
+        newResults[String(fid)] =
+          oldResults[String(fid)] !== undefined
+            ? oldResults[String(fid)]
+            : newLimits[fid]?.low_limit ?? 0;
+      }
+
+      otherGroup.config_data = {
+        ...otherData,
+        fuelParams: newParams,
+        fuelLimits: newLimits,
+        fuelResults: newResults,
+        fuelData,
+        otherSettings: syncedOtherSettings,
+      };
+    } else {
+      otherGroup.config_data = {
+        ...otherData,
+        fuelParams: newParams,
+        fuelLimits: newLimits,
+        fuelData,
+        otherSettings: syncedOtherSettings,
+      };
+    }
+
+    await this.configRepo.save(otherGroup);
+  }
+
+  return {
+    data: group.config_data,
+  };
 }
 }
 

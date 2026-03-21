@@ -9,7 +9,7 @@ import { User } from '../user/entities/user.entity';
 import { SjconfigService } from '../sj-config/sj-config.service';
 import { SjRawMaterial } from '../sj-raw-material/entities/sj-raw-material.entity';
 import { ApiResponse } from '../../common/response/response.dto';
-import { formatSJResultFull,sortSJResult } from '../../common/formatters/sj.formatter';
+import { formatSJResultFull, sortSJResult } from '../../common/formatters/sj.formatter';
 /** 分页参数 DTO */
 export interface PaginationDto {
   page?: number;
@@ -208,130 +208,136 @@ export class CalcService {
   }
 
   /** ===================== 查询任务进度 ===================== */
-async fetchAndSaveProgress(
-  taskUuid: string,
-  pagination?: PaginationDto,
-  forceSave = false
-): Promise<ApiResponse<any>> {
-  try {
-    const task = await this.findTask(taskUuid);
-    if (!task) return this.taskInitializingFallback(taskUuid, pagination);
+  async fetchAndSaveProgress(
+    taskUuid: string,
+    pagination?: PaginationDto,
+    forceSave = false
+  ): Promise<ApiResponse<any>> {
+    try {
+      const task = await this.findTask(taskUuid);
+      if (!task) return this.taskInitializingFallback(taskUuid, pagination);
 
-    let results: any[] = [];
-    const parameters = task.parameters || {};
+      let results: any[] = [];
+      const parameters = task.parameters || {};
 
-    const idNameMap: Record<string, string> = {};
-    const idCategoryMap: Record<string, string> = {};
-    (parameters.ingredientData || []).forEach(item => {
-      if (item?.id != null) {
-        idNameMap[String(item.id)] = item.name || '';
-        idCategoryMap[String(item.id)] = item.category || '';
-      }
-    });
-
-    const FINAL_STATUS = [
-      TaskStatus.PAUSED,
-      TaskStatus.STOPPED,
-      TaskStatus.FINISHED
-    ];
-
-    if (FINAL_STATUS.includes(task.status) && !forceSave) {
-      const cache = this.taskCache.get(taskUuid);
-      if (cache?.results?.length) {
-        results = cache.results;
-      } else {
-        results = await this.loadResultsFromDb(taskUuid);
-      }
-      results = results.map(item => sortSJResult(item));
-    } else {
-      const res = await this.apiGet('/sj/progress/', { taskUuid });
-      const data = res.data?.data;
-      if (!data || !Array.isArray(data.results))
-        throw new Error('FastAPI 返回异常');
-
-      const cache = this.taskCache.get(taskUuid) || { results: [], lastUpdated: Date.now() };
-      results = this.mergeResults(cache.results, data.results);
-
-      const newStatus = this.mapFastApiStatusToTaskStatus(data.status);
-      await this.updateTaskStatus(taskUuid, newStatus, data.progress, data.total);
-
-      const needFormat =
-        newStatus === TaskStatus.FINISHED ||
-        newStatus === TaskStatus.PAUSED ||
-        newStatus === TaskStatus.STOPPED ||
-        forceSave;
-
-      if (needFormat) {
-        results = results.map(item =>
-          formatSJResultFull(
-            item,
-            idNameMap,
-            idCategoryMap,
-            parameters.ingredientLimits,
-            parameters.chemicalLimits
-          )
-        );
-
-        // ================= 计算排名 =================
-        // 成本排名
-        results.sort((a, b) => a["主要参数"].成本 - b["主要参数"].成本);
-        results.forEach((item, idx) => item.成本排名 = idx + 1);
-
-        // 吨度价排名
-        results.sort((a, b) => a["主要参数"].吨度价 - b["主要参数"].吨度价);
-        results.forEach((item, idx) => item.吨度价排名 = idx + 1);
-
-        const taskEntity = await this.findTask(taskUuid);
-        if (taskEntity && results.length) {
-          await this.saveResults(taskEntity, results);
+      const idNameMap: Record<string, string> = {};
+      const idCategoryMap: Record<string, string> = {};
+      (parameters.ingredientData || []).forEach(item => {
+        if (item?.id != null) {
+          idNameMap[String(item.id)] = item.name || '';
+          idCategoryMap[String(item.id)] = item.category || '';
         }
+      });
+
+      const FINAL_STATUS = [
+        TaskStatus.PAUSED,
+        TaskStatus.STOPPED,
+        TaskStatus.FINISHED
+      ];
+
+      if (FINAL_STATUS.includes(task.status) && !forceSave) {
+        const cache = this.taskCache.get(taskUuid);
+        if (cache?.results?.length) {
+          results = cache.results;
+        } else {
+          results = await this.loadResultsFromDb(taskUuid);
+        }
+        results = results.map(item => sortSJResult(item));
       } else {
-        // running阶段排序并计算排名
-        results.sort((a, b) => a["方案序号"] - b["方案序号"]);
-        results.forEach(item => sortSJResult(item));
+        const res = await this.apiGet('/sj/progress/', { taskUuid });
+        const data = res.data?.data;
+        if (!data || !Array.isArray(data.results))
+          throw new Error('FastAPI 返回异常');
 
-        // 成本排名
-        const sortedByCost = [...results].sort((a, b) => a["主要参数"].成本 - b["主要参数"].成本);
-        sortedByCost.forEach((item, idx) => {
-          const target = results.find(r => r === item);
-          if (target) target.成本排名 = idx + 1;
-        });
+        const cache = this.taskCache.get(taskUuid) || { results: [], lastUpdated: Date.now() };
+        results = this.mergeResults(cache.results, data.results);
 
-        // 吨度价排名
-        const sortedByTonPrice = [...results].sort((a, b) => a["主要参数"].吨度价 - b["主要参数"].吨度价);
-        sortedByTonPrice.forEach((item, idx) => {
-          const target = results.find(r => r === item);
-          if (target) target.吨度价排名 = idx + 1;
-        });
+        const newStatus = this.mapFastApiStatusToTaskStatus(data.status);
+        await this.updateTaskStatus(taskUuid, newStatus, data.progress, data.total);
+
+        const needFormat =
+          newStatus === TaskStatus.FINISHED ||
+          newStatus === TaskStatus.PAUSED ||
+          newStatus === TaskStatus.STOPPED ||
+          forceSave;
+
+        if (needFormat) {
+          results = results.map(item => {
+            if (item.__formatted) return item; // ✅ 防重复
+
+            const formatted = formatSJResultFull(
+              item,
+              idNameMap,
+              idCategoryMap,
+              parameters.ingredientLimits,
+              parameters.chemicalLimits
+            );
+
+            formatted.__formatted = true; // ✅ 标记
+            return formatted;
+          });
+
+
+          // ================= 计算排名 =================
+          // 成本排名
+          results.sort((a, b) => a["主要参数"]["成本(元/t)"] - b["主要参数"]["成本(元/t)"]);
+          results.forEach((item, idx) => item.成本排名 = idx + 1);
+
+          // 吨度价排名
+          results.sort((a, b) => a["主要参数"]["吨度价"] - b["主要参数"]["吨度价"]);
+          results.forEach((item, idx) => item.吨度价排名 = idx + 1);
+
+          const taskEntity = await this.findTask(taskUuid);
+          if (taskEntity && results.length) {
+            await this.saveResults(taskEntity, results);
+          }
+        } else {
+          // running阶段排序并计算排名
+          results.sort((a, b) => a["方案序号"] - b["方案序号"]);
+          results = results.map(item => sortSJResult(item));
+
+          // 成本排名
+          const sortedByCost = [...results].sort((a, b) => a["主要参数"]["成本(元/t)"] - b["主要参数"]["成本(元/t)"]);
+          sortedByCost.forEach((item, idx) => {
+            const target = results.find(r => r === item);
+            if (target) target.成本排名 = idx + 1;
+          });
+
+          // 吨度价排名
+          const sortedByTonPrice = [...results].sort((a, b) => a["主要参数"].吨度价 - b["主要参数"].吨度价);
+          sortedByTonPrice.forEach((item, idx) => {
+            const target = results.find(r => r === item);
+            if (target) target.吨度价排名 = idx + 1;
+          });
+        }
+
+        this.taskCache.set(taskUuid, { results, lastUpdated: Date.now() });
+        if (newStatus === TaskStatus.FINISHED) this.taskCache.delete(taskUuid);
+
+        task.status = newStatus;
+        task.progress = data.progress ?? task.progress;
+        task.total = data.total ?? task.total;
       }
 
-      this.taskCache.set(taskUuid, { results, lastUpdated: Date.now() });
-      if (newStatus === TaskStatus.FINISHED) this.taskCache.delete(taskUuid);
+      const { pagedResults, totalResults, totalPages } = this.applyPaginationAndSort(results, pagination);
 
-      task.status = newStatus;
-      task.progress = data.progress ?? task.progress;
-      task.total = data.total ?? task.total;
+      return ApiResponse.success({
+        taskUuid: task.task_uuid,
+        status: task.status,
+        progress: task.progress,
+        total: task.total,
+        results: pagedResults,
+        page: pagination?.page ?? 1,
+        pageSize: pagination?.pageSize ?? 10,
+        totalResults,
+        totalPages
+      });
+
+    } catch (err) {
+      this.logger.error(`fetch progress error ${taskUuid}`, err);
+      return this.taskInitializingFallback(taskUuid, pagination);
     }
-
-    const { pagedResults, totalResults, totalPages } = this.applyPaginationAndSort(results, pagination);
-
-    return ApiResponse.success({
-      taskUuid: task.task_uuid,
-      status: task.status,
-      progress: task.progress,
-      total: task.total,
-      results: pagedResults,
-      page: pagination?.page ?? 1,
-      pageSize: pagination?.pageSize ?? 10,
-      totalResults,
-      totalPages
-    });
-
-  } catch (err) {
-    this.logger.error(`fetch progress error ${taskUuid}`, err);
-    return this.taskInitializingFallback(taskUuid, pagination);
   }
-}
   /** ===================== 导出方案 ===================== */
   async exportSchemeExcel(taskUuid: string, index: number) {
     const scheme = await this.getSchemeByIndex(taskUuid, index);
@@ -515,5 +521,5 @@ async fetchAndSaveProgress(
 
 
 
-  
+
 }

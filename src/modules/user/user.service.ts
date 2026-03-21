@@ -46,6 +46,7 @@ export class UserService {
 
     const user = this.userRepo.create({
       ...userData,
+      avatarPath: '',
       department,
     });
     const savedUser = await this.userRepo.save(user);
@@ -96,14 +97,18 @@ export class UserService {
    * @throws NotFoundException 用户不存在时抛出
    */
   async findById(id: number) {
-    const user = await this.userRepo.findOne({
-      where: { user_id: id, isDeleted: false },
-      relations: ['roles', 'department'],
-    });
-    if (!user) throw new NotFoundException('用户不存在');
-    return user;
-  }
+  const user = await this.userRepo.findOne({
+    where: { user_id: id, isDeleted: false },
+    relations: ['roles', 'department'],
+  });
 
+  if (!user) throw new NotFoundException('用户不存在');
+
+  return {
+    ...user,
+    avatarPath: user.avatarPath ?? '', // 👈 兜底处理
+  };
+}
   /** 根据用户名查找用户 */
   async findByUsername(
     username: string,

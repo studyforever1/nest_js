@@ -194,7 +194,7 @@ async fetchEconProgress(
       if (!isNaN(rawId)) idSet.add(rawId);
     });
 
-    // 4️⃣ 根据 dataSourceType 映射原料名称
+    // 4️⃣ 查询原料名称
     let raws: any[] = [];
     switch (dataSourceType) {
       case EconDataSourceType.ECON:
@@ -211,48 +211,52 @@ async fetchEconProgress(
     const idNameMap: Record<number, string> = {};
     raws.forEach(raw => (idNameMap[raw.id] = raw.name));
 
-    // 5️⃣ 替换结果中的“原料”字段
+    // 5️⃣ 映射结果（⚡ 保留 rawId）
     let mappedResults = (data.results || []).map(item => {
       const rawId = Number(item['原料']);
-      return { ...item, 原料: idNameMap[rawId] || item['原料'] };
+      return {
+        ...item,
+        rawId, // ✅ 唯一标识（核心）
+        原料: idNameMap[rawId] || item['原料'],
+      };
     });
 
-    // 6️⃣ ⚡ 性价比排名
-const rankFields = [
-  '单品位价格折算后',
-  '烧结矿单品位价折算后',
-  '生铁成本',
-  '与PB粉对比'
-];
+    // 6️⃣ ⚡ 性价比排名（已修复同名问题）
+    const rankFields = [
+      '单品位价格折算后',
+      '烧结矿单品位价折算后',
+      '生铁成本',
+      '与PB粉对比'
+    ];
 
-const rankField = rankFields.find(f =>
-  mappedResults.some(item => !isNaN(Number(item[f])))
-);
+    const rankField = rankFields.find(f =>
+      mappedResults.some(item => !isNaN(Number(item[f])))
+    );
 
-if (rankField) {
-  const resultsWithValue = mappedResults
-    .filter(item => !isNaN(Number(item[rankField])))
-    .sort((a, b) => Number(a[rankField]) - Number(b[rankField])); // 升序
+    if (rankField) {
+      const resultsWithValue = mappedResults
+        .filter(item => !isNaN(Number(item[rankField])))
+        .sort((a, b) => Number(a[rankField]) - Number(b[rankField])); // 升序
 
-  const rankMap = new Map<string, number>();
-  resultsWithValue.forEach((item, index) => {
-    rankMap.set(item['原料'], index + 1);
-  });
+      // ✅ 用 rawId 做 key（彻底解决重名问题）
+      const rankMap = new Map<number, number>();
 
-  mappedResults = mappedResults.map(item => {
-    const rank = rankMap.get(item['原料']);
+      resultsWithValue.forEach((item, index) => {
+        rankMap.set(item.rawId, index + 1);
+      });
 
-    if (rank === undefined) {
-      return item;
+      mappedResults = mappedResults.map(item => {
+        const rank = rankMap.get(item.rawId);
+
+        if (rank === undefined) return item;
+
+        return {
+          性价比排名: rank,
+          ...item,
+        };
+      });
     }
 
-    // ⭐ 关键：排名放第一列
-    return {
-      性价比排名: rank,
-      ...item,
-    };
-  });
-}
     // 7️⃣ 分页 + 排序
     const { pagedResults, totalResults, totalPages } =
       this.applyPaginationAndSort(mappedResults, pagination);

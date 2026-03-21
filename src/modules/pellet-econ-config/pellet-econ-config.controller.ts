@@ -11,6 +11,7 @@ import {
   DeletePelletParamsDto,
   PelletEconPaginationDto,
 } from './dto/pellet-econ-config.dto';
+import { PelletToggleDto } from './dto/pellet-toggle.dto';
 
 
 @ApiTags('外购球团块矿经济性评价-参数配置')
@@ -59,6 +60,15 @@ export class PelletEconConfigController {
       body.name,
     );
   }
+
+  @Put('toggle-pellet')
+@ApiOperation({ summary: '单个切换球团选中状态' })
+async togglePellet(
+  @CurrentUser() user: User,
+  @Body() body: PelletToggleDto,
+) {
+  return this.service.togglePellet(user, this.MODULE_NAME, body);
+}
 
   /** 删除选中球团 */
   @Delete('pellet')

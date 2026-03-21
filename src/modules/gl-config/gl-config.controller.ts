@@ -26,7 +26,8 @@ import { GLRestoreIngredientsDto } from './dto/gl-restore-ingredients.dto';
 import { GLRestoreFuelsDto } from './dto/gl-restore-fuels.dto';
 import type { Response } from 'express';
 import * as XLSX from 'xlsx';
-
+import { GLToggleIngredientDto } from './dto/gl-toggle-ingredient.dto';
+import { GLToggleFuelDto } from './dto/gl-toggle-fuel.dto';
 
 @ApiTags('高炉参数配置接口')
 @ApiBearerAuth('JWT')
@@ -110,6 +111,23 @@ async save(
     );
   }
 
+
+  @Post('toggle-ingredient')
+@ApiOperation({
+  summary: '高炉模块 - 单个原料勾选/取消',
+})
+async toggleIngredient(
+  @CurrentUser() user: User,
+  @Body() body: GLToggleIngredientDto,
+) {
+  return this.glConfigService.toggleIngredient(
+    user,
+    this.MODULE_NAME,
+    body.id,
+    body.checked,
+  );
+}
+
   @Delete('ingredient')
   @ApiOperation({ summary: '删除选中原料' })
   async deleteIngredient(@CurrentUser() user: User, @Body() body: GLDeleteIngredientDto) {
@@ -165,6 +183,23 @@ async getSelectedIngredients(
       body.name,
     );
   }
+
+@Post('toggle-fuel')
+@ApiOperation({
+  summary: '单个燃料开关（勾选 / 取消）',
+})
+async toggleFuel(
+  @CurrentUser() user: User,
+  @Body() body: GLToggleFuelDto,
+) {
+  return this.glConfigService.toggleFuel(
+    user,
+    this.MODULE_NAME,
+    body.id,
+    body.checked,
+  );
+}
+
 
   @Delete('fuel')
   @ApiOperation({ summary: '删除选中燃料' })

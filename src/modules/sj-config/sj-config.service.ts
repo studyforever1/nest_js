@@ -13,7 +13,21 @@ import { In } from 'typeorm';
 import { BadRequestException } from '@nestjs/common/exceptions';
 import { UpdateSelectedIngredientDataDto } from './dto/update-selected-ingredient-data.dto';
 import * as XLSX from 'xlsx-js-style';
+/** 安全深合并（数组直接替换） */
+function deepMergeReplaceArray(target: any, source: any) {
+  return _.mergeWith({}, target, source, (objValue, srcValue) => {
+    if (Array.isArray(srcValue)) {
+      return srcValue; // ✅ 数组直接覆盖
+    }
+  });
+}
 
+/** 清理 undefined 字段（避免污染 config） */
+function cleanObject(obj: Record<string, any>) {
+  return Object.fromEntries(
+    Object.entries(obj).filter(([_, v]) => v !== undefined)
+  );
+}
 
 @Injectable()
 export class SjconfigService {
@@ -231,27 +245,39 @@ export class SjconfigService {
   }
 
 
+/** 保存完整参数组（深合并更新，不修改默认参数） */
+async saveFullConfig(
+  user: User,
+  moduleName: string,
+  ingredientLimits?: Record<string, any>,
+  chemicalLimits?: Record<string, any>,
+  otherSettings?: Record<string, any>,
+  SJProcessCost?: Record<string, any>
+) {
+  // 1️⃣ 获取配置
+  const group = await this.getOrCreateUserGroup(user, moduleName);
 
-  /** 保存完整参数组（深合并更新，不修改默认参数） */
-  async saveFullConfig(
-    user: User,
-    moduleName: string,
-    ingredientLimits?: Record<string, any>,
-    chemicalLimits?: Record<string, any>,
-    otherSettings?: Record<string, any>,
-    SJProcessCost?: Record<string, any>
-  ) {
-    const group = await this.getOrCreateUserGroup(user, moduleName);
+  const oldConfig = group.config_data || {};
 
-    group.config_data = _.merge({}, group.config_data || {}, {
-      ...(ingredientLimits ? { ingredientLimits } : {}),
-      ...(chemicalLimits ? { chemicalLimits } : {}),
-      ...(otherSettings ? { otherSettings } : {}),
-      ...(SJProcessCost ? { SJProcessCost } : {}),
-    });
+  // 2️⃣ 构造新配置（只保留传入的字段）
+  const newConfigRaw = {
+    ingredientLimits,
+    chemicalLimits,
+    otherSettings,
+    SJProcessCost,
+  };
 
-    return await this.configRepo.save(group);
-  }
+  const newConfig = cleanObject(newConfigRaw);
+
+  // 3️⃣ 深合并（数组覆盖）
+  const mergedConfig = deepMergeReplaceArray(oldConfig, newConfig);
+
+  // 4️⃣ （可选）防御性拷贝，避免引用污染
+  group.config_data = _.cloneDeep(mergedConfig);
+
+  // 5️⃣ 保存
+  return await this.configRepo.save(group);
+}
 
   /** 保存选择的原料序号（同步 ingredientLimits + 精粉列表） */
 
@@ -1346,4 +1372,130 @@ async exportSJProcessCostExcel(user: User): Promise<Buffer> {
   return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
 }
 
+
+async toggleIngredient(
+  user: User,
+  moduleName: string,
+  id: number,
+  checked: boolean,
+) {
+  const group = await this.getOrCreateUserGroup(user, moduleName);
+  const configData = _.cloneDeep(group.config_data || {});
+
+  let ingredientParams: string[] = (configData.ingredientParams || []).map(String);
+  let ingredientLimits: Record<string, any> = _.cloneDeep(configData.ingredientLimits || {});
+  const builtinPowderMap: Record<string, any> = configData.BuiltinPowder || {};
+
+  // ================= 确保结构存在 =================
+  if (!configData.otherSettings) configData.otherSettings = {};
+  if (!Array.isArray(configData.otherSettings['精粉']))
+    configData.otherSettings['精粉'] = [];
+  if (!Array.isArray(configData.otherSettings['固定配比']))
+    configData.otherSettings['固定配比'] = [];
+
+  const idStr = String(id);
+
+  // ================= 1️⃣ 添加 =================
+  if (checked) {
+    if (!ingredientParams.includes(idStr)) {
+      ingredientParams.push(idStr);
+    }
+
+    // 添加 limits
+    if (!ingredientLimits[idStr]) {
+      const raw = await this.rawRepo.findOne({ where: { id } });
+
+      const builtinPowder = builtinPowderMap[raw?.name || ''];
+
+      ingredientLimits[idStr] = builtinPowder
+        ? {
+            low_limit: builtinPowder.low_limit ?? 0,
+            top_limit: builtinPowder.top_limit ?? 100,
+            lose_index: 1,
+          }
+        : {
+            low_limit: 0,
+            top_limit: 100,
+            lose_index: 1,
+          };
+
+      // 精粉自动加入
+      if (raw?.category?.startsWith('T1')) {
+        if (!configData.otherSettings['精粉'].includes(idStr)) {
+          configData.otherSettings['精粉'].push(idStr);
+        }
+      }
+    }
+  }
+
+  // ================= 2️⃣ 删除 =================
+  else {
+    ingredientParams = ingredientParams.filter(i => i !== idStr);
+
+    // 删除 limits
+    delete ingredientLimits[idStr];
+
+    // 从 精粉 / 固定配比 删除
+    ['精粉', '固定配比'].forEach(key => {
+      configData.otherSettings[key] = configData.otherSettings[key].filter(
+        (item: string) => item !== idStr
+      );
+    });
+  }
+
+  // ================= 3️⃣ 更新 ingredientData =================
+  const raws = await this.rawRepo.findByIds(ingredientParams.map(Number));
+
+  const ingredientData = raws.map(raw => ({
+    id: String(raw.id),
+    name: raw.name,
+    category: raw.category,
+    composition: raw.composition,
+    inventory: raw.inventory,
+    origin: raw.origin,
+    modifier: raw.modifier,
+    enabled: raw.enabled,
+    remark: raw.remark,
+    created_at: raw.created_at,
+    updated_at: raw.updated_at,
+  }));
+
+  // ================= 4️⃣ 保存当前模块 =================
+  if (!group.config_data) group.config_data = {};
+
+  group.config_data.ingredientParams = ingredientParams;
+  group.config_data.ingredientLimits = _.cloneDeep(ingredientLimits);
+  group.config_data.ingredientData = _.cloneDeep(ingredientData);
+  group.config_data.otherSettings = configData.otherSettings;
+
+  await this.configRepo.save(group);
+
+  // ================= 5️⃣ 同步其他模块 =================
+  const syncModules = ['烧结固定配料计算', '硫平衡计算'];
+
+  for (const syncModule of syncModules) {
+    const otherGroup = await this.getOrCreateUserGroup(user, syncModule);
+
+    if (!otherGroup.config_data) otherGroup.config_data = {};
+
+    otherGroup.config_data.ingredientParams = ingredientParams;
+    otherGroup.config_data.ingredientLimits = _.cloneDeep(ingredientLimits);
+    otherGroup.config_data.ingredientData = _.cloneDeep(ingredientData);
+
+    const ingredientResults: Record<string, number> = {};
+    ingredientParams.forEach(id => {
+      ingredientResults[id] = ingredientLimits[id]?.low_limit ?? 0;
+    });
+
+    otherGroup.config_data.ingredientResults = ingredientResults;
+
+    await this.configRepo.save(otherGroup);
+  }
+
+  return {
+    ingredientParams,
+    ingredientLimits,
+    ingredientData,
+  };
+}
 }

@@ -8,6 +8,7 @@ import { BizModule } from '../../database/entities/biz-module.entity';
 import { User } from '../user/entities/user.entity';
 import { PelletEconInfo } from '../pellet-econ-info/entities/pellet-econ-info.entity';
 import { FIXED_HEADERS } from '../pellet-econ-info/pellet-econ-info.service';
+import { PelletToggleDto } from './dto/pellet-toggle.dto';
 
 const OTHER_MINERAL_FIELD_ORDER = [
   '单价',
@@ -271,4 +272,35 @@ async saveFullConfig(
       totalPages: Math.ceil(total / pageSize),
     };
   }
+
+  async togglePellet(
+  user: User,
+  moduleName: string,
+  dto: PelletToggleDto,
+) {
+  const { id, checked } = dto;
+
+  const group = await this.getOrCreateUserGroup(user, moduleName);
+  const configData = _.cloneDeep(group.config_data || {});
+
+  const oldParams: number[] = configData.pelletParams || [];
+  let newParams = [...oldParams];
+
+  // ================= 1️⃣ 切换逻辑 =================
+  if (checked) {
+    if (!newParams.includes(id)) {
+      newParams.push(id);
+    }
+  } else {
+    newParams = newParams.filter(i => i !== id);
+  }
+
+  // ================= 2️⃣ 保存 =================
+  configData.pelletParams = Array.from(new Set(newParams));
+  group.config_data = configData;
+
+  await this.configRepo.save(group);
+
+  return { data: group.config_data };
+}
 }

@@ -8,6 +8,7 @@ import { BizModule } from '../../database/entities/biz-module.entity';
 import { User } from '../user/entities/user.entity';
 import { SjEconInfo } from '../sj-econ-info/entities/sj-econ-info.entity';
 import { FIXED_HEADERS } from '../sj-econ-info/sj-econ-info.service';
+import { SJToggleDto } from './dto/sj-toggle.dto';
 
 
 const RAW_MATERIAL_FIELD_ORDER = [
@@ -303,5 +304,36 @@ async getSelectedIngredients(
     pageSize,
     totalPages: Math.ceil(total / pageSize),
   };
+}
+
+async toggleIngredient(
+  user: User,
+  moduleName: string,
+  dto: SJToggleDto,
+) {
+  const { id, checked } = dto;
+
+  const group = await this.getOrCreateUserGroup(user, moduleName);
+  const configData = _.cloneDeep(group.config_data || {});
+
+  const oldParams: number[] = configData.ingredientParams || [];
+  let newParams = [...oldParams];
+
+  // ================= 1️⃣ 切换逻辑 =================
+  if (checked) {
+    if (!newParams.includes(id)) {
+      newParams.push(id);
+    }
+  } else {
+    newParams = newParams.filter(i => i !== id);
+  }
+
+  // ================= 2️⃣ 保存 =================
+  configData.ingredientParams = Array.from(new Set(newParams));
+  group.config_data = configData;
+
+  await this.configRepo.save(group);
+
+  return { data: group.config_data };
 }
 }

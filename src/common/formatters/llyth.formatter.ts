@@ -1,4 +1,30 @@
 // gl.formatter.ts
+function unwrapValue(val: any): any {
+  let current = val;
+
+  while (
+    current &&
+    typeof current === 'object' &&
+    'value' in current
+  ) {
+    current = current.value;
+  }
+
+  return current;
+}
+
+function wrapWithLimit(val: any, low = 0, top = 100) {
+  const pureVal = unwrapValue(val);
+
+  return {
+    value: pureVal,
+    low_limit: val?.low_limit ?? low,
+    top_limit: val?.top_limit ?? top
+  };
+}
+
+
+
 function roundValue(val: any) {
   if (typeof val === 'number') return Math.round(val * 100) / 100;
   return val;
@@ -245,7 +271,7 @@ export function formatLLYTHResultFull(
     const newLoad: Record<string, any> = {};
     Object.entries(result["负荷"]).forEach(([key, val]) => {
       const top = loadTopLimits?.[key];
-      newLoad[key] = { value: val, low_limit: 0, top_limit: top ?? 100 };
+      newLoad[key] = wrapWithLimit(val, 0, top ?? 100);
     });
     mapped["负荷"] = newLoad;
   }
@@ -255,7 +281,7 @@ export function formatLLYTHResultFull(
     const newIron: Record<string, any> = {};
     Object.entries(result["铁水含量"]).forEach(([key, val]) => {
       const top = ironWaterTopLimits?.[key] ?? 100;
-      newIron[key] = { value: val, low_limit: 0, top_limit: top };
+      newIron[key] = wrapWithLimit(val, 0, top);
     });
     mapped["铁水含量"] = newIron;
   }
@@ -265,7 +291,11 @@ export function formatLLYTHResultFull(
     const newSlag: Record<string, any> = {};
     Object.entries(result["炉渣成分"]).forEach(([key, val]) => {
       const limits = slagLimits?.[key] || {};
-      newSlag[key] = { value: val, low_limit: limits.low_limit ?? 0, top_limit: limits.top_limit ?? 100 };
+      newSlag[key] = wrapWithLimit(
+        val,
+        limits.low_limit ?? 0,
+        limits.top_limit ?? 100
+      );
     });
     mapped["炉渣成分"] = newSlag;
   }

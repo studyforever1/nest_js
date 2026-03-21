@@ -439,23 +439,29 @@ export class LlythCalcService {
           || newStatus === TaskStatus.STOPPED
           || forceSave;
 
-        if (needFormat) {
-          // 格式化所有结果
-          results = results.map(item =>
-            formatLLYTHResultFull(
-              item,
-              ingredientNameMap,
-              fuelNameMap,
-              params.ingredientLimits,
-              params.fuelLimits,
-              params.loadTopLimits,
-              params.ironWaterTopLimits,
-              params.slagLimits
-            )
+         if (needFormat) {
+        // 🔥 关键：只对未 format 的数据处理
+        results = results.map(item => {
+          if (item.__formatted) return item;
+
+          const formatted = formatLLYTHResultFull(
+            item,
+            ingredientNameMap,
+            fuelNameMap,
+            params.ingredientLimits,
+            params.fuelLimits,
+            params.loadTopLimits,
+            params.ironWaterTopLimits,
+            params.slagLimits
           );
 
+          formatted.__formatted = true; // ✅ 标记
+          return formatted;
+        });
+
+
           // 成本排序和排名
-          results.sort((a, b) => a["主要参数"].本月毛利 - b["主要参数"].本月毛利);
+          results.sort((a, b) => a["主要参数"]['本月毛利(亿元/月)'] - b["主要参数"]['本月毛利(亿元/月)']);
           results.forEach((item, idx) => item.利润排名 = idx + 1);
 
           if (results.length) {

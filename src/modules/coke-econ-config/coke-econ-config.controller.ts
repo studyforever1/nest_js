@@ -19,6 +19,7 @@ import {
   DeleteCokeParamsDto,
   CokeEconPaginationDto,
 } from './dto/coke-econ-config.dto';
+import { CokeToggleDto } from './dto/coke-toggle.dto';
 
 @ApiTags('焦炭经济性评价-参数配置')
 @ApiBearerAuth('JWT')
@@ -70,6 +71,15 @@ export class CokeEconConfigController {
       body.name,
     );
   }
+  @Put('toggle-coke')
+@ApiOperation({ summary: '单个切换焦炭选中状态' })
+async toggleCoke(
+  @CurrentUser() user: User,
+  @Body() body: CokeToggleDto,
+) {
+  return this.service.toggleCoke(user, this.MODULE_NAME, body);
+}
+
 
   /** 删除选中焦炭 */
   @Delete('coke')

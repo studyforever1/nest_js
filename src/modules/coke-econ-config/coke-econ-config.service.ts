@@ -8,6 +8,7 @@ import { BizModule } from '../../database/entities/biz-module.entity';
 import { User } from '../user/entities/user.entity';
 import { CokeEconInfo } from '../coke-econ-info/entities/coke-econ-info.entity';
 import { FIXED_HEADERS } from '../coke-econ-info/coke-econ-info.service';
+import { CokeToggleDto } from './dto/coke-toggle.dto';
 
 @Injectable()
 export class CokeEconConfigService {
@@ -237,4 +238,35 @@ async saveFullConfig(
       totalPages: Math.ceil(total / pageSize),
     };
   }
+
+  async toggleCoke(
+  user: User,
+  moduleName: string,
+  dto: CokeToggleDto,
+) {
+  const { id, checked } = dto;
+
+  const group = await this.getOrCreateUserGroup(user, moduleName);
+  const configData = _.cloneDeep(group.config_data || {});
+
+  const oldParams: number[] = configData.cokeParams || [];
+  let newParams = [...oldParams];
+
+  // ================= 1️⃣ 切换逻辑 =================
+  if (checked) {
+    if (!newParams.includes(id)) {
+      newParams.push(id);
+    }
+  } else {
+    newParams = newParams.filter(i => i !== id);
+  }
+
+  // ================= 2️⃣ 保存 =================
+  configData.cokeParams = Array.from(new Set(newParams));
+  group.config_data = configData;
+
+  await this.configRepo.save(group);
+
+  return { data: group.config_data };
+}
 }

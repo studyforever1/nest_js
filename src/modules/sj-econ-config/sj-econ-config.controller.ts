@@ -11,6 +11,7 @@ import {
   DeleteSjEconIngredientsDto,
   SjEconPaginationDto,
 } from './dto/sj-econ-config.dto';
+import { SJToggleDto } from './dto/sj-toggle.dto';
 
 @ApiTags('烧结原料经济性评价-参数配置')
 @ApiBearerAuth('JWT')
@@ -58,6 +59,15 @@ export class SjEconConfigController {
       body.name,
     );
   }
+
+  @Put('toggle-ingredient')
+@ApiOperation({ summary: '单个切换原料选中状态' })
+async toggleIngredient(
+  @CurrentUser() user: User,
+  @Body() body: SJToggleDto,
+) {
+  return this.service.toggleIngredient(user, this.MODULE_NAME, body);
+}
 
   /** 删除选中原料 */
   @Delete('ingredients')

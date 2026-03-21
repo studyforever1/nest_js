@@ -47,7 +47,7 @@ import { SJRestoreIngredientsDto } from './dto/sj-restore-ingredients.dto';
 import { UpdateSelectedIngredientDataDto } from './dto/update-selected-ingredient-data.dto';
 import type { Response } from 'express';
 import * as XLSX from 'xlsx';
-
+import { SJToggleIngredientDto } from './dto/sj-toggle-ingredient.dto';
 
 
 @ApiTags('烧结参数配置接口')
@@ -116,6 +116,24 @@ async latest(
       body.name,
     );
   }
+
+  @Post('toggle-ingredient')
+@ApiOperation({
+  summary: '单个原料勾选/取消',
+})
+async toggleIngredient(
+  @CurrentUser() user: User,
+  @Body() body: SJToggleIngredientDto,
+) {
+  return this.sjconfigService.toggleIngredient(
+    user,
+    this.MODULE_NAME,
+    body.id,
+    body.checked,
+  );
+}
+
+
 
   @Delete('ingredient')
   @ApiOperation({ summary: '删除选中的原料' })

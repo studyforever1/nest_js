@@ -289,10 +289,12 @@ async fetchAndSaveProgress(
         newStatus === TaskStatus.STOPPED ||
         forceSave;
 
-      /** FINAL阶段格式化 */
-      if (needFormat) {
-        results = results.map(item =>
-          formatGLResultFull(
+         if (needFormat) {
+        // 🔥 关键：只对未 format 的数据处理
+        results = results.map(item => {
+          if (item.__formatted) return item;
+
+          const formatted = formatGLResultFull(
             item,
             ingredientNameMap,
             fuelNameMap,
@@ -301,11 +303,14 @@ async fetchAndSaveProgress(
             parameters.loadTopLimits,
             parameters.ironWaterTopLimits,
             parameters.slagLimits
-          )
-        );
+          );
+
+          formatted.__formatted = true; // ✅ 标记
+          return formatted;
+        });
 
         /** 成本排序 */
-        results.sort((a, b) => a["主要参数"].成本 - b["主要参数"].成本);
+        results.sort((a, b) => a["主要参数"]["成本(元/t)"] - b["主要参数"]["成本(元/t)"]);
 
         /** 成本排名 */
         results.forEach((item, idx) => {
