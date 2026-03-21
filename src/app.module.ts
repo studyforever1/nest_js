@@ -51,6 +51,7 @@ import { PortIronOreInfoModule } from './modules/port-iron-ore-info/port-iron-or
 import { PortPelletLumpInfoModule } from './modules/port-pellet-lump-info/port-pellet-lump-info.module';
 import { DepartmentModule } from './modules/department/department.module';
 import { InitModule } from './modules/init/init.module';
+import { CommonModule } from './modules/common/common.module';
 
 
 @Module({
@@ -107,7 +108,8 @@ import { InitModule } from './modules/init/init.module';
     ImModule,
     PortIronOreInfoModule,
     PortPelletLumpInfoModule,
-    DepartmentModule
+    DepartmentModule,
+    CommonModule
   ],
 })
 export class AppModule {}
