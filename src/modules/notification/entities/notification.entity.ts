@@ -36,6 +36,9 @@ export class Notification {
   @ManyToOne(() => User, { nullable: false })
   creator: User;
 
+  @Column({ nullable: true })
+creatorName: string;
+
   @OneToMany(() => NotificationUser, (nu) => nu.notification, { cascade: true })
   userStatus: NotificationUser[];
 

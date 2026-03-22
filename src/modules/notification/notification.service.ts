@@ -8,6 +8,7 @@ import { NotificationUser } from './entities/notification-user.entity';
 import { User } from '../user/entities/user.entity';
 import { ApiResponse } from '../../common/response/response.dto';
 import { CreateNotificationDto, ListNotificationDto } from './dto/notification.dto';
+import { NotificationGateway } from './notification.gateway';
 
 @Injectable()
 export class NotificationService {
@@ -20,39 +21,51 @@ export class NotificationService {
 
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
+
+    private readonly gateway: NotificationGateway,
   ) {}
 
   /** 创建通知并分发给用户（默认全员） */
-  async create(dto: CreateNotificationDto, creator: User, users?: User[]) {
-    const notification = this.notificationRepo.create({
-      type: dto.type,
-      title: dto.title,
-      content: dto.content,
-      priority: dto.priority || NotificationPriority.MEDIUM,
-      creator,
+async create(dto: CreateNotificationDto, creator: User, users?: User[]) {
+  const notification = this.notificationRepo.create({
+    type: dto.type,
+    title: dto.title,
+    content: dto.content,
+    priority: dto.priority || NotificationPriority.MEDIUM,
+    creator,
+    creatorName: creator.fullName,
+  });
+
+  const savedNotification = await this.notificationRepo.save(notification);
+
+  let targetUsers = users;
+  if (!targetUsers || targetUsers.length === 0) {
+    targetUsers = await this.userRepo.find({
+      select: ['user_id'],
     });
-
-    const savedNotification = await this.notificationRepo.save(notification);
-
-    let targetUsers = users;
-    if (!targetUsers || targetUsers.length === 0) {
-      targetUsers = await this.userRepo.find({
-        select: ['user_id'],
-      });
-    }
-
-    const userStatusList = targetUsers.map(u =>
-      this.notificationUserRepo.create({
-        notification: savedNotification,
-        user: { user_id: u.user_id } as User,
-        read: false,
-      }),
-    );
-
-    await this.notificationUserRepo.save(userStatusList);
-
-    return ApiResponse.success(savedNotification, '通知创建成功');
   }
+
+  const userStatusList = targetUsers.map(u =>
+    this.notificationUserRepo.create({
+      notification: savedNotification,
+      user: { user_id: u.user_id } as User,
+      read: false,
+    }),
+  );
+
+  await this.notificationUserRepo.save(userStatusList);
+
+  // ⭐⭐⭐ WebSocket 推送（关键）
+  for (const u of targetUsers) {
+    this.gateway.sendToUser(u.user_id, {
+      type: 'NEW_NOTIFICATION',
+      title: savedNotification.title,
+      id: savedNotification.id,
+    });
+  }
+
+  return ApiResponse.success(savedNotification, '通知创建成功');
+}
 
   /** 当前用户通知列表 */
   async list(query: ListNotificationDto, currentUser: User) {
@@ -119,7 +132,7 @@ export class NotificationService {
           title: r.notification.title,
           content: r.notification.content,
           read: r.read,
-          creator: r.notification.creator?.username || null,
+          creator: r.notification.creatorName || null,
           created_at: r.notification.created_at,
           updated_at: r.notification.updated_at,
         })),
