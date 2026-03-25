@@ -9,6 +9,7 @@ import { User } from '../user/entities/user.entity';
 import { ApiResponse } from '../../common/response/response.dto';
 import { CreateNotificationDto, ListNotificationDto } from './dto/notification.dto';
 import { NotificationGateway } from './notification.gateway';
+import { PresenceService } from './presence.service';
 
 @Injectable()
 export class NotificationService {
@@ -23,7 +24,22 @@ export class NotificationService {
     private readonly userRepo: Repository<User>,
 
     private readonly gateway: NotificationGateway,
+    private readonly presence: PresenceService,
   ) {}
+
+  /** HTTP 心跳：不依赖 WebSocket 也能出现在「在线列表」 */
+  presencePing(user: User) {
+    this.presence.recordHttpPing(user.user_id);
+    return ApiResponse.success(
+      { userId: user.user_id, serverTime: Date.now() },
+      '在线心跳已记录',
+    );
+  }
+
+  /** 当前在线用户（WebSocket 已连接 ∪ 近期 HTTP 心跳） */
+  getPresenceSnapshot() {
+    return ApiResponse.success(this.presence.getSnapshot());
+  }
 
   /** 创建通知并分发给用户（默认全员） */
 async create(dto: CreateNotificationDto, creator: User, users?: User[]) {
@@ -55,13 +71,19 @@ async create(dto: CreateNotificationDto, creator: User, users?: User[]) {
 
   await this.notificationUserRepo.save(userStatusList);
 
-  // ⭐⭐⭐ WebSocket 推送（关键）
+  let pushOk = 0;
   for (const u of targetUsers) {
-    this.gateway.sendToUser(u.user_id, {
+    const ok = this.gateway.sendToUser(u.user_id, {
       type: 'NEW_NOTIFICATION',
       title: savedNotification.title,
       id: savedNotification.id,
     });
+    if (ok) pushOk++;
+  }
+  if (pushOk < targetUsers.length) {
+    console.warn(
+      `[通知] 实时推送 ${pushOk}/${targetUsers.length}：需前端用「与 API 同主机端口」建立 Socket.IO，并传 JWT（query.token / auth.token / Authorization）。GET /notifications/presence 可查看 socket 登记情况。`,
+    );
   }
 
   return ApiResponse.success(savedNotification, '通知创建成功');

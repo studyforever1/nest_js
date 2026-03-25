@@ -77,10 +77,34 @@ origin  https://github.com/studyforever1/nest_js.git (fetch)
 origin  https://github.com/studyforever1/nest_js.git (push)
 就可以正常的上传代码了
 git add .
-git commit -m "12.07"
+git commit -m "2026-0322"
 git push
 
 
 
 # 生成license
 npm run license:generate 2025-12-31
+
+
+
+# 问答模板 
+你是一个资深软件工程师。
+
+技术栈：
+【写清楚，例如：NestJS + FastAPI + Vue】
+
+当前目标：
+【我要实现什么】
+
+当前代码：
+【贴代码（尽量精简）】
+
+当前问题：
+【报错 / 卡点】
+
+要求：
+1. 找出根本原因（不要泛泛而谈）
+2. 给出最小修改方案（不要大改）
+3. 标出修改位置
+4. 给出完整可运行代码
+5. 如果有更优方案，额外说明

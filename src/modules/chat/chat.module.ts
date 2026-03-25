@@ -6,15 +6,15 @@ import { ChatService } from './chat.service';
 import { ChatController } from './chat.controller';
 import { ChatGateway } from './chat.gateway';
 import { User } from '../user/entities/user.entity';
-import { JwtModule } from '@nestjs/jwt';
+import { NotificationModule } from '../notification/notification.module';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([ChatRoom, ChatMessage, User]),
-    JwtModule.register({
-      secret: 'your_secret_key123123', // 建议放到 .env
-      signOptions: { expiresIn: '1h' },
-    }) // 这里和你全局 JWT 配置一致
+    NotificationModule,
+    // 复用 AuthModule 内部的 JwtModule 配置，避免 ChatGateway 校验 secret 与鉴权不一致
+    AuthModule,
   ],
   controllers: [ChatController],
   providers: [ChatService, ChatGateway],

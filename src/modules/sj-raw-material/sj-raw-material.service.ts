@@ -345,4 +345,199 @@ async query(user: User, params: RawPaginationDto) {
     return this.ensureTemplateFileExists();
 }
 
+/** ========================= 批量修改模板 ========================= */
+private async ensureBatchUpdateTemplateFileExists(): Promise<string> {
+  await fs.promises.mkdir(this.templateDir, { recursive: true });
+  const filePath = path.join(this.templateDir, 'sj-raw-material-batch-update-template.xlsx');
+  if (fs.existsSync(filePath)) return filePath;
+
+  const workbook = new ExcelJS.Workbook();
+  // 批量修改支持按“物料名称”匹配；表头按前端示例保持一致
+  workbook.addWorksheet('模板').addRow(['分类编号', '物料名称', ...FIXED_HEADERS, '库存', '产地', '备注']);
+  await workbook.xlsx.writeFile(filePath);
+  return filePath;
+}
+
+async getBatchUpdateTemplateFilePath(): Promise<string> {
+  return this.ensureBatchUpdateTemplateFileExists();
+}
+private cellToString(value: any): string {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value.trim();
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value).trim();
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'object') {
+    if ('text' in value && value.text !== undefined) return String(value.text).trim();
+    if ('result' in value && value.result !== undefined) return String(value.result).trim();
+    if ('richText' in value && Array.isArray(value.richText)) {
+      return value.richText.map((item: any) => item?.text ?? '').join('').trim();
+    }
+  }
+  return String(value).trim();
+}
+
+/** ========================= 导入 Excel（批量修改） ========================= */
+async importExcelBatchUpdate(file: Express.Multer.File, username: string) {
+  try {
+    if (!file?.buffer) return { status: 'error', message: '文件为空' };
+
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(file.buffer as any);
+    const sheet = workbook.worksheets[0];
+    if (!sheet) return { status: 'error', message: 'Excel 中没有工作表' };
+
+    const headerRow = sheet.getRow(1);
+    const headerMap: Record<string, number> = {};
+    const allowedHeaders = ['分类编号', '原料', '物料名称', '库存', '产地', '备注', ...FIXED_HEADERS];
+
+    headerRow.eachCell((cell, col) => {
+      const val = String(cell.value ?? '').trim();
+      if (!val) return;
+      if (allowedHeaders.includes(val)) headerMap[val] = col;
+    });
+
+    const materialCol = headerMap['原料'] ?? headerMap['物料名称'];
+    if (!materialCol) return { status: 'error', message: '缺少必要列：原料/物料名称' };
+
+    const rowPayloads: Array<{
+      name: string;
+      category?: string;
+      origin?: string;
+      remark?: string;
+      inventory?: number;
+      composition: Record<string, number>;
+      cellErrors?: string[];
+    }> = [];
+    const names = new Set<string>();
+    let collectedErrors: string[] = [];
+
+    sheet.eachRow({ includeEmpty: true }, (row, index) => {
+      if (index === 1) return;
+      const name = this.cellToString(row.getCell(materialCol)?.value);
+      if (!name) return;
+      names.add(name);
+
+      interface RowPayload {
+        name: string;
+        category?: string;
+        origin?: string;
+        remark?: string;
+        inventory?: number;
+        composition: Record<string, number>;
+        cellErrors?: string[];
+      }
+      const payload: RowPayload = { name, composition: {} };
+      if (headerMap['分类编号']) {
+        const categoryText = this.cellToString(row.getCell(headerMap['分类编号']).value);
+        if (categoryText) payload.category = categoryText;
+      }
+      if (headerMap['产地']) {
+        const originText = this.cellToString(row.getCell(headerMap['产地']).value);
+        if (originText) payload.origin = originText;
+      }
+      if (headerMap['备注']) {
+        const remarkText = this.cellToString(row.getCell(headerMap['备注']).value);
+        if (remarkText) payload.remark = remarkText;
+      }
+      let inventoryCellError = false;
+      if (headerMap['库存']) {
+        const inventoryText = this.cellToString(row.getCell(headerMap['库存']).value);
+        const parsedInventory = this.parseNumericCellOrThrow(inventoryText, index, '库存');
+        if (inventoryText && parsedInventory === undefined) {
+          // 记录或处理“库存”单元格数据出错
+          inventoryCellError = true;
+        } else {
+          payload.inventory = parsedInventory;
+        }
+      }
+
+      let compositionErrorKeys: string[] = [];
+      FIXED_HEADERS.forEach((key) => {
+        const col = headerMap[key];
+        if (!col) return;
+        const text = this.cellToString(row.getCell(col).value);
+        const value = this.parseNumericCellOrThrow(text, index, key);
+        if (text && value === undefined) {
+          // 记录化学成分出错的 key
+          compositionErrorKeys.push(key);
+        } else if (value !== undefined) {
+          payload.composition[key] = value;
+        }
+      });
+
+      // 合并错误提示，写入 payload，并收集到 collectedErrors 集中反馈
+      if (inventoryCellError || compositionErrorKeys.length > 0) {
+        if (!payload['cellErrors']) payload['cellErrors'] = [];
+        if (inventoryCellError) {
+          const msg = `第 ${index} 行“库存”格式有误`;
+          payload['cellErrors'].push(msg);
+          collectedErrors.push(msg);
+        }
+        if (compositionErrorKeys.length) {
+          const msg = `第 ${index} 行成分字段 [${compositionErrorKeys.join(', ')}] 格式有误`;
+          payload['cellErrors'].push(msg);
+          collectedErrors.push(msg);
+        }
+      }
+      rowPayloads.push(payload);
+    });
+
+    if (!rowPayloads.length) {
+      return { status: 'error', message: '没有有效数据可导入（缺少物料名称）' };
+    }
+
+    if (collectedErrors.length) {
+      // 有格式错误，返回错误信息但不中断服务
+      return { status: 'error', message: `导入数据格式有误：\n${collectedErrors.join('\n')}` };
+    }
+
+    const existedRows = await this.rawRepo.find({ where: { name: In(Array.from(names)) } });
+    const existedByName = new Map(existedRows.map((item) => [item.name, item]));
+    const updates: SjRawMaterial[] = [];
+    let skipped = 0;
+    let skippedNoChange = 0;
+
+    rowPayloads.forEach((row) => {
+      const target = existedByName.get(row.name);
+      if (!target) return void (skipped += 1);
+      const hasAnyField =
+        row.category !== undefined ||
+        row.origin !== undefined ||
+        row.remark !== undefined ||
+        row.inventory !== undefined ||
+        Object.keys(row.composition).length > 0;
+      if (!hasAnyField) return void (skippedNoChange += 1);
+
+      if (row.category !== undefined) target.category = row.category;
+      if (row.origin !== undefined) target.origin = row.origin;
+      if (row.remark !== undefined) target.remark = row.remark;
+      if (row.inventory !== undefined) target.inventory = row.inventory;
+      if (Object.keys(row.composition).length) {
+        target.composition = this.normalizeComposition({ ...(target.composition ?? {}), ...row.composition });
+      }
+      target.modifier = username;
+      updates.push(target);
+    });
+
+    if (!updates.length) {
+      return { status: 'error', message: `未匹配到可更新数据，已跳过 ${skipped} 条未匹配物料、${skippedNoChange} 条无更新字段` };
+    }
+    await this.rawRepo.save(updates);
+    return { status: 'success', message: `成功更新 ${updates.length} 条数据，跳过 ${skipped} 条未匹配物料、${skippedNoChange} 条无更新字段` };
+  } catch (error) {
+    // 捕获任何未处理的异常，防止服务器挂掉
+    return { status: 'error', message: `导入失败: ${(error?.message || error || '未知错误')}` };
+  }
+}
+
+private parseNumericCellOrThrow(rawText: string, rowIndex: number, header: string): number | undefined {
+  if (!rawText) return undefined;
+  const val = Number(rawText);
+  if (!Number.isFinite(val)) {
+    // 不抛出异常，改为返回 undefined，由调用者处理
+    // 可以在调用处提供统一的用户提示，并说明未保存成功的原因
+    return undefined;
+  }
+  return val;
+}
 }

@@ -5,6 +5,7 @@ import {
   OnGatewayDisconnect,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
+import { PresenceService } from './presence.service';
 
 @WebSocketGateway({
   cors: { origin: '*' },
@@ -13,50 +14,30 @@ export class NotificationGateway implements OnGatewayConnection, OnGatewayDiscon
   @WebSocketServer()
   server: Server;
 
-  // 存用户连接
-  private userSocketMap = new Map<number, Set<Socket>>();
+  constructor(private readonly presence: PresenceService) {}
 
-  /** 连接 */
- handleConnection(socket: Socket) {
-  const userId = socket.data.userId;
-
-  if (!this.userSocketMap.has(userId)) {
-    this.userSocketMap.set(userId, new Set());
+  /** 供 ChatGateway 复用：与握手时取 token 规则一致 */
+  static extractTokenFromHandshake(socket: Socket): string | undefined {
+    const q = socket.handshake.query?.token;
+    if (typeof q === 'string' && q) return q;
+    if (Array.isArray(q) && q[0]) return q[0];
+    const authToken = socket.handshake.auth?.token;
+    if (typeof authToken === 'string' && authToken) return authToken;
+    const hdr = socket.handshake.headers?.authorization;
+    if (typeof hdr === 'string' && hdr.toLowerCase().startsWith('bearer ')) {
+      return hdr.slice(7).trim();
+    }
+    return undefined;
   }
 
-  this.userSocketMap.get(userId)!.add(socket);
+  /** 不在此网关做 JWT：避免双网关重复校验/误断开；登记统一由 ChatGateway + PresenceService */
+  async handleConnection() {}
 
-  console.log(`用户 ${userId} 已连接，当前连接数: ${this.userSocketMap.get(userId)!.size}`);
-}
-
-  /** 断开 */
   handleDisconnect(socket: Socket) {
-  const userId = socket.data.userId;
-
-  const set = this.userSocketMap.get(userId);
-  if (set) {
-    set.delete(socket);
-
-    if (set.size === 0) {
-      this.userSocketMap.delete(userId);
-    }
+    this.presence.untrackSocket(socket);
   }
 
-  console.log(`用户 ${userId} 断开`);
-}
-
-  sendToUser(userId: number, data: any) {
-  const sockets = this.userSocketMap.get(userId);
-
-  if (!sockets || sockets.size === 0) {
-    console.warn(`⚠️ 用户未连接: ${userId}`);
-    return;
+  sendToUser(userId: number, data: unknown): boolean {
+    return this.presence.emitToUser(userId, 'notification', data);
   }
-
-  sockets.forEach((socket) => {
-    if (socket.connected) {
-      socket.emit('notification', data);
-    }
-  });
-}
 }

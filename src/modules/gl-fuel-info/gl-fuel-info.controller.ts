@@ -153,4 +153,51 @@ async findAll(
     );
     res.sendFile(filePath, { root: process.cwd() });
   }
+
+
+
+   /** 导入 Excel（批量修改） */
+   @Post('import-batch-update')
+   @ApiOperation({ summary: '导入原料 Excel 文件（按物料名称批量修改）' })
+   @ApiConsumes('multipart/form-data')
+   @UseInterceptors(
+     FileInterceptor('file', {
+       storage: multer.memoryStorage(),
+     }),
+   )
+   @ApiBody({
+     description: '上传 Excel 文件',
+     required: true,
+     schema: {
+       type: 'object',
+       properties: {
+         file: { type: 'string', format: 'binary' },
+       },
+     },
+   })
+   async importExcelBatchUpdate(@UploadedFile() file: Express.Multer.File, @CurrentUser() user: { username: string }) {
+     if (!file || !file.buffer) {
+       return { status: 'error', message: '请上传文件或文件为空' };
+     }
+ 
+     try {
+       return await this.rawService.importExcelBatchUpdate(file, user.username);
+     } catch (error) {
+       console.error(error);
+       return { status: 'error', message: '批量修改失败，文件格式可能有误' };
+     }
+   }
+   @Get('template-batch-update')
+   @ApiOperation({ summary: '下载批量修改导入模板（按物料名称更新已有数据）' })
+   async downloadBatchUpdateTemplate(@Res() res: Response) {
+     const filePath = await this.rawService.getBatchUpdateTemplateFilePath();
+     res.setHeader(
+       'Content-Disposition',
+       'attachment; filename=gl_fuel_info_batch_update_template.xlsx',
+     );
+     res.sendFile(filePath, { root: process.cwd() });
+   }
+   
+
+   
 }

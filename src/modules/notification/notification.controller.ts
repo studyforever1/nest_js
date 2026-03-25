@@ -17,6 +17,26 @@ import {
 export class NotificationController {
   constructor(private readonly service: NotificationService) {}
 
+  @Post('presence/ping')
+  @ApiOperation({
+    summary: '在线心跳',
+    description:
+      '前端每 30～60 秒调用一次（带 JWT）。不依赖 WebSocket 也能被统计为在线，便于检测同时在线用户。',
+  })
+  presencePing(@CurrentUser() user: User) {
+    return this.service.presencePing(user);
+  }
+
+  @Get('presence')
+  @ApiOperation({
+    summary: '在线用户列表',
+    description:
+      '返回 socketConnectedUserIds（WebSocket 已登记）、recentHttpPingUserIds（近期心跳）、userIds（二者合并）。',
+  })
+  presence(@CurrentUser() _user: User) {
+    return this.service.getPresenceSnapshot();
+  }
+
   /** ✅ 创建通知并分发给用户 */
   @Post()
   @ApiOperation({ summary: '创建通知', description: '创建一条新通知并发送给指定用户列表' })

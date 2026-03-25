@@ -11,6 +11,8 @@ import { ChatService } from './chat.service';
 import { Socket, Server } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
+import { PresenceService } from '../notification/presence.service';
+import { NotificationGateway } from '../notification/notification.gateway';
 
 @WebSocketGateway({ cors: true })
 export class ChatGateway
@@ -21,6 +23,7 @@ export class ChatGateway
   constructor(
     private readonly chatService: ChatService,
     private readonly jwtService: JwtService,
+    private readonly presence: PresenceService,
   ) {}
 
   /** 初始化网关 */
@@ -31,11 +34,23 @@ export class ChatGateway
   /** 用户连接 */
   async handleConnection(client: Socket) {
     try {
-      const token = client.handshake.query.token as string;
+      const token = NotificationGateway.extractTokenFromHandshake(client);
+      if (!token) {
+        client.disconnect();
+        return;
+      }
       const payload = this.jwtService.verify<JwtPayload>(token);
-      client.data.userId = payload.sub;
-      this.onlineUsers.set(payload.sub, client);
-      console.log(`User ${payload.sub} connected`);
+      // JWT 的 sub 在不同实现里可能是字符串；chat/notification 的映射 key 统一使用 number
+      const userId = Number(payload.sub);
+      if (!Number.isFinite(userId)) {
+        client.disconnect();
+        return;
+      }
+
+      client.data.userId = userId;
+      this.onlineUsers.set(userId, client);
+      this.presence.trackSocket(userId, client);
+      console.log(`User ${userId} connected`);
     } catch (err) {
       client.disconnect();
     }
@@ -48,6 +63,7 @@ export class ChatGateway
       this.onlineUsers.delete(userId);
       console.log(`User ${userId} disconnected`);
     }
+    this.presence.untrackSocket(client);
   }
 
   /** 发送消息 */

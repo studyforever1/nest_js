@@ -317,4 +317,156 @@ async query(
   async getTemplateFilePath(): Promise<string> {
     return this.ensureTemplateFileExists();
   }
+
+ /** ========================= 导入 Excel（批量修改） ========================= */
+ async importExcelBatchUpdate(file: Express.Multer.File, username: string) {
+  if (!file?.buffer) throw new BadRequestException('文件为空');
+
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(file.buffer as any);
+  const sheet = workbook.worksheets[0];
+  if (!sheet) throw new BadRequestException('Excel 中没有工作表');
+
+  const headerRow = sheet.getRow(1);
+  const headerMap: Record<string, number> = {};
+  const allowedHeaders = ['分类编号', '原料', '物料名称', '库存', '产地', '备注', ...FIXED_HEADERS];
+
+  headerRow.eachCell((cell, col) => {
+    const val = String(cell.value ?? '').trim();
+    if (!val) return;
+    if (allowedHeaders.includes(val)) headerMap[val] = col;
+  });
+
+  const materialCol = headerMap['原料'] ?? headerMap['物料名称'];
+  if (!materialCol) throw new BadRequestException('缺少必要列：原料/物料名称');
+
+  const rowPayloads: Array<{
+    name: string;
+    category?: string;
+    origin?: string;
+    remark?: string;
+    inventory?: number;
+    composition: Record<string, number>;
+  }> = [];
+  const names = new Set<string>();
+
+  sheet.eachRow({ includeEmpty: true }, (row, index) => {
+    if (index === 1) return;
+    const name = this.cellToString(row.getCell(materialCol)?.value);
+    if (!name) return;
+    names.add(name);
+
+    const payload: {
+      name: string;
+      category?: string;
+      origin?: string;
+      remark?: string;
+      inventory?: number;
+      composition: Record<string, number>;
+    } = { name, composition: {} as Record<string, number> };
+
+    if (headerMap['分类编号']) {
+      const categoryText = this.cellToString(row.getCell(headerMap['分类编号']).value);
+      const categoryNum = this.parseNumericCellOrThrow(categoryText, index, '分类编号');
+      if (categoryNum !== undefined) payload.category = String(categoryNum);
+    }
+    if (headerMap['产地']) {
+      const originText = this.cellToString(row.getCell(headerMap['产地']).value);
+      if (originText) payload.origin = originText;
+    }
+    if (headerMap['备注']) {
+      const remarkText = this.cellToString(row.getCell(headerMap['备注']).value);
+      if (remarkText) payload.remark = remarkText;
+    }
+    if (headerMap['库存']) {
+      const inventoryText = this.cellToString(row.getCell(headerMap['库存']).value);
+      payload.inventory = this.parseNumericCellOrThrow(inventoryText, index, '库存');
+    }
+    FIXED_HEADERS.forEach((key) => {
+      const col = headerMap[key];
+      if (!col) return;
+      const text = this.cellToString(row.getCell(col).value);
+      const value = this.parseNumericCellOrThrow(text, index, key);
+      if (value !== undefined) payload.composition[key] = value;
+    });
+    rowPayloads.push(payload);
+  });
+
+  if (!rowPayloads.length) return { status: 'error', message: '没有有效数据可导入（缺少物料名称）' };
+
+  const existedRows = await this.rawRepo.find({ where: { name: In(Array.from(names)) } });
+  const existedByName = new Map(existedRows.map((item) => [item.name, item]));
+  const updates: GlMaterialInfo[] = [];
+  let skipped = 0;
+  let skippedNoChange = 0;
+
+  rowPayloads.forEach((row) => {
+    const target = existedByName.get(row.name);
+    if (!target) return void (skipped += 1);
+    const hasAnyField =
+      row.category !== undefined ||
+      row.origin !== undefined ||
+      row.remark !== undefined ||
+      row.inventory !== undefined ||
+      Object.keys(row.composition).length > 0;
+    if (!hasAnyField) return void (skippedNoChange += 1);
+
+    if (row.category !== undefined) target.category = row.category;
+    if (row.origin !== undefined) target.origin = row.origin;
+    if (row.remark !== undefined) target.remark = row.remark;
+    if (row.inventory !== undefined) target.inventory = row.inventory;
+    if (Object.keys(row.composition).length) {
+      target.composition = this.normalizeComposition({ ...(target.composition ?? {}), ...row.composition });
+    }
+    target.modifier = username;
+    updates.push(target);
+  });
+
+  if (!updates.length) {
+    return { status: 'error', message: `未匹配到可更新数据，已跳过 ${skipped} 条未匹配物料、${skippedNoChange} 条无更新字段` };
+  }
+  await this.rawRepo.save(updates);
+  return { status: 'success', message: `成功更新 ${updates.length} 条数据，跳过 ${skipped} 条未匹配物料、${skippedNoChange} 条无更新字段` };
+}
+
+
+
+/** ========================= 批量修改模板 ========================= */
+private async ensureBatchUpdateTemplateFileExists(): Promise<string> {
+  await fs.promises.mkdir(this.templateDir, { recursive: true });
+  const filePath = path.join(this.templateDir, 'gl-material-info-batch-update-template.xlsx');
+  if (fs.existsSync(filePath)) return filePath;
+
+  const workbook = new ExcelJS.Workbook();
+  workbook.addWorksheet('模板').addRow(['分类编号', '物料名称', ...FIXED_HEADERS, '库存', '产地', '备注']);
+  await workbook.xlsx.writeFile(filePath);
+  return filePath;
+}
+
+async getBatchUpdateTemplateFilePath(): Promise<string> {
+  return this.ensureBatchUpdateTemplateFileExists();
+}
+
+private cellToString(value: any): string {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value.trim();
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value).trim();
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'object') {
+    if ('text' in value && value.text !== undefined) return String(value.text).trim();
+    if ('result' in value && value.result !== undefined) return String(value.result).trim();
+    if ('richText' in value && Array.isArray(value.richText)) {
+      return value.richText.map((item: any) => item?.text ?? '').join('').trim();
+    }
+  }
+  return String(value).trim();
+}
+private parseNumericCellOrThrow(rawText: string, rowIndex: number, header: string): number | undefined {
+  if (!rawText) return undefined;
+  const val = Number(rawText);
+  if (!Number.isFinite(val)) {
+    return undefined;
+  }
+  return val;
+}
 }
