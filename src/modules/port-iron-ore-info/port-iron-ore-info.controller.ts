@@ -74,7 +74,7 @@ export class PortIronOreInfoController {
     }
 
     @Post('import')
-@ApiOperation({ summary: '导入港口矿粉 Excel 文件' })
+@ApiOperation({ summary: '导入港口矿粉 Excel 文件（新增数据）' })
 @ApiConsumes('multipart/form-data')
 @UseInterceptors(
   FileInterceptor('file', {
@@ -105,6 +105,38 @@ async importExcel(
   return this.service.importExcel(file, user.username);
 }
 
+  @Post('import-batch-update')
+  @ApiOperation({ summary: '导入港口矿粉 Excel 文件（按物料名称批量修改）' })
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: multer.memoryStorage(),
+      limits: {
+        fileSize: 10 * 1024 * 1024, // 10MB
+      },
+    }),
+  )
+  @ApiBody({
+    description: '上传 Excel 文件',
+    required: true,
+    schema: {
+      type: 'object',
+      properties: {
+        file: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  async importExcelBatchUpdate(
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() user: { username: string },
+  ) {
+    if (!file || !file.buffer) {
+      return { status: 'error', message: '请上传文件或文件为空' };
+    }
+
+    return this.service.importExcelBatchUpdate(file, user.username);
+  }
+
   @Get('template')
   @ApiOperation({ summary: '下载导入模板（按 FIXED_HEADERS 表头顺序）' })
   async downloadTemplate(@Res() res: Response) {
@@ -112,6 +144,17 @@ async importExcel(
     res.setHeader(
       'Content-Disposition',
       'attachment; filename=port_iron_ore_info_template.xlsx',
+    );
+    res.sendFile(filePath, { root: process.cwd() });
+  }
+
+  @Get('template-batch-update')
+  @ApiOperation({ summary: '下载批量修改导入模板（按物料名称更新已有数据）' })
+  async downloadBatchUpdateTemplate(@Res() res: Response) {
+    const filePath = await this.service.getBatchUpdateTemplateFilePath();
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename=port_iron_ore_info_batch_update_template.xlsx',
     );
     res.sendFile(filePath, { root: process.cwd() });
   }

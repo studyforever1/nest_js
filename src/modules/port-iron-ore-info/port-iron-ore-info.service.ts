@@ -58,6 +58,30 @@ export class PortIronOreInfoService {
     return result;
   }
 
+  private cellToString(value: any): string {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'string') return value.trim();
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value).trim();
+    if (value instanceof Date) return value.toISOString();
+    if (typeof value === 'object') {
+      if ('text' in value && value.text !== undefined) return String(value.text).trim();
+      if ('result' in value && value.result !== undefined) return String(value.result).trim();
+      if ('richText' in value && Array.isArray(value.richText)) {
+        return value.richText.map((item: any) => item?.text ?? '').join('').trim();
+      }
+    }
+    return String(value).trim();
+  }
+
+  private parseNumericCellOrThrow(rawText: string, rowIndex: number, header: string): number | undefined {
+    if (!rawText) return undefined;
+    const val = Number(rawText);
+    if (!Number.isFinite(val)) {
+      throw new BadRequestException(`第 ${rowIndex} 行 [${header}] 必须为数字`);
+    }
+    return val;
+  }
+
   /** ========================= 创建 ========================= */
   async create(dto: CreatePortIronOreInfoDto, username: string) {
     const ore = this.repo.create({
@@ -237,9 +261,102 @@ async query(params: PortIronOrePaginationDto) {
     return { status: 'success', message: `成功导入 ${result.length} 条数据` };
   }
 
+  /** ========================= 批量修改（按物料名称更新已有数据） ========================= */
+  async importExcelBatchUpdate(file: Express.Multer.File, username: string) {
+    if (!file?.buffer) throw new BadRequestException('文件为空');
+
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(file.buffer as any);
+    const sheet = workbook.worksheets[0];
+    if (!sheet) throw new BadRequestException('Excel 中没有工作表');
+
+    const keyHeader = '矿粉名称';
+
+    const headerRow = sheet.getRow(1);
+    const headerMap: Record<string, number> = {};
+    headerRow.eachCell((cell, col) => {
+      const val = this.cellToString(cell.value);
+      if (!val) return;
+      // 批量修改：允许用户添加额外列，未知列忽略
+      if ((FIXED_HEADERS as string[]).includes(val)) headerMap[val] = col;
+    });
+
+    if (!headerMap[keyHeader]) {
+      throw new BadRequestException(`缺少必要列：${keyHeader}`);
+    }
+
+    const rowPayloads: Array<{ name: string; port?: string; updates: Record<string, number> }> = [];
+    const names = new Set<string>();
+
+    sheet.eachRow({ includeEmpty: true }, (row, index) => {
+      if (index === 1) return;
+
+      const name = this.cellToString(row.getCell(headerMap[keyHeader]).value);
+      if (!name) return;
+      names.add(name);
+
+      const port = headerMap['港口'] ? this.cellToString(row.getCell(headerMap['港口']).value) : undefined;
+      const updates: Record<string, number> = {};
+
+      FIXED_HEADERS.forEach((key) => {
+        if (key === keyHeader || key === '港口') return;
+        const col = headerMap[key];
+        if (!col) return;
+        const raw = this.cellToString(row.getCell(col).value);
+        const num = this.parseNumericCellOrThrow(raw, index, key);
+        if (num !== undefined) updates[key] = num;
+      });
+
+      rowPayloads.push({ name, port: port ? port : undefined, updates });
+    });
+
+    if (!rowPayloads.length) return { status: 'error', message: '没有有效数据可导入（缺少矿粉名称）' };
+
+    const existedRows = await this.repo.find({ where: { name: In(Array.from(names)) } });
+    const existedByName = new Map(existedRows.map((item) => [item.name, item]));
+
+    const updates: PortIronOreInfo[] = [];
+    let skipped = 0;
+    let skippedNoChange = 0;
+
+    rowPayloads.forEach((row) => {
+      const target = existedByName.get(row.name);
+      if (!target) {
+        skipped += 1;
+        return;
+      }
+
+      const hasAnyField = !!row.port || Object.keys(row.updates).length > 0;
+      if (!hasAnyField) {
+        skippedNoChange += 1;
+        return;
+      }
+
+      if (row.port) target.port = row.port;
+
+      if (Object.keys(row.updates).length) {
+        target.composition = this.normalizeComposition({
+          ...(target.composition ?? {}),
+          ...row.updates,
+        });
+      }
+
+      target.modifier = username;
+      updates.push(target);
+    });
+
+    if (!updates.length) {
+      return { status: 'error', message: `未匹配到可更新数据，已跳过 ${skipped} 条未匹配物料、${skippedNoChange} 条无更新字段` };
+    }
+
+    await this.repo.save(updates);
+    return { status: 'success', message: `成功更新 ${updates.length} 条数据，跳过 ${skipped} 条未匹配物料、${skippedNoChange} 条无更新字段` };
+  }
+
   /** ========================= 模板 ========================= */
   private readonly templateDir = process.env.TEMPLATE_PATH || './templates';
   private readonly templateFilename = 'port-iron-ore-info-template.xlsx';
+  private readonly batchUpdateTemplateFilename = 'port-iron-ore-info-batch-update-template.xlsx';
 
   private async ensureTemplateFileExists(): Promise<string> {
     await fs.promises.mkdir(this.templateDir, { recursive: true });
@@ -254,6 +371,22 @@ async query(params: PortIronOrePaginationDto) {
 
   async getTemplateFilePath(): Promise<string> {
     return this.ensureTemplateFileExists();
+  }
+
+  /** ========================= 批量修改模板 ========================= */
+  private async ensureBatchUpdateTemplateFileExists(): Promise<string> {
+    await fs.promises.mkdir(this.templateDir, { recursive: true });
+    const filePath = path.join(this.templateDir, this.batchUpdateTemplateFilename);
+    if (fs.existsSync(filePath)) return filePath;
+
+    const workbook = new ExcelJS.Workbook();
+    workbook.addWorksheet('模板').addRow(FIXED_HEADERS);
+    await workbook.xlsx.writeFile(filePath);
+    return filePath;
+  }
+
+  async getBatchUpdateTemplateFilePath(): Promise<string> {
+    return this.ensureBatchUpdateTemplateFileExists();
   }
 
   /** 删除所有原料 */

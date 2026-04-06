@@ -79,12 +79,21 @@ export class MineTypIndController {
   }
 
   @Post('import')
-  @ApiOperation({ summary: '导入矿粉典型指标 Excel' })
+  @ApiOperation({ summary: '导入矿粉典型指标 Excel（新增数据）' })
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FileInterceptor('file', { storage: multer.memoryStorage() }))
   @ApiBody({ schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } } })
   importExcel(@UploadedFile() file: Express.Multer.File, @CurrentUser() user: { username: string }) {
     return this.service.importExcel(file, user.username);
+  }
+
+  @Post('import-batch-update')
+  @ApiOperation({ summary: '导入矿粉典型指标 Excel（按物料名称批量修改）' })
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('file', { storage: multer.memoryStorage() }))
+  @ApiBody({ schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } } })
+  importExcelBatchUpdate(@UploadedFile() file: Express.Multer.File, @CurrentUser() user: { username: string }) {
+    return this.service.importExcelBatchUpdate(file, user.username);
   }
 
   @Get('template')
@@ -94,6 +103,17 @@ export class MineTypIndController {
     res.setHeader(
       'Content-Disposition',
       'attachment; filename=mine_typ_ind_template.xlsx',
+    );
+    res.sendFile(filePath, { root: process.cwd() });
+  }
+
+  @Get('template-batch-update')
+  @ApiOperation({ summary: '下载批量修改导入模板（按物料名称更新已有数据）' })
+  async downloadBatchUpdateTemplate(@Res() res: Response) {
+    const filePath = await this.service.getBatchUpdateTemplateFilePath();
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename=mine_typ_ind_batch_update_template.xlsx',
     );
     res.sendFile(filePath, { root: process.cwd() });
   }

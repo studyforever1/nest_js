@@ -78,7 +78,7 @@ export class PortPelletLumpInfoController {
   }
 
   @Post('import')
-  @ApiOperation({ summary: '导入 Excel' })
+  @ApiOperation({ summary: '导入 Excel（新增数据）' })
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(
     FileInterceptor('file', {
@@ -102,6 +102,30 @@ export class PortPelletLumpInfoController {
     return this.service.importExcel(file, user.username);
   }
 
+  @Post('import-batch-update')
+  @ApiOperation({ summary: '导入 Excel（按物料名称批量修改）' })
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: multer.memoryStorage(),
+      limits: { fileSize: 10 * 1024 * 1024 },
+    }),
+  )
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  importExcelBatchUpdate(
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() user: { username: string },
+  ) {
+    return this.service.importExcelBatchUpdate(file, user.username);
+  }
+
   @Get('template')
   @ApiOperation({ summary: '下载导入模板（按 FIXED_HEADERS 表头顺序）' })
   async downloadTemplate(@Res() res: Response) {
@@ -110,6 +134,17 @@ export class PortPelletLumpInfoController {
     res.setHeader(
       'Content-Disposition',
       'attachment; filename=port_pellet_lump_template.xlsx',
+    );
+    res.sendFile(filePath, { root: process.cwd() });
+  }
+
+  @Get('template-batch-update')
+  @ApiOperation({ summary: '下载批量修改导入模板（按物料名称更新已有数据）' })
+  async downloadBatchUpdateTemplate(@Res() res: Response) {
+    const filePath = await this.service.getBatchUpdateTemplateFilePath();
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename=port_pellet_lump_info_batch_update_template.xlsx',
     );
     res.sendFile(filePath, { root: process.cwd() });
   }
